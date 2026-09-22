@@ -1,6 +1,7 @@
 """SQLite connection and migration foundation."""
 
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 MIGRATIONS: tuple[str, ...] = (
@@ -25,6 +26,128 @@ MIGRATIONS: tuple[str, ...] = (
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE runs (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        status TEXT NOT NULL,
+        papers_found INTEGER NOT NULL DEFAULT 0,
+        papers_selected INTEGER NOT NULL DEFAULT 0,
+        active_classifier TEXT NOT NULL,
+        shadow_classifier TEXT,
+        duration_seconds REAL,
+        summary_json TEXT
+    )
+    """,
+    """
+    CREATE TABLE papers (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        abstract TEXT,
+        doi TEXT,
+        arxiv_id TEXT,
+        publication_date TEXT,
+        venue TEXT,
+        citation_count INTEGER,
+        authors_json TEXT NOT NULL,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE paper_sources (
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        source TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        url TEXT,
+        pdf_url TEXT,
+        PRIMARY KEY (paper_id, source, source_id)
+    )
+    """,
+    """
+    CREATE TABLE paper_files (
+        id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+        kind TEXT NOT NULL,
+        path TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (paper_id, kind)
+    )
+    """,
+    """
+    CREATE TABLE classifications (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        classifier_name TEXT NOT NULL,
+        is_active INTEGER NOT NULL,
+        latency_ms INTEGER,
+        created_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        raw_response_json TEXT
+    )
+    """,
+    """
+    CREATE TABLE paper_analyses (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        model_provider TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE weekly_syntheses (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE research_gaps (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE research_ideas (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE errors (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        paper_id TEXT,
+        node TEXT NOT NULL,
+        category TEXT NOT NULL,
+        recoverable INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX papers_doi_idx ON papers(doi)",
+    "CREATE INDEX papers_arxiv_idx ON papers(arxiv_id)",
+    "CREATE INDEX runs_topic_idx ON runs(topic_id, started_at)",
+    "CREATE INDEX syntheses_topic_idx ON weekly_syntheses(topic_id, created_at)",
 )
 
 
@@ -49,3 +172,8 @@ def apply_migrations(connection: sqlite3.Connection) -> int:
         # PRAGMA does not accept bound parameters; the value is a trusted int.
         connection.execute(f"PRAGMA user_version = {len(MIGRATIONS)}")
     return len(MIGRATIONS)
+
+
+def now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string, the format every table stores."""
+    return datetime.now(UTC).isoformat()
