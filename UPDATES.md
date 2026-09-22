@@ -13,7 +13,7 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 - **Verification:** Confirmed both moved files are non-empty; searched tracked Markdown for stale root-path references; ran `git diff --check`. No application test suite exists yet.
 - **Git/GitHub:** Documentation commit `fdcc402`; merge commit `8537fb7`. Configured `origin` as `https://github.com/debesh-biswas/Research-Agent.git`, created remote `main`, and set local `main` to track `origin/main`. HTTPS authentication succeeded for the repository owned by `debesh-biswas` using the machine's configured Git credentials. All commits use `Debesh Biswas <mail2debesh@gmail.com>` with no agent co-author metadata.
 - **Known issues:** GitHub CLI is unavailable locally; Git transport and the configured credential helper are used for remote operations instead. No application code or test suite exists yet.
-- **Next recommended step:** After this documentation branch is merged and pushed, start project scaffolding on `chore/project-scaffold`; do not begin another feature on this branch.
+- **Next recommended step:** Start project scaffolding as the first product feature on `F1-project-scaffold`; complete, verify, commit, and merge it before allocating `F2`.
 
 ## 2026-09-22 — Repository conventions established
 
@@ -27,4 +27,4 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 - **Verification:** Confirmed both specification files are present and reviewed their complete contents; inspected the rendered source structure and required sections in both new Markdown files. No application test suite exists yet.
 - **Git references:** Baseline specifications commit `b91b55f`; conventions commit `d8a903c`; merged into `main` as `7bb5677`.
 - **Known state:** No application scaffold or runtime code exists yet. Classifier A and Classifier B are described as pre-existing in the specifications, but their concrete implementations/assets have not yet been located or supplied. No feature branch has started.
-- **Next recommended step:** Initialize the Python project on a dedicated `chore/project-scaffold` branch (or define the first bounded feature), add the baseline package/config/test structure and secret-safe `.gitignore`, run its verification, update this log, commit, merge into `main`, and only then begin the next feature branch.
+- **Next recommended step:** Initialize the Python project on `F1-project-scaffold`, add the baseline package/config/test structure and secret-safe `.gitignore`, run its verification, update this log, commit, merge into `main`, and only then allocate `F2`.
