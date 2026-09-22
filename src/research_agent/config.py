@@ -36,6 +36,11 @@ class RetrySettings(StrictModel):
     pdf_download: int = Field(default=2, ge=0)
 
 
+class DeduplicationSettings(StrictModel):
+    title_similarity: float = Field(default=95.0, ge=0, le=100)
+    require_author_overlap: bool = True
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -55,6 +60,7 @@ class ApplicationSettings(BaseSettings):
     data_directory: Path = Path("data")
     concurrency: ConcurrencySettings = Field(default_factory=ConcurrencySettings)
     retries: RetrySettings = Field(default_factory=RetrySettings)
+    deduplication: DeduplicationSettings = Field(default_factory=DeduplicationSettings)
 
     @classmethod
     def settings_customise_sources(
