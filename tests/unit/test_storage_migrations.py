@@ -23,6 +23,7 @@ def test_every_required_table_exists(connection: sqlite3.Connection) -> None:
         "research_gaps",
         "research_ideas",
         "errors",
+        "query_plans",
     } <= names
 
 
@@ -44,8 +45,9 @@ def test_a_version_one_database_upgrades_in_place(tmp_path: Path) -> None:
 
     assert apply_migrations(legacy) == len(MIGRATIONS)
     assert legacy.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
-    # The pre-existing topic row survived the upgrade.
-    assert legacy.execute("SELECT COUNT(*) FROM topics").fetchone()[0] == 1
+    # The pre-existing topic row survived the upgrade and got the column added later.
+    row = legacy.execute("SELECT COUNT(*) AS total, keywords_json FROM topics").fetchone()
+    assert (row["total"], row["keywords_json"]) == (1, "[]")
     legacy.close()
 
 

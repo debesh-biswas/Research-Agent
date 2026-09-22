@@ -127,3 +127,27 @@ def test_bootstrap_tolerates_missing_or_invalid_yaml(tmp_path: Path) -> None:
     assert bootstrap(repository, tmp_path / "missing.yaml") == 0
     assert bootstrap(repository, invalid) == 0
     assert repository.list() == []
+
+
+def test_keywords_round_trip(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "agent.db")
+    repository.add(
+        TopicSettings.model_validate(
+            {"id": "keyworded", "name": "Keyworded", "keywords": ["spatial reasoning", "slam"]}
+        )
+    )
+
+    stored = repository.get("keyworded")
+
+    assert stored is not None
+    assert stored.keywords == ["spatial reasoning", "slam"]
+
+
+def test_a_topic_without_keywords_reads_back_empty(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "agent.db")
+    repository.add(TopicSettings.model_validate({"id": "bare", "name": "Bare"}))
+
+    stored = repository.get("bare")
+
+    assert stored is not None
+    assert stored.keywords == []

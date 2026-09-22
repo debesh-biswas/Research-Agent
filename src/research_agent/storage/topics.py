@@ -1,5 +1,6 @@
 """Topic persistence behind a repository interface."""
 
+import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,7 +18,8 @@ from research_agent.config import (
 _COLUMNS = (
     "id, name, enabled, lookback_days, active_classifier, shadow_classifier, "
     "schedule_frequency, schedule_day, source_openalex, source_semantic_scholar, "
-    "source_arxiv, max_candidates, max_classified, max_downloads, max_deep_reads"
+    "source_arxiv, max_candidates, max_classified, max_downloads, max_deep_reads, "
+    "keywords_json"
 )
 
 
@@ -55,6 +57,7 @@ def _to_row(topic: TopicSettings) -> dict[str, Any]:
         "name": topic.name,
         "enabled": int(topic.enabled),
         "lookback_days": topic.lookback_days,
+        "keywords_json": json.dumps(topic.keywords),
         "active_classifier": topic.classifier.active,
         "shadow_classifier": topic.classifier.shadow,
         "schedule_frequency": topic.scheduling.frequency,
@@ -76,6 +79,7 @@ def _from_row(row: sqlite3.Row) -> TopicSettings:
             "name": row["name"],
             "enabled": bool(row["enabled"]),
             "lookback_days": row["lookback_days"],
+            "keywords": json.loads(row["keywords_json"]),
             "classifier": {
                 "active": row["active_classifier"],
                 "shadow": row["shadow_classifier"],
