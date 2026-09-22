@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository implements the Personal Weekly AI Research Intelligence Agent described in `research_agent_PRD.md` and `research_agent_TRD.md`. Treat both documents as authoritative product and technical specifications. This file summarizes the rules agents must apply while working; if it conflicts with an explicit requirement in the PRD or TRD, follow the PRD/TRD and record the discrepancy in `UPDATES.md`.
+This repository implements the Personal Weekly AI Research Intelligence Agent described in `docs/research_agent_PRD.md` and `docs/research_agent_TRD.md`. Treat both documents as authoritative product and technical specifications. This file summarizes the rules agents must apply while working; if it conflicts with an explicit requirement in the PRD or TRD, follow the PRD/TRD and record the discrepancy in `UPDATES.md`.
 
 The v1 product is a single-user, local-first Python application that discovers recent research, triages papers with one of two interchangeable classifiers, acquires and parses legal open-access PDFs, performs evidence-backed analysis and cross-paper synthesis, creates research ideas, writes weekly Markdown reports, and preserves historical context. It must run on a 24 GB Apple Silicon MacBook at zero or near-zero recurring cost and remain portable to an AWS deployment without rewriting the core workflow.
 
@@ -11,7 +11,7 @@ The v1 product is a single-user, local-first Python application that discovers r
 Before planning or changing code:
 
 1. Read this file completely.
-2. Read the relevant sections of `research_agent_PRD.md` and `research_agent_TRD.md`; read both documents completely when changing architecture, workflow, persistence, schemas, model routing, or scope.
+2. Read the relevant sections of `docs/research_agent_PRD.md` and `docs/research_agent_TRD.md`; read both documents completely when changing architecture, workflow, persistence, schemas, model routing, or scope.
 3. Read `UPDATES.md` from newest to oldest until the current state, recent decisions, open issues, and next steps are clear.
 4. Inspect `git status`, the current branch, recent commits, and existing tests. Never discard unrelated or user-authored changes.
 
@@ -107,12 +107,31 @@ All implementation work is feature-isolated. Complete the full sequence below be
 
 1. Start from a clean, up-to-date `main` branch.
 2. Define one bounded feature and its acceptance criteria from the PRD/TRD.
-3. Create a dedicated branch named `feat/<short-kebab-name>`. Use `fix/`, `docs/`, `test/`, `chore/`, or `refactor/` for work that is not a product feature.
+3. Allocate the next branch number from `UPDATES.md` and create a dedicated, descriptively named branch using the convention below.
 4. Implement only that bounded change, including tests and relevant documentation.
 5. Verify the change and update `UPDATES.md` on the same branch.
-6. Commit all feature-owned changes with a clear imperative/Conventional Commit message such as `feat: add OpenAlex discovery adapter`.
+6. Commit all task-owned changes using the commit convention below.
 7. Merge the completed branch into `main` before creating or starting the next feature branch. Do not stack feature branches or leave completed work unmerged.
 8. Verify the merge on `main` and ensure `UPDATES.md` accurately records the merged commit and repository state. If the final commit hash was not known on the branch, a small post-merge docs commit on `main` may fill it in.
+
+### Branch naming
+
+- Product features: `F<number>-<short-kebab-description>`, beginning with `F1-...` and increasing sequentially (`F1-project-scaffold`, `F2-topic-management`).
+- Bug fixes: `FIX<number>-<short-kebab-description>`.
+- Documentation: `DOC<number>-<short-kebab-description>`.
+- Chores: `CHORE<number>-<short-kebab-description>`.
+- Tests: `TEST<number>-<short-kebab-description>`.
+- Refactors: `REFACTOR<number>-<short-kebab-description>`.
+
+Use the next unused number within the relevant prefix, record the allocation in `UPDATES.md`, and never reuse a number for different work. Existing historical branches created before this convention do not need to be rewritten. Branch descriptions must be lowercase kebab-case and identify one bounded outcome.
+
+### Commit and merge messages
+
+- Use Conventional Commits in the form `<type>(<optional-scope>): <imperative summary>`, for example `feat(discovery): add OpenAlex adapter` or `docs: organize project specifications`.
+- Use the appropriate lowercase type: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`, `build`, or `ci`.
+- Keep the subject concise, imperative, and specific; do not end it with a period. Explain important motivation or migration details in the body when needed.
+- Use merge messages in the form `merge: <branch-name> <concise outcome>`, for example `merge: F1-project-scaffold establish Python project structure`.
+- Commits must use the repository's configured human user identity. Never set an agent, AI assistant, bot, or tool as the author or committer, and never add `Co-authored-by`, `Signed-off-by`, or similar attribution for this assistant or any other agent. Do not claim agent authorship anywhere in Git metadata.
 
 Do not commit directly to `main` for product features. Never rewrite shared history, force-push, or discard unrelated work. Keep commits focused; do not mix opportunistic refactors with a feature. If unfinished work must be handed off, leave it on its branch and clearly document the exact state in `UPDATES.md` rather than merging incomplete behavior.
 
@@ -135,4 +154,3 @@ Do not use `UPDATES.md` as a raw transcript. Keep enough concrete detail to reco
 ## Definition of Done for a Feature
 
 A feature is done only when its PRD/TRD acceptance criteria are met, interfaces and schemas remain consistent, tests and documentation are updated, relevant verification passes, failures remain observable and isolated, `UPDATES.md` contains a useful handoff entry, the feature is committed on its dedicated branch, and that branch is merged into `main`.
-
