@@ -97,6 +97,22 @@ class QuerySettings(StrictModel):
         return self
 
 
+class ClassifierASettings(StrictModel):
+    """Tuning for the lightweight classifier; thresholds set both relevance and action."""
+
+    deep_read_at: float = Field(default=0.6, ge=0, le=1)
+    summarize_at: float = Field(default=0.3, ge=0, le=1)
+    embedding_model: str | None = None
+    """Enables the embedding half of the score; without it Classifier A is purely lexical."""
+    embedding_weight: float = Field(default=0.5, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def require_ordered_thresholds(self) -> "ClassifierASettings":
+        if self.summarize_at >= self.deep_read_at:
+            raise ValueError("summarize_at must be below deep_read_at")
+        return self
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -120,6 +136,7 @@ class ApplicationSettings(BaseSettings):
     sources: DiscoveryClientSettings = Field(default_factory=DiscoveryClientSettings)
     models: ModelSettings = Field(default_factory=ModelSettings)
     queries: QuerySettings = Field(default_factory=QuerySettings)
+    classifier_a: ClassifierASettings = Field(default_factory=ClassifierASettings)
 
     @classmethod
     def settings_customise_sources(

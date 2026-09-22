@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from research_agent.config import (
     ApplicationSettings,
+    ClassifierASettings,
     ClassifierSettings,
     ConcurrencySettings,
     ConfigurationError,
@@ -89,3 +90,15 @@ def test_query_settings_default_to_the_trd_range() -> None:
 
     assert (settings.queries.min_queries, settings.queries.max_queries) == (5, 20)
     assert settings.queries.history_syntheses == 1
+
+
+def test_classifier_a_thresholds_must_be_ordered() -> None:
+    with pytest.raises(ValidationError):
+        ClassifierASettings(summarize_at=0.7, deep_read_at=0.6)
+
+
+def test_classifier_a_defaults_to_lexical_scoring() -> None:
+    settings = ApplicationSettings()
+
+    assert settings.classifier_a.embedding_model is None
+    assert (settings.classifier_a.summarize_at, settings.classifier_a.deep_read_at) == (0.3, 0.6)

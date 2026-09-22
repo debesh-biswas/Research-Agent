@@ -25,3 +25,10 @@ models:
     base_url: https://integrate.api.nvidia.com/v1
     model: meta/llama-3.1-70b-instruct
     timeout_seconds: 120
+
+classifier_a:
+  deep_read_at: 0.6
+  summarize_at: 0.3
+  embedding_weight: 0.5
+  # Set a local embedding model to blend semantic similarity into the lexical score.
+  # embedding_model: nomic-embed-text
