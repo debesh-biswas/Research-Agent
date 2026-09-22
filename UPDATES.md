@@ -4,15 +4,15 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 
 ## 2026-09-22 — Specifications organized under `docs/`
 
-- **Status:** Completed and ready to merge.
+- **Status:** Completed, merged into `main`, and published to GitHub.
 - **Task:** Move the project specifications into a documentation directory while preserving root-level agent discovery and handoff files.
 - **Branch:** `DOC1-organize-specifications` (renamed from the pre-convention working name `docs/organize-specifications`).
 - **Summary:** Moved the PRD and TRD from the repository root into `docs/` and updated all live convention/handoff references to their new paths. Kept `AGENTS.md` and `UPDATES.md` at the root because coding agents discover repository instructions there and the handoff log should remain immediately visible. Added numbered branch naming (`F1-...`, `DOC1-...`, and other task prefixes), Conventional Commit/merge-message rules, and a strict prohibition on agent/AI authorship or co-authorship metadata.
 - **Files affected:** `docs/research_agent_PRD.md`, `docs/research_agent_TRD.md`, `AGENTS.md`, and `UPDATES.md`.
 - **Decision:** Use `docs/` rather than `documentation/` for a concise, conventional path. Preserve file contents and Git history through tracked renames. Reserve the `F<number>-...` sequence for product features; use independently numbered task prefixes for non-feature work. Existing history remains unchanged, and all future Git metadata uses only the configured human identity.
 - **Verification:** Confirmed both moved files are non-empty; searched tracked Markdown for stale root-path references; ran `git diff --check`. No application test suite exists yet.
-- **Git/GitHub:** The local target remote is `https://github.com/debesh-biswas/Research-Agent.git`. Commit, merge, remote verification, and push references will be recorded after completion.
-- **Known issues:** GitHub CLI is unavailable locally, so remote authentication/account resolution relies on the configured Git transport/credential helper during push.
+- **Git/GitHub:** Documentation commit `fdcc402`; merge commit `8537fb7`. Configured `origin` as `https://github.com/debesh-biswas/Research-Agent.git`, created remote `main`, and set local `main` to track `origin/main`. HTTPS authentication succeeded for the repository owned by `debesh-biswas` using the machine's configured Git credentials. All commits use `Debesh Biswas <mail2debesh@gmail.com>` with no agent co-author metadata.
+- **Known issues:** GitHub CLI is unavailable locally; Git transport and the configured credential helper are used for remote operations instead. No application code or test suite exists yet.
 - **Next recommended step:** After this documentation branch is merged and pushed, start project scaffolding on `chore/project-scaffold`; do not begin another feature on this branch.
 
 ## 2026-09-22 — Repository conventions established
