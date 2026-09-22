@@ -15,3 +15,13 @@ retries:
   nim: 2
   classifier_repair: 1
   pdf_download: 2
+
+models:
+  local:
+    base_url: http://localhost:11434/v1
+    model: qwen3:8b
+    timeout_seconds: 120
+  nim:
+    base_url: https://integrate.api.nvidia.com/v1
+    model: meta/llama-3.1-70b-instruct
+    timeout_seconds: 120
