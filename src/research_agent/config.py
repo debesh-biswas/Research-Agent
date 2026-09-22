@@ -110,6 +110,19 @@ class ResourceLimits(StrictModel):
         return self
 
 
+class SchedulingSettings(StrictModel):
+    frequency: Literal["weekly"] = "weekly"
+    day: Literal[
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ] = "sunday"
+
+
 class TopicSettings(StrictModel):
     id: str = Field(pattern=r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
     name: str = Field(min_length=1)
@@ -118,6 +131,7 @@ class TopicSettings(StrictModel):
     classifier: ClassifierSettings = Field(default_factory=ClassifierSettings)
     discovery: DiscoverySettings = Field(default_factory=DiscoverySettings)
     limits: ResourceLimits = Field(default_factory=ResourceLimits)
+    scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings)
 
 
 class TopicsConfiguration(StrictModel):
