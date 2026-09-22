@@ -4,17 +4,17 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 
 ## 2026-09-22 — Complete v1 feature roadmap
 
-- **Status:** Implemented and verified on the documentation branch; pending commit and merge into `main`.
+- **Status:** Completed, merged into `main`, and re-verified on the merged tree.
 - **Task:** Translate the full PRD/TRD into a sequential, branch-ready implementation roadmap covering every planned v1 product feature.
 - **Branch:** `DOC2-feature-roadmap` (second numbered documentation task).
 - **Summary:** Added `docs/FEATURE_ROADMAP.md` with a dependency-ordered F1–F20 plan. Each feature records its branch, prerequisites, goal, bounded deliverables, public/CLI surface where applicable, tests, acceptance gate, exclusions, and exact feature/merge commit-message convention. F1 is marked complete with its Git references; F2 remains the next product branch. The README now links directly to the roadmap.
 - **Roadmap decisions:** The sequence establishes topic/domain/persistence foundations before network and model integrations; completes discovery, provider, query, classifier, and selection layers before document processing; builds analysis, synthesis, ideation, and reporting before LangGraph integration; then adds local operations, MVP hardening, and AWS portability validation. The roadmap reserves F2–F20 names but does not begin those features. AWS work proves replaceable contracts and documents deployment rather than creating paid infrastructure.
 - **Important gates:** F8 cannot start until the actual pre-existing Classifier A implementation is located or supplied; F9 must confirm the intended Qwen model/runtime; F6 and F12 must select currently compatible local-model and Docling stacks when those branches begin. The roadmap explicitly forbids silently inventing replacement classifiers or committing model weights/secrets.
 - **Files affected:** `docs/FEATURE_ROADMAP.md`, `README.md`, and `UPDATES.md`.
-- **Verification:** Reviewed the PRD and TRD in full; mapped all in-scope requirements, CLI commands, database entities, workflow nodes, failure routes, testing obligations, local scheduling, and AWS compatibility constraints to at least one feature; confirmed F1–F20 numbering is unique and ordered; ran repository formatting/linting/type/tests and Markdown whitespace checks before merge.
-- **Git references:** Documentation and merge commit hashes will be recorded after commit and merge. Git metadata must use only `Debesh Biswas <mail2debesh@gmail.com>` with no attribution trailers.
+- **Verification:** Reviewed the PRD and TRD in full; mapped all in-scope requirements, CLI commands, database entities, workflow nodes, failure routes, testing obligations, local scheduling, and AWS compatibility constraints to at least one feature; confirmed F1–F20 numbering is unique and ordered. Before and after merge, Ruff formatting/linting, strict mypy, the 21-test suite with 89.77% coverage, and Markdown whitespace checks all passed.
+- **Git references:** Documentation commit `dc8ae78`; merge commit `1df9db1`. Both use `Debesh Biswas <mail2debesh@gmail.com>` with no agent attribution or commit trailers.
 - **Known issues/risks:** Future library/model selections may change as compatibility evolves; the roadmap therefore fixes required behavior and boundaries while deferring time-sensitive implementation choices to the named planning gates. Classifier A/B artifacts remain absent from the repository.
-- **Next recommended step:** Merge and publish DOC2, then create `F2-topic-management`; do not begin F3 or any later branch until F2 is complete and merged.
+- **Next recommended step:** Publish the merged DOC2 state, then create `F2-topic-management`; do not begin F3 or any later branch until F2 is complete and merged.
 
 ## 2026-09-22 — F1 Python project scaffold
 
