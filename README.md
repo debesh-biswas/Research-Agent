@@ -5,6 +5,9 @@ research intelligence. The product and technical specifications are maintained i
 [`docs/research_agent_PRD.md`](docs/research_agent_PRD.md) and
 [`docs/research_agent_TRD.md`](docs/research_agent_TRD.md).
 
+The sequential implementation plan, branch names, acceptance gates, and dependencies are tracked
+in [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
+
 This repository currently contains the project foundation: validated configuration, a CLI,
 structured JSON logging, package boundaries, and an offline test suite. Discovery providers,
 classifiers, LangGraph orchestration, persistence, document processing, and report generation
