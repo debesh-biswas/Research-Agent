@@ -2,6 +2,18 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-22 — Agent instruction files kept local
+
+- **Status:** Completed, merged into `main`.
+- **Task:** Treat `AGENTS.md` as local-only agent instructions and expose the same content as `CLAUDE.md`.
+- **Branch:** `CHORE1-ignore-agent-instructions` (first chore allocation).
+- **Summary:** Added `CLAUDE.md` as a symlink to `AGENTS.md` so Claude Code loads the existing conventions without a second copy to keep in sync. Added both filenames to `.gitignore` and untracked `AGENTS.md` with `git rm --cached`; the file remains on disk and remains authoritative for local work.
+- **Decision:** One file, two names, via symlink rather than duplicated content — duplicated instruction files drift. Conventions are now a working-copy concern, not a distributed artifact.
+- **Files affected:** `.gitignore`, `README.md`, `UPDATES.md`; `AGENTS.md` removed from version control (still present locally); `CLAUDE.md` created locally and ignored.
+- **Verification:** `git check-ignore -v` confirms both paths are ignored; `git ls-files` no longer lists `AGENTS.md`; the file and symlink both resolve on disk. Ruff format/lint, strict mypy, and the 21-test suite pass unchanged. No source code was touched.
+- **Known issues/risks:** `AGENTS.md` no longer reaches anyone cloning from GitHub, so a fresh clone has no conventions file; historical `UPDATES.md` entries still reference it as a repository file and were deliberately left unedited as a log. The `README.md` reference was reworded to state the file is local and untracked.
+- **Next recommended step:** Unchanged — create `F2-topic-management` and implement persistent topic add/list/enable/disable behind a repository interface.
+
 ## 2026-09-22 — Complete v1 feature roadmap
 
 - **Status:** Completed, merged into `main`, and re-verified on the merged tree.
