@@ -57,6 +57,32 @@ class DiscoveryClientSettings(StrictModel):
     semantic_scholar_api_key: str | None = None
 
 
+class ModelEndpointSettings(StrictModel):
+    """One OpenAI-compatible chat-completions endpoint."""
+
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen3:8b"
+    api_key: str | None = None
+    requests_per_second: float = Field(default=4.0, gt=0)
+    timeout_seconds: float = Field(default=120.0, gt=0)
+    max_output_tokens: int = Field(default=2048, gt=0)
+    temperature: float = Field(default=0.2, ge=0, le=2)
+
+
+class NimEndpointSettings(ModelEndpointSettings):
+    """NIM defaults live on their own class so a partial override keeps the rest of them."""
+
+    base_url: str = "https://integrate.api.nvidia.com/v1"
+    model: str = "meta/llama-3.1-70b-instruct"
+
+
+class ModelSettings(StrictModel):
+    """Local inference is always configured; NIM is optional and keyed from the environment."""
+
+    local: ModelEndpointSettings = Field(default_factory=ModelEndpointSettings)
+    nim: NimEndpointSettings = Field(default_factory=NimEndpointSettings)
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -78,6 +104,7 @@ class ApplicationSettings(BaseSettings):
     retries: RetrySettings = Field(default_factory=RetrySettings)
     deduplication: DeduplicationSettings = Field(default_factory=DeduplicationSettings)
     sources: DiscoveryClientSettings = Field(default_factory=DiscoveryClientSettings)
+    models: ModelSettings = Field(default_factory=ModelSettings)
 
     @classmethod
     def settings_customise_sources(

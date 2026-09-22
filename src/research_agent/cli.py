@@ -3,7 +3,7 @@
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import httpx
 import typer
@@ -22,6 +22,13 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
+from research_agent.models.base import (
+    Capability,
+    ModelMessage,
+    ModelProviderError,
+    ModelResult,
+)
+from research_agent.models.router import build_router
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.topics import (
     SqliteTopicRepository,
@@ -277,3 +284,56 @@ async def _discover(
             settings=application,
         )
         return await aggregator.search(query, start_date, end_date, limit)
+
+
+model_app = typer.Typer(help="Inspect configured inference providers.")
+app.add_typer(model_app, name="model")
+
+
+@model_app.command("check")
+def model_check(
+    capability: Annotated[
+        str, typer.Option("--capability", help="Capability to route the probe through.")
+    ] = "cheap_text",
+    prompt: Annotated[
+        str, typer.Option("--prompt", help="Prompt sent to the resolved provider.")
+    ] = "Reply with the single word: ready.",
+    settings: SettingsOption = Path("config/settings.yaml"),
+) -> None:
+    """Route one small prompt through the configured providers and report what answered."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+    except (ConfigurationError, ValidationError) as error:
+        typer.echo(f"Unable to load settings: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    typer.echo(
+        f"local: {application.models.local.model} at {application.models.local.base_url}\n"
+        f"nvidia_nim: {application.models.nim.model} "
+        f"({'api key configured' if application.models.nim.api_key else 'no api key'}), "
+        f"strong provider {application.strong_model_provider}"
+    )
+
+    try:
+        result = asyncio.run(_model_check(application, capability, prompt))
+    except ValueError as error:
+        typer.echo(f"Unknown capability: {capability}", err=True)
+        raise typer.Exit(code=1) from error
+    except ModelProviderError as error:
+        typer.echo(f"Inference failed: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    fallback = " (fell back to local)" if result.fell_back else ""
+    typer.echo(f"{result.provider}\t{result.model}\t{result.latency_ms}ms{fallback}")
+    typer.echo(result.text)
+
+
+async def _model_check(
+    application: ApplicationSettings, capability: str, prompt: str
+) -> ModelResult:
+    timeout = max(application.models.local.timeout_seconds, application.models.nim.timeout_seconds)
+    async with _http_client(timeout) as client:
+        router = build_router(client, application)
+        return await router.generate(
+            cast(Capability, capability), [ModelMessage(role="user", content=prompt)]
+        )

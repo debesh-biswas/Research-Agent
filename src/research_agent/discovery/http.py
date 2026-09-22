@@ -54,33 +54,43 @@ async def request_text(
     client: httpx.AsyncClient,
     url: str,
     *,
+    method: str = "GET",
     params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     limiter: RateLimiter | None = None,
     retries: int = 3,
     backoff_seconds: float = 1.0,
+    error_category: ErrorCategory = "DISCOVERY_ERROR",
+    transient_category: ErrorCategory = "NETWORK_ERROR",
 ) -> str:
-    """GET a provider URL, retrying only transient failures and honoring ``Retry-After``."""
+    """Call a provider URL, retrying only transient failures and honoring ``Retry-After``.
+
+    ponytail: this lives under ``discovery`` because it was written for the source adapters and
+    ``models`` is its second consumer. Move it to ``utils/http.py`` when a third one appears.
+    """
     last_error = "no attempt was made"
-    category: ErrorCategory = "DISCOVERY_ERROR"
+    category: ErrorCategory = error_category
     for attempt in range(retries + 1):
         if limiter is not None:
             await limiter.acquire()
         try:
-            response = await client.get(url, params=params, headers=headers)
+            response = await client.request(
+                method, url, params=params, json=json_body, headers=headers
+            )
         except httpx.TimeoutException as error:
-            last_error, category = f"timeout: {error}", "NETWORK_ERROR"
+            last_error, category = f"timeout: {error}", transient_category
         except httpx.TransportError as error:
-            last_error, category = f"transport error: {error}", "NETWORK_ERROR"
+            last_error, category = f"transport error: {error}", transient_category
         else:
             if response.status_code < 400:
                 return _decoded(response)
             if response.status_code not in _RETRYABLE_STATUS:
                 raise SourceRequestError(
-                    f"{url} returned HTTP {response.status_code}", "DISCOVERY_ERROR"
+                    f"{url} returned HTTP {response.status_code}", error_category
                 )
             last_error = f"HTTP {response.status_code}"
-            category = "RATE_LIMIT" if response.status_code == 429 else "NETWORK_ERROR"
+            category = "RATE_LIMIT" if response.status_code == 429 else transient_category
             explicit_delay = _retry_after(response)
             if attempt < retries:
                 await asyncio.sleep(
@@ -106,12 +116,15 @@ async def request_json(
     url: str,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """GET and parse a JSON object, treating malformed bodies as a source failure."""
+    """Call a provider URL and parse a JSON object, treating malformed bodies as a failure."""
+    category: ErrorCategory = kwargs.get("error_category", "DISCOVERY_ERROR")
     body = await request_text(client, url, **kwargs)
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as error:
-        raise SourceRequestError(f"{url} returned invalid JSON: {error}") from error
+        raise SourceRequestError(f"{url} returned invalid JSON: {error}", category) from error
     if not isinstance(payload, dict):
-        raise SourceRequestError(f"{url} returned {type(payload).__name__}, expected an object")
+        raise SourceRequestError(
+            f"{url} returned {type(payload).__name__}, expected an object", category
+        )
     return payload
