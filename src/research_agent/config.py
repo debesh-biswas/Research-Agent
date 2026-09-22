@@ -83,6 +83,20 @@ class ModelSettings(StrictModel):
     nim: NimEndpointSettings = Field(default_factory=NimEndpointSettings)
 
 
+class QuerySettings(StrictModel):
+    """Bounds for a generated search plan; TRD section 17 asks for roughly five to twenty."""
+
+    min_queries: int = Field(default=5, gt=0)
+    max_queries: int = Field(default=20, gt=0)
+    history_syntheses: int = Field(default=1, ge=0)
+
+    @model_validator(mode="after")
+    def require_monotonic_bounds(self) -> "QuerySettings":
+        if self.min_queries > self.max_queries:
+            raise ValueError("min_queries cannot exceed max_queries")
+        return self
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -105,6 +119,7 @@ class ApplicationSettings(BaseSettings):
     deduplication: DeduplicationSettings = Field(default_factory=DeduplicationSettings)
     sources: DiscoveryClientSettings = Field(default_factory=DiscoveryClientSettings)
     models: ModelSettings = Field(default_factory=ModelSettings)
+    queries: QuerySettings = Field(default_factory=QuerySettings)
 
     @classmethod
     def settings_customise_sources(
@@ -178,6 +193,7 @@ class TopicSettings(StrictModel):
     name: str = Field(min_length=1)
     enabled: bool = True
     lookback_days: int = Field(default=10, gt=0)
+    keywords: list[str] = Field(default_factory=list)
     classifier: ClassifierSettings = Field(default_factory=ClassifierSettings)
     discovery: DiscoverySettings = Field(default_factory=DiscoverySettings)
     limits: ResourceLimits = Field(default_factory=ResourceLimits)

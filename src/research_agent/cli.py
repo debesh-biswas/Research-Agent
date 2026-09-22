@@ -1,6 +1,7 @@
 """Command-line interface for Research Agent."""
 
 import asyncio
+import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, cast
@@ -22,6 +23,8 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
+from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.queries import QueryPlan
 from research_agent.models.base import (
     Capability,
     ModelMessage,
@@ -29,7 +32,10 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import build_router
+from research_agent.queries.planner import QueryPlanner
 from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.queries import SqliteQueryPlanRepository
+from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
     TopicStoreError,
@@ -93,13 +99,16 @@ def validate_config(
     )
 
 
-def _open_repository(settings_path: Path, topics_path: Path) -> SqliteTopicRepository:
+def _open_connection(settings_path: Path, topics_path: Path) -> sqlite3.Connection:
     configuration = ApplicationSettings(**_load_yaml_mapping(settings_path))
     connection = connect(configuration.data_directory / "research_agent.db")
     apply_migrations(connection)
-    repository = SqliteTopicRepository(connection)
-    bootstrap(repository, topics_path)
-    return repository
+    bootstrap(SqliteTopicRepository(connection), topics_path)
+    return connection
+
+
+def _open_repository(settings_path: Path, topics_path: Path) -> SqliteTopicRepository:
+    return SqliteTopicRepository(_open_connection(settings_path, topics_path))
 
 
 SettingsOption = Annotated[
@@ -113,6 +122,9 @@ def add_topic(
     topic_id: Annotated[str, typer.Option("--id", help="Unique topic identifier.")],
     name: Annotated[str, typer.Option("--name", help="Human-readable topic name.")],
     lookback_days: Annotated[int, typer.Option(help="Discovery lookback window in days.")] = 10,
+    keyword: Annotated[
+        list[str] | None, typer.Option("--keyword", help="Known keyword; repeat for more.")
+    ] = None,
     active_classifier: Annotated[str, typer.Option(help="Active classifier (A or B).")] = "A",
     shadow_classifier: Annotated[
         str | None, typer.Option(help="Optional shadow classifier (A or B).")
@@ -140,6 +152,7 @@ def add_topic(
                 "name": name,
                 "enabled": enabled,
                 "lookback_days": lookback_days,
+                "keywords": keyword or [],
                 "classifier": {"active": active_classifier, "shadow": shadow_classifier},
                 "discovery": {
                     "openalex": openalex,
@@ -337,3 +350,53 @@ async def _model_check(
         return await router.generate(
             cast(Capability, capability), [ModelMessage(role="user", content=prompt)]
         )
+
+
+queries_app = typer.Typer(help="Plan the searches a topic should run.")
+app.add_typer(queries_app, name="queries")
+
+
+@queries_app.command("plan")
+def plan_queries(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    save: Annotated[bool, typer.Option(help="Persist the resolved plan for later audit.")] = True,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Expand one topic into a bounded search plan, falling back when inference is unavailable."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to plan queries: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    history = SqliteResultRepository(connection).recent_syntheses(
+        topic_id, limit=application.queries.history_syntheses
+    )
+    plan = asyncio.run(_plan_queries(application, topic, history))
+
+    if save:
+        SqliteQueryPlanRepository(connection).save(plan)
+    provider = plan.model_provider or "none"
+    typer.echo(
+        f"{len(plan.queries)} query(s) for {topic.id} "
+        f"[{plan.prompt_version} via {provider}/{plan.model_name or 'fallback'}"
+        f"{', fell back to the base query' if plan.fell_back else ''}]"
+    )
+    for query in plan.queries:
+        typer.echo(query)
+
+
+async def _plan_queries(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    history: list[WeeklySynthesis],
+) -> QueryPlan:
+    async with _http_client(application.models.local.timeout_seconds) as client:
+        planner = QueryPlanner(build_router(client, application), application.queries)
+        return await planner.plan(topic, history)

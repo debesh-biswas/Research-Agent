@@ -8,6 +8,7 @@ from research_agent.config import (
     ClassifierSettings,
     ConcurrencySettings,
     ConfigurationError,
+    QuerySettings,
     ResourceLimits,
     load_configuration,
 )
@@ -76,3 +77,15 @@ def test_malformed_yaml_has_actionable_error(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="invalid YAML"):
         load_configuration(settings_path, topics_path)
+
+
+def test_query_bounds_must_be_monotonic() -> None:
+    with pytest.raises(ValidationError):
+        QuerySettings(min_queries=21, max_queries=20)
+
+
+def test_query_settings_default_to_the_trd_range() -> None:
+    settings = ApplicationSettings()
+
+    assert (settings.queries.min_queries, settings.queries.max_queries) == (5, 20)
+    assert settings.queries.history_syntheses == 1

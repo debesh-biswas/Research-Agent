@@ -148,6 +148,21 @@ MIGRATIONS: tuple[str, ...] = (
     "CREATE INDEX papers_arxiv_idx ON papers(arxiv_id)",
     "CREATE INDEX runs_topic_idx ON runs(topic_id, started_at)",
     "CREATE INDEX syntheses_topic_idx ON weekly_syntheses(topic_id, created_at)",
+    "ALTER TABLE topics ADD COLUMN keywords_json TEXT NOT NULL DEFAULT '[]'",
+    """
+    CREATE TABLE query_plans (
+        id TEXT PRIMARY KEY,
+        run_id TEXT REFERENCES runs(id) ON DELETE CASCADE,
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        model_provider TEXT,
+        model_name TEXT,
+        fell_back INTEGER NOT NULL,
+        payload_json TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX query_plans_topic_idx ON query_plans(topic_id, created_at)",
 )
 
 
