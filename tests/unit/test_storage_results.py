@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import date
 
@@ -122,3 +123,21 @@ def test_gaps_and_ideas_round_trip(connection: sqlite3.Connection) -> None:
     assert repository.gaps_for(run_id) == gaps
     assert repository.ideas_for(run_id) == ideas
     assert repository.gaps_for("other_run") == []
+
+
+def test_classifier_a_provenance_survives_as_the_raw_response(
+    connection: sqlite3.Connection,
+) -> None:
+    repository, run_id, paper_id = _context(connection)
+    provenance = {
+        "version": "classifier_a.v1",
+        "lexical_score": 0.75,
+        "embedding_score": None,
+        "embedding_weight": 0.0,
+        "matched_terms": ["spatial intelligence"],
+    }
+
+    repository.save_classification(run_id, _classification(paper_id), raw_response=provenance)
+
+    stored = connection.execute("SELECT raw_response_json FROM classifications").fetchone()
+    assert json.loads(stored["raw_response_json"]) == provenance

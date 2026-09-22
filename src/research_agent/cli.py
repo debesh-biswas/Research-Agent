@@ -11,6 +11,8 @@ import typer
 from pydantic import ValidationError
 
 from research_agent import __version__
+from research_agent.classifiers.classifier_a import ClassifierA
+from research_agent.classifiers.embeddings import EmbeddingClient
 from research_agent.config import (
     ApplicationSettings,
     ConfigurationError,
@@ -23,8 +25,9 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
-from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.analysis import ClassificationResult, WeeklySynthesis
 from research_agent.domain.queries import QueryPlan
+from research_agent.domain.runs import RunSummary
 from research_agent.models.base import (
     Capability,
     ModelMessage,
@@ -32,10 +35,12 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import build_router
-from research_agent.queries.planner import QueryPlanner
+from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.queries import SqliteQueryPlanRepository
 from research_agent.storage.results import SqliteResultRepository
+from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
     TopicStoreError,
@@ -400,3 +405,119 @@ async def _plan_queries(
     async with _http_client(application.models.local.timeout_seconds) as client:
         planner = QueryPlanner(build_router(client, application), application.queries)
         return await planner.plan(topic, history)
+
+
+@app.command("classify")
+def classify(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    query: Annotated[
+        str | None, typer.Option("--query", help="Search query; defaults to the topic base query.")
+    ] = None,
+    days: Annotated[
+        int | None, typer.Option(help="Lookback window; defaults to the topic setting.")
+    ] = None,
+    limit: Annotated[
+        int | None, typer.Option(help="Maximum candidates; defaults to the topic limit.")
+    ] = None,
+    save: Annotated[bool, typer.Option(help="Persist a run with the resulting verdicts.")] = True,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Discover papers for one topic and triage them with the active classifier."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to classify: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    # The base query is the deterministic first entry of any plan, so no inference is needed here.
+    search = query or base_query(topic)
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=days or topic.lookback_days)
+    discovered, verdicts = asyncio.run(
+        _classify(
+            application, topic, search, start_date, end_date, limit or topic.limits.max_candidates
+        )
+    )
+
+    typer.echo(
+        f"{len(verdicts)} verdict(s) for {topic.id} via classifier "
+        f"{topic.classifier.active} on '{search}' ({start_date} to {end_date})."
+    )
+    for error_record in discovered.errors:
+        typer.echo(f"source error: {error_record.category} {error_record.message}", err=True)
+    for result, _ in verdicts:
+        typer.echo(
+            f"{result.relevance}\t{result.action}\t{result.relevance_score}\t"
+            f"{result.paper_type}\t{result.paper_id}"
+        )
+
+    if save:
+        run_id = _save_classifications(connection, application, topic, discovered, verdicts)
+        typer.echo(f"saved as run {run_id}")
+
+
+async def _classify(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    query: str,
+    start_date: date,
+    end_date: date,
+    limit: int,
+) -> tuple[DiscoveryResult, list[tuple[ClassificationResult, dict[str, object]]]]:
+    discovered = await _discover(application, topic, query, start_date, end_date, limit)
+    candidates = discovered.candidates[: topic.limits.max_classified]
+    timeout = application.models.local.timeout_seconds
+    async with _http_client(timeout) as client:
+        classifier = ClassifierA(
+            application.classifier_a,
+            _embedder(client, application),
+        )
+        return discovered, await classifier.explain_many(candidates, topic)
+
+
+def _embedder(
+    client: httpx.AsyncClient, application: ApplicationSettings
+) -> EmbeddingClient | None:
+    """Only build an embedding client when one is configured; otherwise scoring stays lexical."""
+    model = application.classifier_a.embedding_model
+    if model is None:
+        return None
+    return EmbeddingClient(client, model, application.models.local)
+
+
+def _save_classifications(
+    connection: sqlite3.Connection,
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    discovered: DiscoveryResult,
+    verdicts: list[tuple[ClassificationResult, dict[str, object]]],
+) -> str:
+    """Persist one run, its papers, and every verdict with the provenance that produced it."""
+    runs = SqliteRunRepository(connection)
+    papers = SqlitePaperRepository(connection)
+    results = SqliteResultRepository(connection)
+    record = runs.start(topic.id, topic.classifier.active, topic.classifier.shadow)
+    by_id = {candidate.canonical_id: candidate for candidate in discovered.candidates}
+    for result, provenance in verdicts:
+        candidate = by_id.get(result.paper_id)
+        if candidate is not None:
+            papers.upsert(candidate)
+        results.save_classification(record.id, result, raw_response=provenance)
+    runs.complete(
+        record.id,
+        RunSummary(
+            candidates_discovered=sum(discovered.counts.values()),
+            candidates_deduplicated=len(discovered.candidates),
+            papers_classified=len(verdicts),
+            models_used=[application.classifier_a.embedding_model or "lexical"],
+            errors=len(discovered.errors),
+        ),
+        status="degraded" if discovered.errors else "completed",
+    )
+    return record.id
