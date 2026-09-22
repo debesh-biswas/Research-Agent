@@ -41,6 +41,22 @@ class DeduplicationSettings(StrictModel):
     require_author_overlap: bool = True
 
 
+class SourceSettings(StrictModel):
+    requests_per_second: float = Field(default=2.0, gt=0)
+    timeout_seconds: float = Field(default=20.0, gt=0)
+    max_page_size: int = Field(default=100, gt=0)
+
+
+class DiscoveryClientSettings(StrictModel):
+    """Per-provider pacing and credentials; limits differ, so they are never global."""
+
+    openalex: SourceSettings = SourceSettings(requests_per_second=5.0)
+    semantic_scholar: SourceSettings = SourceSettings(requests_per_second=0.2)
+    arxiv: SourceSettings = SourceSettings(requests_per_second=0.33)
+    openalex_mailto: str | None = None
+    semantic_scholar_api_key: str | None = None
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -61,6 +77,7 @@ class ApplicationSettings(BaseSettings):
     concurrency: ConcurrencySettings = Field(default_factory=ConcurrencySettings)
     retries: RetrySettings = Field(default_factory=RetrySettings)
     deduplication: DeduplicationSettings = Field(default_factory=DeduplicationSettings)
+    sources: DiscoveryClientSettings = Field(default_factory=DiscoveryClientSettings)
 
     @classmethod
     def settings_customise_sources(

@@ -1,8 +1,9 @@
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 
 from research_agent.config import TopicSettings
@@ -33,3 +34,19 @@ def candidate(**overrides: object) -> PaperCandidate:
     }
     payload.update(overrides)
     return PaperCandidate.model_validate(payload)
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "discovery"
+
+
+def fixture_text(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def mock_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.AsyncClient:
+    """An httpx client whose requests are served by ``handler`` instead of the network."""
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+def fixed_clock() -> datetime:
+    return datetime(2026, 9, 22, tzinfo=UTC)

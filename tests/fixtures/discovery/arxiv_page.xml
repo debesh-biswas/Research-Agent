@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2409.00001v2</id>
+    <title>Embodied Spatial Intelligence for Robots</title>
+    <summary>Spatial memory helps agents.</summary>
+    <published>2026-09-18T00:00:00Z</published>
+    <author><name>Ada Lovelace</name></author>
+    <author><name>Alan Turing</name></author>
+    <link href="http://arxiv.org/abs/2409.00001v2" rel="alternate" type="text/html"/>
+    <link href="http://arxiv.org/pdf/2409.00001v2" rel="related" title="pdf" type="application/pdf"/>
+    <arxiv:doi>10.1234/abcd</arxiv:doi>
+    <arxiv:journal_ref>CoRL 2026</arxiv:journal_ref>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2408.99999v1</id>
+    <title>Outside The Window</title>
+    <summary>Older work.</summary>
+    <published>2026-08-01T00:00:00Z</published>
+    <author><name>Grace Hopper</name></author>
+  </entry>
+  <entry>
+    <summary>No title, no id.</summary>
+  </entry>
+</feed>
