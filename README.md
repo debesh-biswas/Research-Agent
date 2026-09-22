@@ -71,8 +71,3 @@ Runtime code uses the `src/research_agent` package. The initial package boundari
 homes for domain models, workflow orchestration, discovery adapters, classifiers, model
 providers, documents, storage, observability, and deterministic utilities. Provider-specific
 logic must remain behind interfaces, and LangGraph will be used only for orchestration.
-
-`AGENTS.md` holds the required coding, testing, Git, security, and handoff conventions. It is a
-local, untracked file (also exposed as `CLAUDE.md`) and is not distributed with the repository.
-Current engineering state and next steps are recorded in
-[`UPDATES.md`](UPDATES.md).
