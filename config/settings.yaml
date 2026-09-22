@@ -1,0 +1,17 @@
+storage_backend: local
+metadata_backend: sqlite
+scheduler_backend: launchd
+strong_model_provider: local
+log_level: INFO
+data_directory: data
+
+concurrency:
+  discovery: 3
+  downloads: 4
+  analysis: 2
+
+retries:
+  academic_apis: 3
+  nim: 2
+  classifier_repair: 1
+  pdf_download: 2

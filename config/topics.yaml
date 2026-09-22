@@ -1,0 +1,20 @@
+topics:
+  - id: embodied_spatial_intelligence
+    name: Embodied Spatial Intelligence
+    enabled: true
+    lookback_days: 10
+
+    classifier:
+      active: A
+      shadow: B
+
+    discovery:
+      openalex: true
+      semantic_scholar: true
+      arxiv: true
+
+    limits:
+      max_candidates: 500
+      max_classified: 250
+      max_downloads: 50
+      max_deep_reads: 15
