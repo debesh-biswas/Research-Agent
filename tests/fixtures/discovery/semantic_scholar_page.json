@@ -1,0 +1,26 @@
+{
+  "total": 3,
+  "offset": 0,
+  "data": [
+    {
+      "paperId": "s2-1",
+      "title": "Embodied Spatial Intelligence for Robots",
+      "abstract": "Spatial memory helps agents.",
+      "publicationDate": "2026-09-18",
+      "venue": "CoRL",
+      "citationCount": 6,
+      "url": "https://semanticscholar.org/paper/s2-1",
+      "openAccessPdf": {"url": "https://example.org/s2-1.pdf"},
+      "externalIds": {"DOI": "10.1234/abcd", "ArXiv": "2409.00001"},
+      "authors": [{"name": "Ada Lovelace"}, {"name": "Alan Turing"}]
+    },
+    {
+      "paperId": "s2-2",
+      "title": "Outside The Window",
+      "publicationDate": "2026-08-01",
+      "externalIds": {},
+      "authors": []
+    },
+    {"paperId": null, "title": "Broken Record"}
+  ]
+}
