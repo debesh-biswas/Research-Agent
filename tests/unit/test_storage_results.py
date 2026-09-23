@@ -141,3 +141,31 @@ def test_classifier_a_provenance_survives_as_the_raw_response(
 
     stored = connection.execute("SELECT raw_response_json FROM classifications").fetchone()
     assert json.loads(stored["raw_response_json"]) == provenance
+
+
+def test_classification_pairs_split_active_from_shadow(connection: sqlite3.Connection) -> None:
+    repository, run_id, paper_id = _context(connection)
+    active = _classification(paper_id)
+    shadow = _classification(paper_id, name="classifier_b")
+    repository.save_classification(run_id, active)
+    repository.save_classification(run_id, shadow, is_active=False)
+
+    assert repository.classification_pairs(TOPIC_ID) == ([active], [shadow])
+
+
+def test_classification_pairs_are_limited_to_recent_runs(connection: sqlite3.Connection) -> None:
+    repository, first_run, paper_id = _context(connection)
+    repository.save_classification(first_run, _classification(paper_id))
+    second_run = SqliteRunRepository(connection).start(TOPIC_ID).id
+    repository.save_classification(second_run, _classification(paper_id, name="classifier_b"))
+
+    active, _ = repository.classification_pairs(TOPIC_ID, limit=1)
+
+    assert [result.classifier_name for result in active] == ["classifier_b"]
+
+
+def test_classification_pairs_ignore_other_topics(connection: sqlite3.Connection) -> None:
+    repository, run_id, paper_id = _context(connection)
+    repository.save_classification(run_id, _classification(paper_id))
+
+    assert repository.classification_pairs("another_topic") == ([], [])

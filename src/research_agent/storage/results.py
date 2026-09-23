@@ -33,6 +33,10 @@ class ResultRepository(Protocol):
 
     def classifications_for(self, run_id: str) -> list[ClassificationResult]: ...
 
+    def classification_pairs(
+        self, topic_id: str, limit: int = 4
+    ) -> tuple[list[ClassificationResult], list[ClassificationResult]]: ...
+
     def save_analysis(self, run_id: str, analysis: PaperAnalysis) -> None: ...
 
     def analysis_for(self, paper_id: str) -> PaperAnalysis | None: ...
@@ -99,6 +103,26 @@ class SqliteResultRepository:
         )
         rows = self._connection.execute(query, (run_id,)).fetchall()
         return [ClassificationResult.model_validate_json(row["payload_json"]) for row in rows]
+
+    def classification_pairs(
+        self, topic_id: str, limit: int = 4
+    ) -> tuple[list[ClassificationResult], list[ClassificationResult]]:
+        """Active and shadow verdicts from a topic's most recent runs, for comparison."""
+        rows = self._connection.execute(
+            "SELECT c.is_active, c.payload_json FROM classifications c "
+            "JOIN runs r ON r.id = c.run_id WHERE r.topic_id = ? AND r.id IN ("
+            "   SELECT id FROM runs WHERE topic_id = ? ORDER BY started_at DESC, id DESC LIMIT ?"
+            ") ORDER BY c.created_at, c.id",
+            (topic_id, topic_id, limit),
+        ).fetchall()
+        verdicts = [
+            (bool(row["is_active"]), ClassificationResult.model_validate_json(row["payload_json"]))
+            for row in rows
+        ]
+        return (
+            [result for is_active, result in verdicts if is_active],
+            [result for is_active, result in verdicts if not is_active],
+        )
 
     def save_analysis(self, run_id: str, analysis: PaperAnalysis) -> None:
         with self._connection:

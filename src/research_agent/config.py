@@ -113,6 +113,12 @@ class ClassifierASettings(StrictModel):
         return self
 
 
+class ClassifierBSettings(StrictModel):
+    """Bounds for the LLM classifier prompt; the runtime and model come from `models.local`."""
+
+    max_abstract_chars: int = Field(default=2000, gt=0)
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -137,6 +143,7 @@ class ApplicationSettings(BaseSettings):
     models: ModelSettings = Field(default_factory=ModelSettings)
     queries: QuerySettings = Field(default_factory=QuerySettings)
     classifier_a: ClassifierASettings = Field(default_factory=ClassifierASettings)
+    classifier_b: ClassifierBSettings = Field(default_factory=ClassifierBSettings)
 
     @classmethod
     def settings_customise_sources(

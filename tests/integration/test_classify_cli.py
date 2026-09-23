@@ -190,3 +190,84 @@ def test_an_unknown_topic_exits_non_zero(settings_path: Path, topics_path: Path)
 
 async def _no_sleep(delay: float) -> None:
     return None
+
+
+_VERDICT = (
+    '{"relevance": "medium", "relevance_score": 0.5, "paper_type": "method", '
+    '"action": "summarize", "confidence": 0.7, "reason_short": "related work"}'
+)
+
+
+@pytest.fixture
+def shadow_topics_path(tmp_path: Path) -> Path:
+    path = tmp_path / "topics.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "topics": [
+                    {
+                        "id": TOPIC_ID,
+                        "name": "Spatial Intelligence",
+                        "keywords": ["embodied navigation"],
+                        "classifier": {"active": "A", "shadow": "B"},
+                        "discovery": {
+                            "openalex": True,
+                            "semantic_scholar": False,
+                            "arxiv": False,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _routing_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.path.endswith("/chat/completions"):
+        return httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": _VERDICT}}]}
+        )
+    return httpx.Response(200, json=_OPENALEX_PAGE)
+
+
+def test_shadow_mode_stores_both_verdicts_with_one_active(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, shadow_topics_path: Path, tmp_path: Path
+) -> None:
+    result = run_classify(monkeypatch, settings_path, shadow_topics_path, _routing_handler)
+
+    assert result.exit_code == 0, result.output
+    assert "shadow classifier B: 2 verdict(s)" in result.output
+    assert counts(tmp_path) == {"runs": 1, "papers": 2, "classifications": 4}
+
+    connection = sqlite3.connect(tmp_path / "data" / "research_agent.db")
+    try:
+        rows = connection.execute(
+            "SELECT classifier_name, is_active FROM classifications ORDER BY classifier_name"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert sorted(rows) == [
+        ("classifier_a", 1),
+        ("classifier_a", 1),
+        ("classifier_b", 0),
+        ("classifier_b", 0),
+    ]
+
+
+def test_a_failing_shadow_model_leaves_the_active_verdicts_intact(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, shadow_topics_path: Path, tmp_path: Path
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/chat/completions"):
+            return httpx.Response(503)
+        return httpx.Response(200, json=_OPENALEX_PAGE)
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    result = run_classify(monkeypatch, settings_path, shadow_topics_path, handler)
+
+    assert result.exit_code == 0, result.output
+    assert "2 verdict(s)" in result.output
+    assert "shadow classifier B: 0 verdict(s)" in result.output
+    assert counts(tmp_path) == {"runs": 1, "papers": 2, "classifications": 2}
