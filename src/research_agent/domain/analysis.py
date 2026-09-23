@@ -21,6 +21,17 @@ class ClassificationResult(StrictModel):
     latency_ms: int | None = Field(default=None, ge=0)
 
 
+class ClassifierVerdict(StrictModel):
+    """The part of a verdict a model is allowed to produce; provenance is added by the adapter."""
+
+    relevance: Literal["high", "medium", "low"]
+    relevance_score: float | None = Field(default=None, ge=0, le=1)
+    paper_type: Literal["method", "dataset", "benchmark", "survey", "application", "other"]
+    action: Literal["ignore", "summarize", "deep_read"]
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    reason_short: str | None = None
+
+
 class Claim(StrictModel):
     """A claim with best-effort provenance back into the parsed paper."""
 

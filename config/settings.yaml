@@ -32,3 +32,7 @@ classifier_a:
   embedding_weight: 0.5
   # Set a local embedding model to blend semantic similarity into the lexical score.
   # embedding_model: nomic-embed-text
+
+classifier_b:
+  # The runtime and model come from models.local; this only bounds the prompt.
+  max_abstract_chars: 2000

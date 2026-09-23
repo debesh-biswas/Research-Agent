@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from research_agent.config import (
+    ClassifierSettings,
     ConfigurationError,
     TopicsConfiguration,
     TopicSettings,
@@ -45,6 +46,8 @@ class TopicRepository(Protocol):
     def list(self) -> list[TopicSettings]: ...
 
     def set_enabled(self, topic_id: str, enabled: bool) -> None: ...
+
+    def set_classifier(self, topic_id: str, active: str, shadow: str | None) -> None: ...
 
 
 def _now() -> str:
@@ -137,6 +140,18 @@ class SqliteTopicRepository:
             cursor = self._connection.execute(
                 "UPDATE topics SET enabled = ?, updated_at = ? WHERE id = ?",
                 (int(enabled), _now(), topic_id),
+            )
+        if cursor.rowcount == 0:
+            raise TopicNotFoundError(f"unknown topic: {topic_id}")
+
+    def set_classifier(self, topic_id: str, active: str, shadow: str | None) -> None:
+        """Switch which classifier routes for one topic; validation happens before the write."""
+        ClassifierSettings(active=active, shadow=shadow)  # type: ignore[arg-type]
+        with self._connection:
+            cursor = self._connection.execute(
+                "UPDATE topics SET active_classifier = ?, shadow_classifier = ?, updated_at = ? "
+                "WHERE id = ?",
+                (active, shadow, _now(), topic_id),
             )
         if cursor.rowcount == 0:
             raise TopicNotFoundError(f"unknown topic: {topic_id}")

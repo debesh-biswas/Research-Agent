@@ -1,7 +1,9 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from research_agent.config import TopicSettings
 from research_agent.storage.database import MIGRATIONS, apply_migrations, connect
@@ -151,3 +153,32 @@ def test_a_topic_without_keywords_reads_back_empty(tmp_path: Path) -> None:
 
     assert stored is not None
     assert stored.keywords == []
+
+
+def test_the_classifier_can_be_switched_for_one_topic(connection: sqlite3.Connection) -> None:
+    repository = SqliteTopicRepository(connection)
+    repository.add(_topic("switchable"))
+
+    repository.set_classifier("switchable", "B", "A")
+
+    topic = repository.get("switchable")
+    assert topic is not None
+    assert (topic.classifier.active, topic.classifier.shadow) == ("B", "A")
+
+
+def test_a_shadow_equal_to_the_active_classifier_is_rejected(
+    connection: sqlite3.Connection,
+) -> None:
+    repository = SqliteTopicRepository(connection)
+    repository.add(_topic("strict"))
+
+    with pytest.raises(ValidationError):
+        repository.set_classifier("strict", "B", "B")
+
+    topic = repository.get("strict")
+    assert topic is not None and topic.classifier.active == "A"
+
+
+def test_switching_an_unknown_topic_is_rejected(connection: sqlite3.Connection) -> None:
+    with pytest.raises(TopicNotFoundError):
+        SqliteTopicRepository(connection).set_classifier("missing", "B", None)

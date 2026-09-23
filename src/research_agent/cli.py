@@ -11,8 +11,9 @@ import typer
 from pydantic import ValidationError
 
 from research_agent import __version__
-from research_agent.classifiers.classifier_a import ClassifierA
-from research_agent.classifiers.embeddings import EmbeddingClient
+from research_agent.classifiers.comparison import compare, render
+from research_agent.classifiers.factory import build_classifier
+from research_agent.classifiers.runner import ClassifierOutcome, ClassifierRunner
 from research_agent.config import (
     ApplicationSettings,
     ConfigurationError,
@@ -25,7 +26,7 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
-from research_agent.domain.analysis import ClassificationResult, WeeklySynthesis
+from research_agent.domain.analysis import WeeklySynthesis
 from research_agent.domain.queries import QueryPlan
 from research_agent.domain.runs import RunSummary
 from research_agent.models.base import (
@@ -439,26 +440,33 @@ def classify(
     search = query or base_query(topic)
     end_date = datetime.now(UTC).date()
     start_date = end_date - timedelta(days=days or topic.lookback_days)
-    discovered, verdicts = asyncio.run(
+    discovered, outcome = asyncio.run(
         _classify(
             application, topic, search, start_date, end_date, limit or topic.limits.max_candidates
         )
     )
 
     typer.echo(
-        f"{len(verdicts)} verdict(s) for {topic.id} via classifier "
+        f"{len(outcome.active)} verdict(s) for {topic.id} via classifier "
         f"{topic.classifier.active} on '{search}' ({start_date} to {end_date})."
     )
+    if topic.classifier.shadow is not None:
+        shadow = (
+            f"shadow classifier {topic.classifier.shadow} failed: {outcome.shadow_error}"
+            if outcome.shadow_error
+            else f"shadow classifier {topic.classifier.shadow}: {len(outcome.shadow)} verdict(s)"
+        )
+        typer.echo(shadow)
     for error_record in discovered.errors:
         typer.echo(f"source error: {error_record.category} {error_record.message}", err=True)
-    for result, _ in verdicts:
+    for result, _ in outcome.active:
         typer.echo(
             f"{result.relevance}\t{result.action}\t{result.relevance_score}\t"
             f"{result.paper_type}\t{result.paper_id}"
         )
 
     if save:
-        run_id = _save_classifications(connection, application, topic, discovered, verdicts)
+        run_id = _save_classifications(connection, application, topic, discovered, outcome)
         typer.echo(f"saved as run {run_id}")
 
 
@@ -469,26 +477,18 @@ async def _classify(
     start_date: date,
     end_date: date,
     limit: int,
-) -> tuple[DiscoveryResult, list[tuple[ClassificationResult, dict[str, object]]]]:
+) -> tuple[DiscoveryResult, ClassifierOutcome]:
     discovered = await _discover(application, topic, query, start_date, end_date, limit)
     candidates = discovered.candidates[: topic.limits.max_classified]
     timeout = application.models.local.timeout_seconds
     async with _http_client(timeout) as client:
-        classifier = ClassifierA(
-            application.classifier_a,
-            _embedder(client, application),
+        runner = ClassifierRunner(
+            build_classifier(topic.classifier.active, client, application),
+            None
+            if topic.classifier.shadow is None
+            else build_classifier(topic.classifier.shadow, client, application),
         )
-        return discovered, await classifier.explain_many(candidates, topic)
-
-
-def _embedder(
-    client: httpx.AsyncClient, application: ApplicationSettings
-) -> EmbeddingClient | None:
-    """Only build an embedding client when one is configured; otherwise scoring stays lexical."""
-    model = application.classifier_a.embedding_model
-    if model is None:
-        return None
-    return EmbeddingClient(client, model, application.models.local)
+        return discovered, await runner.run(candidates, topic)
 
 
 def _save_classifications(
@@ -496,28 +496,84 @@ def _save_classifications(
     application: ApplicationSettings,
     topic: TopicSettings,
     discovered: DiscoveryResult,
-    verdicts: list[tuple[ClassificationResult, dict[str, object]]],
+    outcome: ClassifierOutcome,
 ) -> str:
-    """Persist one run, its papers, and every verdict with the provenance that produced it."""
+    """Persist one run, its papers, and every verdict; shadow rows are stored but never route."""
     runs = SqliteRunRepository(connection)
     papers = SqlitePaperRepository(connection)
     results = SqliteResultRepository(connection)
     record = runs.start(topic.id, topic.classifier.active, topic.classifier.shadow)
     by_id = {candidate.canonical_id: candidate for candidate in discovered.candidates}
-    for result, provenance in verdicts:
+    for result, provenance in outcome.active:
         candidate = by_id.get(result.paper_id)
         if candidate is not None:
             papers.upsert(candidate)
         results.save_classification(record.id, result, raw_response=provenance)
+    for result, provenance in outcome.shadow:
+        if result.paper_id in {active.paper_id for active, _ in outcome.active}:
+            results.save_classification(record.id, result, is_active=False, raw_response=provenance)
     runs.complete(
         record.id,
         RunSummary(
             candidates_discovered=sum(discovered.counts.values()),
             candidates_deduplicated=len(discovered.candidates),
-            papers_classified=len(verdicts),
+            papers_classified=len(outcome.active),
             models_used=[application.classifier_a.embedding_model or "lexical"],
-            errors=len(discovered.errors),
+            errors=len(discovered.errors) + (1 if outcome.shadow_error else 0),
         ),
-        status="degraded" if discovered.errors else "completed",
+        status="degraded" if discovered.errors or outcome.shadow_error else "completed",
     )
     return record.id
+
+
+classifier_app = typer.Typer(help="Choose which classifier routes a topic.")
+app.add_typer(classifier_app, name="classifier")
+
+
+@classifier_app.command("set")
+def set_classifier(
+    active: Annotated[str, typer.Argument(help="Classifier that controls routing: A or B.")],
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    shadow: Annotated[
+        str | None,
+        typer.Option("--shadow", help="Classifier to run for comparison only, or 'none'."),
+    ] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Switch a topic's active and shadow classifiers; no workflow code changes."""
+    resolved = None if shadow is None or shadow.lower() == "none" else shadow.upper()
+    try:
+        repository = _open_repository(settings, topics)
+        repository.set_classifier(topic_id, active.upper(), resolved)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to set classifier: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    typer.echo(f"{topic_id}: active {active.upper()}, shadow {resolved or 'none'}")
+
+
+@app.command("compare-classifiers")
+def compare_classifiers(
+    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
+    runs: Annotated[int, typer.Option(help="How many recent runs to compare.")] = 4,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Report how the active and shadow classifiers differ on the papers they both judged."""
+    try:
+        connection = _open_connection(settings, topics)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to compare classifiers: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    active, shadow = SqliteResultRepository(connection).classification_pairs(topic_id, runs)
+    if not shadow:
+        typer.echo(
+            f"No shadow verdicts stored for {topic_id}. "
+            "Set a shadow classifier and run 'classify' first.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo(render(compare(active, shadow)))

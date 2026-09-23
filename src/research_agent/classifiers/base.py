@@ -11,6 +11,9 @@ from research_agent.domain.analysis import ClassificationResult
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.runs import ErrorCategory
 
+Provenance = dict[str, object]
+"""The audit payload stored beside a verdict, explaining how a classifier reached it."""
+
 
 class ClassifierError(Exception):
     """A classifier could not produce a verdict; the category feeds the run error taxonomy."""
@@ -33,3 +36,7 @@ class PaperClassifier(Protocol):
     async def classify_many(
         self, papers: list[PaperCandidate], topic: TopicSettings
     ) -> list[ClassificationResult]: ...
+
+    async def explain_many(
+        self, papers: list[PaperCandidate], topic: TopicSettings
+    ) -> list[tuple[ClassificationResult, Provenance]]: ...
