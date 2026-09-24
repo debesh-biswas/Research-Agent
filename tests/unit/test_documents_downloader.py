@@ -5,13 +5,13 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import TOPIC_ID, candidate
 
 from research_agent.config import DocumentSettings
 from research_agent.documents.downloader import PdfDownloader
 from research_agent.domain.papers import PaperCandidate, SourceReference
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.papers import SqlitePaperRepository
+from tests.unit.conftest import TOPIC_ID, candidate
 
 PDF = b"%PDF-1.7\n" + b"x" * 100
 

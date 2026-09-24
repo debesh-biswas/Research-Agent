@@ -3,11 +3,11 @@ import json
 
 import httpx
 import pytest
-from conftest import mock_client
 
 from research_agent.classifiers.base import ClassifierError
 from research_agent.classifiers.embeddings import EmbeddingClient, cosine
 from research_agent.config import ModelEndpointSettings
+from tests.unit.conftest import mock_client
 
 
 def vectors(*values: list[float]) -> dict[str, object]:

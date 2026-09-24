@@ -1,5 +1,4 @@
 import pytest
-from conftest import candidate
 
 from research_agent.classifiers.lexical import (
     PaperType,
@@ -8,6 +7,7 @@ from research_agent.classifiers.lexical import (
     topic_terms,
 )
 from research_agent.config import TopicSettings
+from tests.unit.conftest import candidate
 
 
 def topic(**overrides: object) -> TopicSettings:

@@ -4,7 +4,6 @@ from typing import Any, TypeVar
 
 import httpx
 import pytest
-from conftest import mock_client
 
 from research_agent.discovery.http import (
     MAX_RESPONSE_BYTES,
@@ -13,6 +12,7 @@ from research_agent.discovery.http import (
     request_json,
     request_text,
 )
+from tests.unit.conftest import mock_client
 
 T = TypeVar("T")
 

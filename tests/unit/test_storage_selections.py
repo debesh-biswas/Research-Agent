@@ -1,12 +1,12 @@
 import sqlite3
 
 import pytest
-from conftest import TOPIC_ID, candidate
 
 from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
+from tests.unit.conftest import TOPIC_ID, candidate
 
 
 def _context(connection: sqlite3.Connection) -> tuple[SqliteSelectionRepository, str, str]:

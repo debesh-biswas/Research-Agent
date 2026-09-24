@@ -2,11 +2,11 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from conftest import TOPIC_ID
 
 from research_agent.domain.queries import QueryPlan
 from research_agent.storage.queries import SqliteQueryPlanRepository
 from research_agent.storage.runs import SqliteRunRepository
+from tests.unit.conftest import TOPIC_ID
 
 
 def make_plan(**overrides: object) -> QueryPlan:

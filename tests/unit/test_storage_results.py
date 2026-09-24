@@ -2,8 +2,6 @@ import json
 import sqlite3
 from datetime import date
 
-from conftest import TOPIC_ID, candidate
-
 from research_agent.domain.analysis import (
     Claim,
     ClassificationResult,
@@ -15,6 +13,7 @@ from research_agent.domain.analysis import (
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
+from tests.unit.conftest import TOPIC_ID, candidate
 
 
 def _context(connection: sqlite3.Connection) -> tuple[SqliteResultRepository, str, str]:

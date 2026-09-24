@@ -3,7 +3,6 @@ import json
 
 import httpx
 import pytest
-from conftest import candidate, mock_client
 
 from research_agent.classifiers.base import ClassifierError
 from research_agent.classifiers.classifier_b import ClassifierB
@@ -11,6 +10,7 @@ from research_agent.classifiers.prompts import PROMPT_VERSION
 from research_agent.config import ApplicationSettings, ClassifierBSettings, TopicSettings
 from research_agent.domain.analysis import ClassificationResult
 from research_agent.models.router import build_router
+from tests.unit.conftest import candidate, mock_client
 
 VERDICT = {
     "relevance": "high",
