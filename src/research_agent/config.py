@@ -127,6 +127,15 @@ class SelectionSettings(StrictModel):
     """When true, a paper the classifier marked `ignore` is never selected whatever it scored."""
 
 
+class DocumentSettings(StrictModel):
+    """Pacing and safety limits for PDF acquisition; downloaded content is untrusted input."""
+
+    max_pdf_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    timeout_seconds: float = Field(default=60.0, gt=0)
+    requests_per_second: float = Field(default=2.0, gt=0)
+    user_agent: str = "research-agent/0.1"
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -153,6 +162,7 @@ class ApplicationSettings(BaseSettings):
     classifier_a: ClassifierASettings = Field(default_factory=ClassifierASettings)
     classifier_b: ClassifierBSettings = Field(default_factory=ClassifierBSettings)
     selection: SelectionSettings = Field(default_factory=SelectionSettings)
+    documents: DocumentSettings = Field(default_factory=DocumentSettings)
 
     @classmethod
     def settings_customise_sources(

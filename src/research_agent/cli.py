@@ -26,9 +26,11 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
+from research_agent.documents.downloader import DownloadOutcome, PdfDownloader
 from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
-from research_agent.domain.runs import RunSummary
+from research_agent.domain.runs import ErrorRecord, RunSummary
 from research_agent.domain.selection import SelectionPlan
 from research_agent.models.base import (
     Capability,
@@ -39,6 +41,7 @@ from research_agent.models.base import (
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.selection.selector import select
+from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.queries import SqliteQueryPlanRepository
@@ -597,3 +600,88 @@ def compare_classifiers(
         raise typer.Exit(code=1)
 
     typer.echo(render(compare(active, shadow)))
+
+
+@app.command("acquire")
+def acquire(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to acquire; defaults to the most recent.")
+    ] = None,
+    limit: Annotated[int | None, typer.Option(help="Maximum papers to download this pass.")] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Download the open-access PDFs for the papers one run selected."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to acquire: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    if run_id is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    papers = SqlitePaperRepository(connection)
+    selected = SqliteSelectionRepository(connection).selected_for(run_id)[
+        : limit or topic.limits.max_downloads
+    ]
+    candidates = [paper for paper in (papers.get(paper_id) for paper_id in selected) if paper]
+    if not candidates:
+        typer.echo(f"Run {run_id} selected no papers to acquire.", err=True)
+        raise typer.Exit(code=1)
+
+    outcomes = asyncio.run(_acquire(application, topic.id, run_id, candidates, papers))
+
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+    typer.echo(
+        f"{len(outcomes)} paper(s) for run {run_id}: "
+        + ", ".join(f"{status} {count}" for status, count in sorted(counts.items()))
+    )
+    runs = SqliteRunRepository(connection)
+    for outcome in outcomes:
+        typer.echo(f"{outcome.status}\t{outcome.path or outcome.reason}\t{outcome.paper_id}")
+        if outcome.status == "failed":
+            runs.record_error(
+                ErrorRecord(
+                    run_id=run_id,
+                    node="acquire",
+                    category="PDF_DOWNLOAD_ERROR",
+                    message=outcome.reason or "download failed",
+                    paper_id=outcome.paper_id,
+                )
+            )
+
+
+def _latest_run(connection: sqlite3.Connection, topic_id: str) -> str | None:
+    recent = SqliteRunRepository(connection).recent(topic_id, limit=1)
+    return recent[0].id if recent else None
+
+
+async def _acquire(
+    application: ApplicationSettings,
+    topic_id: str,
+    run_id: str,
+    papers: list[PaperCandidate],
+    repository: SqlitePaperRepository,
+) -> list[DownloadOutcome]:
+    store = LocalArtifactStore(application.data_directory)
+    async with _http_client(application.documents.timeout_seconds) as client:
+        downloader = PdfDownloader(
+            client,
+            store,
+            repository,
+            application.documents,
+            retries=application.retries.pdf_download,
+            concurrency=application.concurrency.downloads,
+        )
+        return await downloader.acquire_many(papers, topic_id, run_id)

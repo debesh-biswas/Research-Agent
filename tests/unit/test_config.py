@@ -9,6 +9,7 @@ from research_agent.config import (
     ClassifierSettings,
     ConcurrencySettings,
     ConfigurationError,
+    DocumentSettings,
     QuerySettings,
     ResourceLimits,
     SelectionSettings,
@@ -115,3 +116,15 @@ def test_selection_defaults_require_an_action_and_a_minimum_score() -> None:
 def test_a_selection_threshold_outside_the_unit_interval_is_rejected() -> None:
     with pytest.raises(ValidationError):
         SelectionSettings(min_relevance_score=1.5)
+
+
+def test_document_defaults_bound_pdf_downloads() -> None:
+    settings = ApplicationSettings()
+
+    assert settings.documents.max_pdf_bytes == 25 * 1024 * 1024
+    assert settings.documents.requests_per_second > 0
+
+
+def test_a_zero_pdf_size_limit_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        DocumentSettings(max_pdf_bytes=0)
