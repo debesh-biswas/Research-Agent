@@ -119,6 +119,14 @@ class ClassifierBSettings(StrictModel):
     max_abstract_chars: int = Field(default=2000, gt=0)
 
 
+class SelectionSettings(StrictModel):
+    """Thresholds beneath the classifier's own action; limits live in `ResourceLimits`."""
+
+    min_relevance_score: float = Field(default=0.3, ge=0, le=1)
+    require_action: bool = True
+    """When true, a paper the classifier marked `ignore` is never selected whatever it scored."""
+
+
 class ApplicationSettings(BaseSettings):
     """Local application settings with environment-first precedence."""
 
@@ -144,6 +152,7 @@ class ApplicationSettings(BaseSettings):
     queries: QuerySettings = Field(default_factory=QuerySettings)
     classifier_a: ClassifierASettings = Field(default_factory=ClassifierASettings)
     classifier_b: ClassifierBSettings = Field(default_factory=ClassifierBSettings)
+    selection: SelectionSettings = Field(default_factory=SelectionSettings)
 
     @classmethod
     def settings_customise_sources(

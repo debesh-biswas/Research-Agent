@@ -99,7 +99,7 @@ def counts(tmp_path: Path) -> dict[str, int]:
     try:
         return {
             table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in ("runs", "papers", "classifications")
+            for table in ("runs", "papers", "classifications", "selections")
         }
     finally:
         connection.close()
@@ -120,7 +120,12 @@ def test_classify_prints_verdicts_and_persists_a_run(
     assert "deep_read" in result.output
     assert "ignore" in result.output
     assert "saved as run " in result.output
-    assert counts(tmp_path) == {"runs": 1, "papers": 2, "classifications": 2}
+    assert counts(tmp_path) == {
+        "runs": 1,
+        "papers": 2,
+        "classifications": 2,
+        "selections": 2,
+    }
 
 
 def test_no_save_leaves_nothing_behind(
@@ -135,7 +140,12 @@ def test_no_save_leaves_nothing_behind(
     )
 
     assert result.exit_code == 0, result.output
-    assert counts(tmp_path) == {"runs": 0, "papers": 0, "classifications": 0}
+    assert counts(tmp_path) == {
+        "runs": 0,
+        "papers": 0,
+        "classifications": 0,
+        "selections": 0,
+    }
 
 
 def test_an_explicit_query_is_sent_to_the_sources(
@@ -166,7 +176,12 @@ def test_a_source_failure_still_completes_the_command(
 
     assert result.exit_code == 0, result.output
     assert "0 verdict(s)" in result.output
-    assert counts(tmp_path) == {"runs": 1, "papers": 0, "classifications": 0}
+    assert counts(tmp_path) == {
+        "runs": 1,
+        "papers": 0,
+        "classifications": 0,
+        "selections": 0,
+    }
 
 
 def test_an_unknown_topic_exits_non_zero(settings_path: Path, topics_path: Path) -> None:
@@ -239,7 +254,12 @@ def test_shadow_mode_stores_both_verdicts_with_one_active(
 
     assert result.exit_code == 0, result.output
     assert "shadow classifier B: 2 verdict(s)" in result.output
-    assert counts(tmp_path) == {"runs": 1, "papers": 2, "classifications": 4}
+    assert counts(tmp_path) == {
+        "runs": 1,
+        "papers": 2,
+        "classifications": 4,
+        "selections": 2,
+    }
 
     connection = sqlite3.connect(tmp_path / "data" / "research_agent.db")
     try:
@@ -270,4 +290,116 @@ def test_a_failing_shadow_model_leaves_the_active_verdicts_intact(
     assert result.exit_code == 0, result.output
     assert "2 verdict(s)" in result.output
     assert "shadow classifier B: 0 verdict(s)" in result.output
-    assert counts(tmp_path) == {"runs": 1, "papers": 2, "classifications": 2}
+    assert counts(tmp_path) == {
+        "runs": 1,
+        "papers": 2,
+        "classifications": 2,
+        "selections": 2,
+    }
+
+
+def test_the_selection_summary_and_reasons_are_printed(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    result = run_classify(
+        monkeypatch,
+        settings_path,
+        topics_path,
+        lambda request: httpx.Response(200, json=_OPENALEX_PAGE),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "selected 1 of 2: 1 deep read, 0 summarize." in result.output
+    assert "action_ignore" in result.output
+
+    connection = sqlite3.connect(tmp_path / "data" / "research_agent.db")
+    try:
+        rows = connection.execute(
+            "SELECT rank, selected, reason FROM selections ORDER BY rank"
+        ).fetchall()
+        selected = connection.execute("SELECT papers_selected FROM runs").fetchone()[0]
+    finally:
+        connection.close()
+    assert [(row[0], row[1], row[2]) for row in rows] == [
+        (1, 1, "selected_deep_read"),
+        (2, 0, "action_ignore"),
+    ]
+    assert selected == 1
+
+
+def test_an_already_analyzed_paper_is_skipped_until_reanalyze(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    handler = lambda request: httpx.Response(200, json=_OPENALEX_PAGE)  # noqa: E731
+    run_classify(monkeypatch, settings_path, topics_path, handler)
+
+    database = tmp_path / "data" / "research_agent.db"
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute(
+            "UPDATE papers SET first_analyzed_at = '2026-09-01T00:00:00+00:00', "
+            "last_analyzed_at = '2026-09-01T00:00:00+00:00', analyzed_hash = content_hash"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    skipped = run_classify(monkeypatch, settings_path, topics_path, handler)
+    assert "selected 0 of 2" in skipped.output
+    assert "already_analyzed" in skipped.output
+
+    forced = run_classify(monkeypatch, settings_path, topics_path, handler, "--reanalyze")
+    assert "selected 1 of 2" in forced.output
+
+
+def test_the_deep_read_limit_bounds_the_selection(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, tmp_path: Path
+) -> None:
+    topics = tmp_path / "limited.yaml"
+    topics.write_text(
+        yaml.safe_dump(
+            {
+                "topics": [
+                    {
+                        "id": TOPIC_ID,
+                        "name": "Spatial Intelligence",
+                        "keywords": ["embodied navigation"],
+                        "limits": {"max_downloads": 1, "max_deep_reads": 1},
+                        "discovery": {
+                            "openalex": True,
+                            "semantic_scholar": False,
+                            "arxiv": False,
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    titles = [
+        "Spatial Intelligence for Embodied Navigation",
+        "Mapping and Memory in Spatial Intelligence",
+        "Embodied Navigation with Scene Graphs",
+        "Spatial Intelligence Benchmarks for Household Robots",
+    ]
+    page = {
+        "meta": {"next_cursor": None},
+        "results": [
+            {
+                "id": f"https://openalex.org/W{index}",
+                "display_name": title,
+                "doi": f"https://doi.org/10.1234/paper{index}",
+                "publication_date": "2026-09-18",
+                "authorships": [{"author": {"display_name": f"Author {index}"}}],
+            }
+            for index, title in enumerate(titles)
+        ],
+    }
+
+    result = run_classify(
+        monkeypatch, settings_path, topics, lambda request: httpx.Response(200, json=page)
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "selected 1 of 4" in result.output
+    assert "limit_reached" in result.output

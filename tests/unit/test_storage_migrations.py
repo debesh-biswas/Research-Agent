@@ -24,6 +24,7 @@ def test_every_required_table_exists(connection: sqlite3.Connection) -> None:
         "research_ideas",
         "errors",
         "query_plans",
+        "selections",
     } <= names
 
 
@@ -48,6 +49,9 @@ def test_a_version_one_database_upgrades_in_place(tmp_path: Path) -> None:
     # The pre-existing topic row survived the upgrade and got the column added later.
     row = legacy.execute("SELECT COUNT(*) AS total, keywords_json FROM topics").fetchone()
     assert (row["total"], row["keywords_json"]) == (1, "[]")
+    # Columns added by later migrations exist and start empty.
+    columns = {column["name"] for column in legacy.execute("PRAGMA table_info(papers)").fetchall()}
+    assert {"content_hash", "analyzed_hash", "first_analyzed_at", "last_analyzed_at"} <= columns
     legacy.close()
 
 

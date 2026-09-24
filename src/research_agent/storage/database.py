@@ -163,6 +163,23 @@ MIGRATIONS: tuple[str, ...] = (
     )
     """,
     "CREATE INDEX query_plans_topic_idx ON query_plans(topic_id, created_at)",
+    "ALTER TABLE papers ADD COLUMN content_hash TEXT",
+    "ALTER TABLE papers ADD COLUMN first_analyzed_at TEXT",
+    "ALTER TABLE papers ADD COLUMN last_analyzed_at TEXT",
+    "ALTER TABLE papers ADD COLUMN analyzed_hash TEXT",
+    """
+    CREATE TABLE selections (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        rank INTEGER NOT NULL,
+        selected INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (run_id, paper_id)
+    )
+    """,
 )
 
 

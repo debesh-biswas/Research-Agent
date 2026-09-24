@@ -29,6 +29,7 @@ from research_agent.discovery.aggregator import (
 from research_agent.domain.analysis import WeeklySynthesis
 from research_agent.domain.queries import QueryPlan
 from research_agent.domain.runs import RunSummary
+from research_agent.domain.selection import SelectionPlan
 from research_agent.models.base import (
     Capability,
     ModelMessage,
@@ -37,11 +38,13 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner, base_query
+from research_agent.selection.selector import select
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.queries import SqliteQueryPlanRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
+from research_agent.storage.selections import SqliteSelectionRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
     TopicStoreError,
@@ -421,10 +424,13 @@ def classify(
         int | None, typer.Option(help="Maximum candidates; defaults to the topic limit.")
     ] = None,
     save: Annotated[bool, typer.Option(help="Persist a run with the resulting verdicts.")] = True,
+    reanalyze: Annotated[
+        bool, typer.Option(help="Reconsider papers that were already analyzed.")
+    ] = False,
     settings: SettingsOption = Path("config/settings.yaml"),
     topics: TopicsOption = Path("config/topics.yaml"),
 ) -> None:
-    """Discover papers for one topic and triage them with the active classifier."""
+    """Discover papers for one topic, triage them, and select a bounded reading set."""
     try:
         application = ApplicationSettings(**_load_yaml_mapping(settings))
         connection = _open_connection(settings, topics)
@@ -457,16 +463,26 @@ def classify(
             else f"shadow classifier {topic.classifier.shadow}: {len(outcome.shadow)} verdict(s)"
         )
         typer.echo(shadow)
+    verdicts = [result for result, _ in outcome.active]
+    analyzed = SqlitePaperRepository(connection).analyzed_unchanged(
+        result.paper_id for result in verdicts
+    )
+    plan = select(verdicts, topic.limits, application.selection, analyzed, reanalyze)
+
+    typer.echo(
+        f"selected {len(plan.selected_ids)} of {len(plan.decisions)}: "
+        f"{len(plan.deep_reads)} deep read, {len(plan.summaries)} summarize."
+    )
     for error_record in discovered.errors:
         typer.echo(f"source error: {error_record.category} {error_record.message}", err=True)
-    for result, _ in outcome.active:
+    for decision in plan.decisions:
         typer.echo(
-            f"{result.relevance}\t{result.action}\t{result.relevance_score}\t"
-            f"{result.paper_type}\t{result.paper_id}"
+            f"{decision.rank}\t{'select' if decision.selected else 'skip'}\t"
+            f"{decision.action}\t{decision.reason}\t{decision.paper_id}"
         )
 
     if save:
-        run_id = _save_classifications(connection, application, topic, discovered, outcome)
+        run_id = _save_classifications(connection, application, topic, discovered, outcome, plan)
         typer.echo(f"saved as run {run_id}")
 
 
@@ -497,6 +513,7 @@ def _save_classifications(
     topic: TopicSettings,
     discovered: DiscoveryResult,
     outcome: ClassifierOutcome,
+    plan: SelectionPlan,
 ) -> str:
     """Persist one run, its papers, and every verdict; shadow rows are stored but never route."""
     runs = SqliteRunRepository(connection)
@@ -512,12 +529,15 @@ def _save_classifications(
     for result, provenance in outcome.shadow:
         if result.paper_id in {active.paper_id for active, _ in outcome.active}:
             results.save_classification(record.id, result, is_active=False, raw_response=provenance)
+    SqliteSelectionRepository(connection).save(record.id, plan)
     runs.complete(
         record.id,
         RunSummary(
             candidates_discovered=sum(discovered.counts.values()),
             candidates_deduplicated=len(discovered.candidates),
             papers_classified=len(outcome.active),
+            papers_selected=len(plan.selected_ids),
+            deep_reads=len(plan.deep_reads),
             models_used=[application.classifier_a.embedding_model or "lexical"],
             errors=len(discovered.errors) + (1 if outcome.shadow_error else 0),
         ),

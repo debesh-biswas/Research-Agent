@@ -120,6 +120,13 @@ def canonical_id(candidate: PaperCandidate) -> str:
     return f"title_{digest.hexdigest()[:12]}"
 
 
+def content_hash(candidate: PaperCandidate) -> str:
+    """Hash the text an analysis actually reads, so a revised paper stops matching its old one."""
+    title = normalize_title(candidate.title)
+    abstract = normalize_text(candidate.abstract) or ""
+    return hashlib.sha256(f"{title}|{abstract}".encode()).hexdigest()
+
+
 def _normalize_source(reference: SourceReference) -> SourceReference:
     return reference.model_copy(
         update={
