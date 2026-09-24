@@ -1,10 +1,10 @@
 import sqlite3
 
 import pytest
-from conftest import TOPIC_ID
 
 from research_agent.domain.runs import ErrorRecord, RunSummary
 from research_agent.storage.runs import SqliteRunRepository
+from tests.unit.conftest import TOPIC_ID
 
 
 def test_start_and_complete_round_trip(connection: sqlite3.Connection) -> None:

@@ -2,7 +2,6 @@ import asyncio
 
 import httpx
 import pytest
-from conftest import mock_client
 from pydantic import BaseModel
 
 from research_agent.config import (
@@ -17,6 +16,7 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import ModelRouter, build_router
+from tests.unit.conftest import mock_client
 
 MESSAGES = [ModelMessage(role="user", content="hello")]
 STRONG: tuple[Capability, ...] = ("deep_reasoning", "synthesis", "ideation", "report_writing")

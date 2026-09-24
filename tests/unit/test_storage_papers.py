@@ -1,10 +1,9 @@
 import sqlite3
 from datetime import UTC, date, datetime
 
-from conftest import TOPIC_ID, candidate
-
 from research_agent.domain.papers import SourceReference
 from research_agent.storage.papers import SqlitePaperRepository
+from tests.unit.conftest import TOPIC_ID, candidate
 
 
 def _repository(connection: sqlite3.Connection) -> SqlitePaperRepository:

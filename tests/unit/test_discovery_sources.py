@@ -4,7 +4,6 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
-from conftest import fixed_clock, fixture_text, mock_client
 
 from research_agent.config import SourceSettings
 from research_agent.discovery.arxiv import ArxivSource
@@ -13,6 +12,7 @@ from research_agent.discovery.openalex import OpenAlexSource
 from research_agent.discovery.semantic_scholar import SemanticScholarSource
 from research_agent.discovery.sources import ResearchSource
 from research_agent.domain.papers import PaperCandidate
+from tests.unit.conftest import fixed_clock, fixture_text, mock_client
 
 START = date(2026, 9, 12)
 END = date(2026, 9, 22)

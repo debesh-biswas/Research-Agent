@@ -1,13 +1,13 @@
 import asyncio
 
 import pytest
-from conftest import candidate
 
 from research_agent.classifiers.base import ClassifierError, PaperClassifier, Provenance
 from research_agent.classifiers.runner import ClassifierRunner
 from research_agent.config import TopicSettings
 from research_agent.domain.analysis import ClassificationResult
 from research_agent.domain.papers import PaperCandidate
+from tests.unit.conftest import candidate
 
 TOPIC = TopicSettings.model_validate({"id": "spatial_intelligence", "name": "Spatial Intelligence"})
 PAPERS = [candidate()]

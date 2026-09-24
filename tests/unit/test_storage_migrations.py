@@ -2,9 +2,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from conftest import TOPIC_ID
 
 from research_agent.storage.database import MIGRATIONS, apply_migrations, connect
+from tests.unit.conftest import TOPIC_ID
 
 
 def test_every_required_table_exists(connection: sqlite3.Connection) -> None:

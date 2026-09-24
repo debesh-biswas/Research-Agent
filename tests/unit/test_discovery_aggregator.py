@@ -1,11 +1,10 @@
 import asyncio
 from datetime import date
 
-from conftest import fixed_clock
-
 from research_agent.discovery.aggregator import DiscoveryAggregator, DiscoveryResult
 from research_agent.discovery.http import SourceRequestError
 from research_agent.domain.papers import PaperCandidate, SourceName, SourceReference
+from tests.unit.conftest import fixed_clock
 
 START = date(2026, 9, 12)
 END = date(2026, 9, 22)

@@ -3,7 +3,6 @@ import json
 
 import httpx
 import pytest
-from conftest import mock_client
 
 from research_agent.config import ModelEndpointSettings
 from research_agent.models.base import ModelMessage, ModelProviderError
@@ -12,6 +11,7 @@ from research_agent.models.chat import (
     LocalModelProvider,
     NvidiaNIMProvider,
 )
+from tests.unit.conftest import mock_client
 
 API_KEY = "nvapi-secret-value"
 MESSAGES = [ModelMessage(role="user", content="hello")]

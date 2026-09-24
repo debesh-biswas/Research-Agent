@@ -1,7 +1,6 @@
-from conftest import candidate
-
 from research_agent.documents.urls import pdf_candidates
 from research_agent.domain.papers import SourceReference
+from tests.unit.conftest import candidate
 
 
 def reference(source: str, pdf_url: str | None, source_id: str = "1") -> SourceReference:

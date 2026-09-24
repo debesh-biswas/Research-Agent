@@ -2,7 +2,6 @@ import asyncio
 
 import httpx
 import pytest
-from conftest import candidate, mock_client
 
 from research_agent.classifiers.base import ClassifierError
 from research_agent.classifiers.classifier_a import ClassifierA
@@ -10,6 +9,7 @@ from research_agent.classifiers.embeddings import EmbeddingClient
 from research_agent.config import ClassifierASettings, ModelEndpointSettings, TopicSettings
 from research_agent.discovery.normalize import canonical_id
 from research_agent.domain.analysis import ClassificationResult
+from tests.unit.conftest import candidate, mock_client
 
 RELEVANT = "Spatial Intelligence for Embodied Navigation"
 
