@@ -30,3 +30,4 @@ reports/
 AGENTS.md
 CLAUDE.md
 UPDATES.md
+!tests/fixtures/documents/*.pdf
