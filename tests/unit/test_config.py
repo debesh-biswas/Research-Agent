@@ -11,6 +11,7 @@ from research_agent.config import (
     ConfigurationError,
     QuerySettings,
     ResourceLimits,
+    SelectionSettings,
     load_configuration,
 )
 
@@ -102,3 +103,15 @@ def test_classifier_a_defaults_to_lexical_scoring() -> None:
 
     assert settings.classifier_a.embedding_model is None
     assert (settings.classifier_a.summarize_at, settings.classifier_a.deep_read_at) == (0.3, 0.6)
+
+
+def test_selection_defaults_require_an_action_and_a_minimum_score() -> None:
+    settings = ApplicationSettings()
+
+    assert settings.selection.min_relevance_score == 0.3
+    assert settings.selection.require_action is True
+
+
+def test_a_selection_threshold_outside_the_unit_interval_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        SelectionSettings(min_relevance_score=1.5)

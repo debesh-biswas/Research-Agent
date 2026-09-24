@@ -6,7 +6,11 @@ from collections.abc import Iterable
 from datetime import date, datetime
 from typing import Literal, Protocol
 
-from research_agent.discovery.normalize import canonical_id, normalize_candidate
+from research_agent.discovery.normalize import (
+    canonical_id,
+    content_hash,
+    normalize_candidate,
+)
 from research_agent.domain.papers import PaperCandidate, SourceReference
 from research_agent.storage.database import now_iso
 
@@ -26,6 +30,10 @@ class PaperRepository(Protocol):
     def get(self, paper_id: str) -> PaperCandidate | None: ...
 
     def seen(self, paper_ids: Iterable[str]) -> set[str]: ...
+
+    def analyzed_unchanged(self, paper_ids: Iterable[str]) -> set[str]: ...
+
+    def mark_analyzed(self, paper_id: str) -> None: ...
 
     def record_file(
         self,
@@ -65,6 +73,7 @@ class SqlitePaperRepository:
             "authors_json": json.dumps(paper.authors),
             "first_seen_at": paper.discovered_at.isoformat(),
             "last_seen_at": timestamp,
+            "content_hash": content_hash(paper),
         }
         with self._connection:
             self._connection.execute(
@@ -82,7 +91,8 @@ class SqlitePaperRepository:
                 "       MAX(papers.citation_count, excluded.citation_count),"
                 "       papers.citation_count, excluded.citation_count),"
                 "   authors_json = excluded.authors_json,"
-                "   last_seen_at = excluded.last_seen_at",
+                "   last_seen_at = excluded.last_seen_at,"
+                "   content_hash = excluded.content_hash",
                 values,
             )
             self._connection.executemany(
@@ -134,6 +144,34 @@ class SqlitePaperRepository:
             f"SELECT id FROM papers WHERE id IN ({placeholders})", wanted
         ).fetchall()
         return {row["id"] for row in rows}
+
+    def analyzed_unchanged(self, paper_ids: Iterable[str]) -> set[str]:
+        """Ids already analyzed whose stored content hash still matches what was analyzed.
+
+        A changed hash means a revision or an edited abstract, so the paper becomes eligible again
+        (TRD section 20).
+        """
+        wanted = list(paper_ids)
+        if not wanted:
+            return set()
+        placeholders = ", ".join("?" * len(wanted))
+        rows = self._connection.execute(
+            f"SELECT id FROM papers WHERE id IN ({placeholders}) "
+            "AND last_analyzed_at IS NOT NULL AND content_hash IS NOT NULL "
+            "AND content_hash = analyzed_hash",
+            wanted,
+        ).fetchall()
+        return {row["id"] for row in rows}
+
+    def mark_analyzed(self, paper_id: str) -> None:
+        """Record that the paper's current content was analyzed; first_analyzed_at is set once."""
+        timestamp = now_iso()
+        with self._connection:
+            self._connection.execute(
+                "UPDATE papers SET first_analyzed_at = COALESCE(first_analyzed_at, ?), "
+                "   last_analyzed_at = ?, analyzed_hash = content_hash WHERE id = ?",
+                (timestamp, timestamp, paper_id),
+            )
 
     def record_file(
         self,

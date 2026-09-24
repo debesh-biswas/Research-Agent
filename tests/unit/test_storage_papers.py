@@ -125,3 +125,67 @@ def test_record_file_replaces_the_same_kind(connection: sqlite3.Connection) -> N
     repository.record_file(paper_id, "parsed", "paper.md", 5, "ccc")
 
     assert repository.files_for(paper_id) == {"parsed": "paper.md", "pdf": "new.pdf"}
+
+
+def test_the_content_hash_is_stable_and_tracks_the_text(connection: sqlite3.Connection) -> None:
+    repository = SqlitePaperRepository(connection)
+    paper_id = repository.upsert(candidate(doi="10.1234/hash", abstract="First abstract."))
+    first = connection.execute(
+        "SELECT content_hash FROM papers WHERE id = ?", (paper_id,)
+    ).fetchone()["content_hash"]
+
+    repository.upsert(candidate(doi="10.1234/hash", abstract="First abstract."))
+    unchanged = connection.execute(
+        "SELECT content_hash FROM papers WHERE id = ?", (paper_id,)
+    ).fetchone()["content_hash"]
+    repository.upsert(candidate(doi="10.1234/hash", title="A Revised Title"))
+    revised = connection.execute(
+        "SELECT content_hash FROM papers WHERE id = ?", (paper_id,)
+    ).fetchone()["content_hash"]
+
+    assert first and first == unchanged
+    assert revised != first
+
+
+def test_marking_analyzed_sets_the_first_timestamp_once(connection: sqlite3.Connection) -> None:
+    repository = SqlitePaperRepository(connection)
+    paper_id = repository.upsert(candidate(doi="10.1234/analyzed"))
+
+    repository.mark_analyzed(paper_id)
+    first = connection.execute(
+        "SELECT first_analyzed_at, last_analyzed_at FROM papers WHERE id = ?", (paper_id,)
+    ).fetchone()
+    repository.mark_analyzed(paper_id)
+    second = connection.execute(
+        "SELECT first_analyzed_at, last_analyzed_at FROM papers WHERE id = ?", (paper_id,)
+    ).fetchone()
+
+    assert first["first_analyzed_at"] == second["first_analyzed_at"]
+    assert second["last_analyzed_at"] >= first["last_analyzed_at"]
+
+
+def test_an_unanalyzed_paper_is_never_reported_as_unchanged(
+    connection: sqlite3.Connection,
+) -> None:
+    repository = SqlitePaperRepository(connection)
+    paper_id = repository.upsert(candidate(doi="10.1234/fresh"))
+
+    assert repository.analyzed_unchanged([paper_id]) == set()
+
+
+def test_an_analyzed_paper_is_unchanged_until_its_text_changes(
+    connection: sqlite3.Connection,
+) -> None:
+    repository = SqlitePaperRepository(connection)
+    paper_id = repository.upsert(candidate(doi="10.1234/revised", abstract="Original."))
+    repository.mark_analyzed(paper_id)
+
+    assert repository.analyzed_unchanged([paper_id]) == {paper_id}
+
+    repository.upsert(candidate(doi="10.1234/revised", abstract="Rewritten for version two."))
+
+    assert repository.analyzed_unchanged([paper_id]) == set()
+
+
+def test_analyzed_unchanged_tolerates_an_empty_request(connection: sqlite3.Connection) -> None:
+    assert SqlitePaperRepository(connection).analyzed_unchanged([]) == set()

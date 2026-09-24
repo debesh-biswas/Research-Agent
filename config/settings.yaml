@@ -36,3 +36,8 @@ classifier_a:
 classifier_b:
   # The runtime and model come from models.local; this only bounds the prompt.
   max_abstract_chars: 2000
+
+selection:
+  # Limits (max_downloads, max_deep_reads) live per topic; these are the quality gates.
+  min_relevance_score: 0.3
+  require_action: true
