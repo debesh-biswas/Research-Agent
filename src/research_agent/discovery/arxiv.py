@@ -28,6 +28,16 @@ _ATOM = "{http://www.w3.org/2005/Atom}"
 _ARXIV = "{http://arxiv.org/schemas/atom}"
 
 
+def _oldest(entries: list[ElementTree.Element]) -> date | None:
+    """The oldest publication date on a page, or None when no entry carries a usable one."""
+    dates = [
+        published
+        for entry in entries
+        if (published := normalize_date((_text(entry, f"{_ATOM}published") or "")[:10])) is not None
+    ]
+    return min(dates) if dates else None
+
+
 class ArxivSource(BaseSource):
     """Search the arXiv Atom API, applying the date window client-side."""
 
@@ -42,7 +52,9 @@ class ArxivSource(BaseSource):
     ) -> list[PaperCandidate]:
         candidates: list[PaperCandidate] = []
         start = 0
-        while len(candidates) < limit:
+        for _ in range(self._settings.max_pages):
+            if len(candidates) >= limit:
+                break
             page_size = self._page_size(limit - len(candidates))
             body = await request_text(
                 self._client,
@@ -66,6 +78,12 @@ class ArxivSource(BaseSource):
                 if len(candidates) == limit:
                     break
             if len(entries) < page_size:
+                break
+            # Results come back newest first, so once a whole page predates the window every later
+            # page does too. Without this the adapter pages through all of arXiv at one request
+            # every few seconds, chasing a candidate limit the window can never satisfy.
+            oldest = _oldest(entries)
+            if oldest is not None and oldest < start_date:
                 break
             start += page_size
         return candidates

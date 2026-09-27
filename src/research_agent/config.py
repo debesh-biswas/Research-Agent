@@ -45,6 +45,12 @@ class SourceSettings(StrictModel):
     requests_per_second: float = Field(default=2.0, gt=0)
     timeout_seconds: float = Field(default=20.0, gt=0)
     max_page_size: int = Field(default=100, gt=0)
+    max_pages: int = Field(default=10, gt=0)
+    """How many pages one query may fetch, whatever the candidate limit allows.
+
+    A source paced at a request every few seconds will otherwise page through its whole result set
+    chasing a candidate limit it can never reach.
+    """
 
 
 class DiscoveryClientSettings(StrictModel):

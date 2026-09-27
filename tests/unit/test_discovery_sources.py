@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import parse_qs
 
 import httpx
@@ -183,3 +183,88 @@ def test_arxiv_sends_a_descriptive_user_agent() -> None:
     assert requests[0].headers["user-agent"].startswith("research-agent/")
     assert requests[0].headers["accept"] == "application/atom+xml"
     assert str(requests[0].url).startswith("https://export.arxiv.org/api/query")
+
+
+def _arxiv_page(published: date, count: int, first_index: int = 0) -> str:
+    """An Atom page of `count` entries, all published on one date."""
+    entries = "".join(
+        f"""
+  <entry>
+    <id>http://arxiv.org/abs/2609.{first_index + index:05d}</id>
+    <title>Paper {first_index + index}</title>
+    <summary>Spatial intelligence for embodied agents.</summary>
+    <published>{published.isoformat()}T00:00:00Z</published>
+    <author><name>Ada Lovelace</name></author>
+    <link title="pdf" href="http://arxiv.org/pdf/2609.{first_index + index:05d}"/>
+  </entry>"""
+        for index in range(count)
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">{entries}
+</feed>
+"""
+
+
+def test_arxiv_stops_paging_once_a_page_predates_the_window() -> None:
+    """The regression: results are newest first, so an out-of-window page ends the search.
+
+    Without this the adapter paged towards `limit` at one request every few seconds, which left a
+    real run sitting in discovery for well over an hour.
+    """
+    pages: list[int] = []
+    older = START - timedelta(days=30)
+    settings = SourceSettings(requests_per_second=1000, max_page_size=2)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start = int(parse_qs(request.url.query.decode())["start"][0])
+        pages.append(start)
+        published = END if start == 0 else older
+        return httpx.Response(200, text=_arxiv_page(published, 2, first_index=start))
+
+    candidates = _search(ArxivSource(mock_client(handler), settings, clock=fixed_clock), limit=500)
+
+    assert pages == [0, 2], "the second page is entirely older, so there is no third request"
+    assert len(candidates) == 2, "only the in-window page contributes candidates"
+
+
+def test_arxiv_honours_the_page_ceiling_when_every_page_is_in_window() -> None:
+    pages: list[int] = []
+    settings = SourceSettings(requests_per_second=1000, max_page_size=2, max_pages=3)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start = int(parse_qs(request.url.query.decode())["start"][0])
+        pages.append(start)
+        return httpx.Response(200, text=_arxiv_page(END, 2, first_index=start))
+
+    candidates = _search(ArxivSource(mock_client(handler), settings, clock=fixed_clock), limit=500)
+
+    assert len(pages) == 3, "the ceiling bounds the search even when every page is usable"
+    assert len(candidates) == 6
+
+
+def test_openalex_honours_the_page_ceiling_when_the_cursor_never_ends() -> None:
+    """A cursor that keeps returning itself must not page for ever."""
+    requests: list[httpx.Request] = []
+    settings = SourceSettings(requests_per_second=1000, max_page_size=1, max_pages=4)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "meta": {"next_cursor": "always-more"},
+                "results": [
+                    {
+                        "id": f"https://openalex.org/W{len(requests)}",
+                        "display_name": f"Paper {len(requests)}",
+                        "publication_date": "2026-09-18",
+                        "authorships": [{"author": {"display_name": "Ada Lovelace"}}],
+                    }
+                ],
+            },
+        )
+
+    candidates = _search(OpenAlexSource(mock_client(handler), settings, clock=fixed_clock), 500)
+
+    assert len(requests) == 4
+    assert len(candidates) == 4
