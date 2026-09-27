@@ -119,12 +119,19 @@ class ParsingService:
 
     def load(self, paper_id: str, topic_id: str) -> ParsedPaper | None:
         """Read back a stored parse, the input F13 analysis prefers over an abstract."""
-        name = f"{paper_id}.json"
-        if not self._store.exists(topic_id, "parsed", name):
-            return None
-        try:
-            return ParsedPaper.model_validate(
-                json.loads(self._store.read_text(topic_id, "parsed", name))
-            )
-        except (ValueError, OSError):
-            return None
+        return load_parsed(self._store, paper_id, topic_id)
+
+
+def load_parsed(store: ArtifactStore, paper_id: str, topic_id: str) -> ParsedPaper | None:
+    """Read a stored parse without a parser, which is all analysis needs.
+
+    A parse that will not validate is treated as absent, so a corrupt artifact degrades to
+    abstract-only analysis instead of failing the paper.
+    """
+    name = f"{paper_id}.json"
+    if not store.exists(topic_id, "parsed", name):
+        return None
+    try:
+        return ParsedPaper.model_validate(json.loads(store.read_text(topic_id, "parsed", name)))
+    except (ValueError, OSError):
+        return None

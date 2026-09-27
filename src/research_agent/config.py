@@ -73,7 +73,7 @@ class NimEndpointSettings(ModelEndpointSettings):
     """NIM defaults live on their own class so a partial override keeps the rest of them."""
 
     base_url: str = "https://integrate.api.nvidia.com/v1"
-    model: str = "meta/llama-3.1-70b-instruct"
+    model: str = "openai/gpt-oss-20b"
 
 
 class ModelSettings(StrictModel):
@@ -127,6 +127,14 @@ class SelectionSettings(StrictModel):
     """When true, a paper the classifier marked `ignore` is never selected whatever it scored."""
 
 
+class AnalysisSettings(StrictModel):
+    """Bounds for the analysis prompt; the model and provider come from the capability router."""
+
+    max_input_chars: int = Field(default=24000, gt=0)
+    include_claims: bool = True
+    """When false, no claim extraction is requested and no claims are persisted."""
+
+
 class DocumentSettings(StrictModel):
     """Pacing and safety limits for PDF acquisition; downloaded content is untrusted input."""
 
@@ -163,6 +171,7 @@ class ApplicationSettings(BaseSettings):
     classifier_b: ClassifierBSettings = Field(default_factory=ClassifierBSettings)
     selection: SelectionSettings = Field(default_factory=SelectionSettings)
     documents: DocumentSettings = Field(default_factory=DocumentSettings)
+    analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
 
     @classmethod
     def settings_customise_sources(

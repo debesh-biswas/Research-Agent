@@ -41,6 +41,23 @@ class Claim(StrictModel):
     evidence_excerpt: str | None = None
 
 
+class AnalysisDraft(StrictModel):
+    """The part of an analysis a model produces; the analyzer adds provenance."""
+
+    research_problem: str
+    main_contribution: str
+    method: str
+    datasets: list[str] = Field(default_factory=list)
+    benchmarks: list[str] = Field(default_factory=list)
+    experimental_setup: str | None = None
+    main_results: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    key_claims: list[Claim] = Field(default_factory=list)
+    related_work: list[str] = Field(default_factory=list)
+    topic_relevance: str
+
+
 class PaperAnalysis(StrictModel):
     """Structured deep read of one paper."""
 
@@ -59,6 +76,9 @@ class PaperAnalysis(StrictModel):
     topic_relevance: str
     model_provider: str
     model_name: str
+    prompt_version: str = Field(min_length=1)
+    abstract_only: bool = False
+    """True when no parsed full text was available, so a reader can tell a deep read from a skim."""
 
 
 class WeeklySynthesis(StrictModel):

@@ -62,6 +62,7 @@ def test_analysis_round_trips_and_returns_the_newest(connection: sqlite3.Connect
         topic_relevance="Directly on topic.",
         model_provider="local",
         model_name="qwen",
+        prompt_version="paper_analysis.v1",
     )
     repository.save_analysis(run_id, analysis)
     newest = analysis.model_copy(update={"main_contribution": "A revised module."})
