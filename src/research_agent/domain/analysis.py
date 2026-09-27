@@ -118,8 +118,8 @@ class WeeklySynthesis(SynthesisDraft):
     """How many previous syntheses were compared against; zero means no history existed."""
 
 
-class ResearchGap(StrictModel):
-    """An unaddressed question, linked to the papers that imply it."""
+class GapDraft(StrictModel):
+    """The part of a gap a model produces; provenance is added by the ideation service."""
 
     title: str = Field(min_length=1)
     description: str
@@ -127,8 +127,16 @@ class ResearchGap(StrictModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
-class ResearchIdea(StrictModel):
-    """A concrete proposal derived from a detected gap."""
+class ResearchGap(GapDraft):
+    """An unaddressed question, linked to the papers that imply it."""
+
+    model_provider: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+
+
+class IdeaDraft(StrictModel):
+    """The part of an idea a model produces; provenance is added by the ideation service."""
 
     title: str = Field(min_length=1)
     hypothesis: str
@@ -138,3 +146,11 @@ class ResearchIdea(StrictModel):
     proposed_direction: str
     evaluation_plan: str
     risks: list[str] = Field(default_factory=list)
+
+
+class ResearchIdea(IdeaDraft):
+    """A concrete proposal derived from a detected gap."""
+
+    model_provider: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
