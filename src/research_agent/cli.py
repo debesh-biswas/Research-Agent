@@ -11,6 +11,7 @@ import typer
 from pydantic import ValidationError
 
 from research_agent import __version__
+from research_agent.analysis.analyzer import AnalysisOutcome, PaperAnalyzer
 from research_agent.classifiers.comparison import compare, render
 from research_agent.classifiers.factory import build_classifier
 from research_agent.classifiers.runner import ClassifierOutcome, ClassifierRunner
@@ -28,8 +29,9 @@ from research_agent.discovery.aggregator import (
 )
 from research_agent.documents.docling_parser import DoclingParser
 from research_agent.documents.downloader import DownloadOutcome, PdfDownloader
-from research_agent.documents.parser import ParsingService
+from research_agent.documents.parser import ParsingService, load_parsed
 from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.documents import ParsedPaper
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
 from research_agent.domain.runs import ErrorRecord, RunSummary
@@ -750,3 +752,99 @@ def parse(
                     paper_id=outcome.paper_id,
                 )
             )
+
+
+@app.command("analyze")
+def analyze(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to analyze; defaults to the most recent.")
+    ] = None,
+    limit: Annotated[int | None, typer.Option(help="Maximum papers to analyze this pass.")] = None,
+    force: Annotated[
+        bool, typer.Option(help="Re-analyze papers that already have output.")
+    ] = False,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Read the papers a run selected and write an evidence-backed analysis and card for each."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to analyze: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    if run_id is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    papers = SqlitePaperRepository(connection)
+    selected = SqliteSelectionRepository(connection).selected_for(run_id)[
+        : limit or topic.limits.max_deep_reads
+    ]
+    candidates = [paper for paper in (papers.get(paper_id) for paper_id in selected) if paper]
+    if not candidates:
+        typer.echo(f"Run {run_id} selected no papers to analyze.", err=True)
+        raise typer.Exit(code=1)
+
+    store = LocalArtifactStore(application.data_directory)
+    parsed = {
+        paper_id: document
+        for paper_id in selected
+        if (document := load_parsed(store, paper_id, topic.id)) is not None
+    }
+    outcomes = asyncio.run(
+        _analyze(application, topic, run_id, candidates, parsed, papers, store, connection, force)
+    )
+
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+    typer.echo(
+        f"{len(outcomes)} paper(s) for run {run_id}: "
+        + ", ".join(f"{status} {count}" for status, count in sorted(counts.items()))
+    )
+    runs = SqliteRunRepository(connection)
+    for outcome in outcomes:
+        depth = "abstract-only" if outcome.abstract_only else "full text"
+        detail = outcome.path or outcome.reason or ""
+        typer.echo(f"{outcome.status}\t{depth}\t{detail}\t{outcome.paper_id}")
+        if outcome.status == "failed":
+            runs.record_error(
+                ErrorRecord(
+                    run_id=run_id,
+                    node="analyze",
+                    category="MODEL_API_ERROR",
+                    message=outcome.reason or "analysis failed",
+                    paper_id=outcome.paper_id,
+                )
+            )
+
+
+async def _analyze(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    run_id: str,
+    candidates: list[PaperCandidate],
+    parsed: dict[str, ParsedPaper],
+    papers: SqlitePaperRepository,
+    store: LocalArtifactStore,
+    connection: sqlite3.Connection,
+    force: bool,
+) -> list[AnalysisOutcome]:
+    async with _http_client(application.models.nim.timeout_seconds) as client:
+        analyzer = PaperAnalyzer(
+            build_router(client, application),
+            SqliteResultRepository(connection),
+            papers,
+            store,
+            application.analysis,
+            concurrency=application.concurrency.analysis,
+        )
+        return await analyzer.analyze_many(candidates, parsed, topic, run_id, force)

@@ -1,7 +1,7 @@
 storage_backend: local
 metadata_backend: sqlite
 scheduler_backend: launchd
-strong_model_provider: local
+strong_model_provider: nvidia_nim
 log_level: INFO
 data_directory: data
 
@@ -21,10 +21,14 @@ models:
     base_url: http://localhost:11434/v1
     model: qwen3:8b
     timeout_seconds: 120
+    # A full paper analysis does not fit in the 2048-token default; a truncated reply is invalid
+    # JSON, so this is a correctness setting rather than a tuning one.
+    max_output_tokens: 4096
   nim:
     base_url: https://integrate.api.nvidia.com/v1
-    model: meta/llama-3.1-70b-instruct
-    timeout_seconds: 120
+    model: openai/gpt-oss-20b
+    timeout_seconds: 300
+    max_output_tokens: 4096
 
 classifier_a:
   deep_read_at: 0.6
