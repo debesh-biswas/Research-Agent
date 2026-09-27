@@ -26,7 +26,9 @@ from research_agent.discovery.aggregator import (
     DiscoveryResult,
     build_sources,
 )
+from research_agent.documents.docling_parser import DoclingParser
 from research_agent.documents.downloader import DownloadOutcome, PdfDownloader
+from research_agent.documents.parser import ParsingService
 from research_agent.domain.analysis import WeeklySynthesis
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
@@ -685,3 +687,66 @@ async def _acquire(
             concurrency=application.concurrency.downloads,
         )
         return await downloader.acquire_many(papers, topic_id, run_id)
+
+
+@app.command("parse")
+def parse(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to parse; defaults to the most recent.")
+    ] = None,
+    limit: Annotated[int | None, typer.Option(help="Maximum papers to parse this pass.")] = None,
+    force: Annotated[bool, typer.Option(help="Re-parse papers that already have output.")] = False,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Convert the PDFs a run acquired into structured, reusable text."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to parse: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    if run_id is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    papers = SqlitePaperRepository(connection)
+    selected = SqliteSelectionRepository(connection).selected_for(run_id)
+    acquired = [paper_id for paper_id in selected if "pdf" in papers.files_for(paper_id)]
+    if not acquired:
+        typer.echo(f"Run {run_id} has no stored PDFs. Run 'acquire' first.", err=True)
+        raise typer.Exit(code=1)
+
+    service = ParsingService(
+        DoclingParser(), LocalArtifactStore(application.data_directory), papers
+    )
+    outcomes = service.parse_many(acquired[: limit or len(acquired)], topic.id, run_id, force)
+
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+    typer.echo(
+        f"{len(outcomes)} paper(s) for run {run_id}: "
+        + ", ".join(f"{status} {count}" for status, count in sorted(counts.items()))
+    )
+    runs = SqliteRunRepository(connection)
+    for outcome in outcomes:
+        detail = outcome.path or outcome.reason
+        typer.echo(f"{outcome.status}\t{outcome.sections} section(s)\t{detail}\t{outcome.paper_id}")
+        if outcome.status == "failed":
+            runs.record_error(
+                ErrorRecord(
+                    run_id=run_id,
+                    node="parse",
+                    category="PDF_PARSE_ERROR",
+                    message=outcome.reason or "parse failed",
+                    paper_id=outcome.paper_id,
+                )
+            )
