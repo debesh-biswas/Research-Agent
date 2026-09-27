@@ -30,7 +30,7 @@ from research_agent.discovery.aggregator import (
 from research_agent.documents.docling_parser import DoclingParser
 from research_agent.documents.downloader import DownloadOutcome, PdfDownloader
 from research_agent.documents.parser import ParsingService, load_parsed
-from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.analysis import PaperAnalysis, WeeklySynthesis
 from research_agent.domain.documents import ParsedPaper
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
@@ -57,6 +57,7 @@ from research_agent.storage.topics import (
     TopicStoreError,
     bootstrap,
 )
+from research_agent.synthesis.synthesizer import SynthesisOutcome, WeeklySynthesizer
 
 app = typer.Typer(
     name="research-agent",
@@ -848,3 +849,103 @@ async def _analyze(
             concurrency=application.concurrency.analysis,
         )
         return await analyzer.analyze_many(candidates, parsed, topic, run_id, force)
+
+
+@app.command("synthesize")
+def synthesize(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to synthesize; defaults to the most recent.")
+    ] = None,
+    days: Annotated[
+        int | None, typer.Option(help="Reporting period length; defaults to the topic lookback.")
+    ] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Compare a run's analyses with each other and with the topic's recent history."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to synthesize: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    if run_id is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    papers = SqlitePaperRepository(connection)
+    results = SqliteResultRepository(connection)
+    selected = SqliteSelectionRepository(connection).selected_for(run_id)
+    analyses = [
+        analysis
+        for analysis in (results.analysis_for(paper_id) for paper_id in selected)
+        if analysis
+    ]
+    if not analyses:
+        typer.echo(f"Run {run_id} has no analyses. Run 'analyze' first.", err=True)
+        raise typer.Exit(code=1)
+    titles = {
+        analysis.paper_id: paper.title
+        for analysis in analyses
+        if (paper := papers.get(analysis.paper_id)) is not None
+    }
+
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=days or topic.lookback_days)
+    outcome = asyncio.run(
+        _synthesize(application, topic, run_id, analyses, titles, start_date, end_date, results)
+    )
+
+    if outcome.synthesis is None:
+        typer.echo(f"No synthesis for run {run_id}: {outcome.reason}", err=True)
+        SqliteRunRepository(connection).record_error(
+            ErrorRecord(
+                run_id=run_id,
+                node="synthesize",
+                category="MODEL_API_ERROR",
+                message=outcome.reason or "synthesis failed",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    synthesis = outcome.synthesis
+    typer.echo(
+        f"synthesis for run {run_id} over {len(analyses)} analysis(es), "
+        f"{synthesis.history_periods} previous period(s), "
+        f"{outcome.dropped_findings} unsupported finding(s) dropped."
+    )
+    for label, findings in (
+        ("development", synthesis.major_developments),
+        ("direction", synthesis.emerging_directions),
+        ("method", synthesis.methods_gaining_attention),
+        ("contradiction", synthesis.contradictions),
+        ("limitation", synthesis.common_limitations),
+    ):
+        for finding in findings:
+            typer.echo(f"{label}\t{', '.join(finding.supporting_paper_ids)}\t{finding.text}")
+    for change in synthesis.changes_from_history:
+        typer.echo(f"change\t\t{change}")
+
+
+async def _synthesize(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    run_id: str,
+    analyses: list[PaperAnalysis],
+    titles: dict[str, str],
+    start_date: date,
+    end_date: date,
+    results: SqliteResultRepository,
+) -> SynthesisOutcome:
+    async with _http_client(application.models.nim.timeout_seconds) as client:
+        synthesizer = WeeklySynthesizer(
+            build_router(client, application), results, application.synthesis
+        )
+        return await synthesizer.synthesize(topic, run_id, analyses, titles, start_date, end_date)

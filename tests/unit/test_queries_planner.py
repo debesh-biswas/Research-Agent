@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from research_agent.config import QuerySettings, TopicSettings
-from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.domain.analysis import SupportedFinding, WeeklySynthesis
 from research_agent.domain.queries import ExpandedQueries, QueryPlan
 from research_agent.models.base import (
     Capability,
@@ -150,7 +150,18 @@ def test_unicode_topics_survive_normalization() -> None:
 
 def test_history_and_keywords_reach_the_prompt() -> None:
     router = FakeRouter(EXPANDED)
-    history = [WeeklySynthesis(major_developments=["diffusion policies for manipulation"])]
+    history = [
+        WeeklySynthesis(
+            major_developments=[
+                SupportedFinding(
+                    text="diffusion policies for manipulation", supporting_paper_ids=["p1"]
+                )
+            ],
+            model_provider="local",
+            model_name="qwen",
+            prompt_version="weekly_synthesis.v1",
+        )
+    ]
 
     plan(router, history=history)
 

@@ -8,12 +8,22 @@ from research_agent.domain.analysis import (
     PaperAnalysis,
     ResearchGap,
     ResearchIdea,
+    SupportedFinding,
     WeeklySynthesis,
 )
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from tests.unit.conftest import TOPIC_ID, candidate
+
+
+def synthesis(development: str) -> WeeklySynthesis:
+    return WeeklySynthesis(
+        major_developments=[SupportedFinding(text=development, supporting_paper_ids=["p1"])],
+        model_provider="local",
+        model_name="qwen",
+        prompt_version="weekly_synthesis.v1",
+    )
 
 
 def _context(connection: sqlite3.Connection) -> tuple[SqliteResultRepository, str, str]:
@@ -78,14 +88,14 @@ def test_recent_syntheses_returns_the_history_window(connection: sqlite3.Connect
         repository.save_synthesis(
             run_id,
             TOPIC_ID,
-            WeeklySynthesis(major_developments=[f"week {week}"]),
+            synthesis(f"week {week}"),
             period_start=date(2026, 8, week),
             period_end=date(2026, 8, week + 1),
         )
 
     recent = repository.recent_syntheses(TOPIC_ID)
 
-    assert [synthesis.major_developments[0] for synthesis in recent] == [
+    assert [item.major_developments[0].text for item in recent] == [
         "week 6",
         "week 5",
         "week 4",
