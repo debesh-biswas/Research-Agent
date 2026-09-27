@@ -2,7 +2,7 @@
 
 import asyncio
 import sqlite3
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -45,6 +45,8 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import build_router
+from research_agent.operations.runner import RunOutcome, execute_run
+from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.reports.service import ReportOutcome, ReportService
 from research_agent.selection.selector import select
@@ -1126,3 +1128,130 @@ async def _report(
             application.reports,
         )
         return await service.generate(topic, run, paper_ids, start_date, end_date)
+
+
+def _run_one(
+    connection: sqlite3.Connection,
+    application: ApplicationSettings,
+    topic: TopicSettings,
+) -> RunOutcome:
+    return asyncio.run(execute_run(connection, application, topic, client_factory=_http_client))
+
+
+def _echo_outcome(outcome: RunOutcome) -> None:
+    detail = outcome.reason or outcome.report_path or ""
+    typer.echo(
+        f"{outcome.conclusion}\t{outcome.topic_id}\t"
+        f"{outcome.papers_analyzed} paper(s)\t{outcome.errors} error(s)\t{detail}"
+    )
+
+
+@app.command("run")
+def run_topic(
+    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Run the complete weekly workflow for one topic."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to run: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    outcome = _run_one(connection, application, topic)
+    _echo_outcome(outcome)
+    if outcome.conclusion in ("skipped", "locked"):
+        raise typer.Exit(code=1)
+    if outcome.fatal:
+        typer.echo("the run produced no report; partial artifacts are kept", err=True)
+        raise typer.Exit(code=1)
+
+
+@app.command("run-all")
+def run_all(
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Run every enabled topic in turn, reporting each outcome; disabled topics are skipped."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        stored = SqliteTopicRepository(connection).list()
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to run: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    outcomes = [_run_one(connection, application, topic) for topic in stored]
+    for outcome in outcomes:
+        _echo_outcome(outcome)
+    counts: dict[str, int] = {}
+    for outcome in outcomes:
+        counts[outcome.conclusion] = counts.get(outcome.conclusion, 0) + 1
+    typer.echo(
+        f"{len(outcomes)} topic(s): "
+        + ", ".join(f"{name} {count}" for name, count in sorted(counts.items()))
+    )
+    if any(outcome.fatal for outcome in outcomes):
+        raise typer.Exit(code=1)
+
+
+schedule_app = typer.Typer(
+    help="Generate local weekly schedules; scheduling stays outside the graph."
+)
+app.add_typer(schedule_app, name="schedule")
+
+
+@schedule_app.command("generate")
+def generate_schedule(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    backend: Annotated[
+        str | None, typer.Option(help="launchd or cron; defaults to the configured backend.")
+    ] = None,
+    at: Annotated[str, typer.Option(help="Local time of day, HH:MM.")] = "07:00",
+    output: Annotated[
+        Path | None, typer.Option(help="Write the schedule here instead of printing it.")
+    ] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Render this topic's weekly trigger for launchd or cron, with how to install it."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+        chosen = backend or application.scheduler_backend
+        if chosen not in ("launchd", "cron"):
+            raise ConfigurationError(f"unsupported scheduler backend: {chosen}")
+        moment = time.fromisoformat(at)
+    except (ConfigurationError, ValidationError, TopicStoreError, ValueError) as error:
+        typer.echo(f"Unable to schedule: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        artifact = render_schedule(
+            topic,
+            cast(SchedulerBackend, chosen),
+            at=moment,
+            working_directory=Path.cwd(),
+            log_directory=application.data_directory / "logs",
+        )
+    except ValidationError as error:
+        typer.echo(f"Unable to schedule: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(artifact.content, encoding="utf-8")
+        typer.echo(f"{artifact.backend} schedule written to {output}")
+    else:
+        typer.echo(artifact.content)
+    typer.echo(artifact.install_hint)
