@@ -15,6 +15,7 @@ from research_agent.documents.parser import ParsingService
 from research_agent.ideation.generator import IdeationService
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
+from research_agent.storage.artifacts import ArtifactStore
 from research_agent.storage.papers import PaperRepository
 from research_agent.storage.results import ResultRepository
 from research_agent.storage.runs import RunRepository
@@ -40,5 +41,8 @@ class WorkflowServices:
     synthesizer: WeeklySynthesizer
     ideation: IdeationService
     reports: ReportService
+    store: ArtifactStore | None = None
+    """Optional: without it a run writes no reproducibility manifest."""
+
     planner: QueryPlanner | None = None
     """Optional: without it the run uses the deterministic base query alone."""

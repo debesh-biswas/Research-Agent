@@ -10,7 +10,7 @@ topics:
 
     discovery:
       openalex: true
-      semantic_scholar: true
+      semantic_scholar: false   # 429s on every live run without an API key
       arxiv: true
 
     limits:

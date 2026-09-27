@@ -45,6 +45,7 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import build_router
+from research_agent.observability.logging import configure_logging
 from research_agent.operations.runner import RunOutcome, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
@@ -123,6 +124,9 @@ def validate_config(
 
 def _open_connection(settings_path: Path, topics_path: Path) -> sqlite3.Connection:
     configuration = ApplicationSettings(**_load_yaml_mapping(settings_path))
+    # Every command that touches the database gets structured, redacted logging. Configuring it
+    # here rather than in the callback uses the level from the settings file actually in use.
+    configure_logging(configuration.log_level)
     connection = connect(configuration.data_directory / "research_agent.db")
     apply_migrations(connection)
     bootstrap(SqliteTopicRepository(connection), topics_path)
