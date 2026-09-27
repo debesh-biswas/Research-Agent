@@ -5,6 +5,7 @@ operator would type, and the AWS equivalent later is EventBridge calling that sa
 here holds a secret; a rendered schedule contains a command and paths only.
 """
 
+import json
 from datetime import time
 from pathlib import Path
 from typing import Literal, Protocol
@@ -13,7 +14,21 @@ from pydantic import Field, field_validator
 
 from research_agent.config import SchedulingSettings, StrictModel, TopicSettings
 
-SchedulerBackend = Literal["launchd", "cron"]
+SchedulerBackend = Literal["launchd", "cron", "eventbridge"]
+
+ROLE_ARN_PLACEHOLDER = "arn:aws:iam::000000000000:role/research-agent-scheduler"
+TARGET_ARN_PLACEHOLDER = "arn:aws:lambda:us-east-1:000000000000:function:research-agent-start-run"
+
+# EventBridge cron uses three-letter day names rather than launchd's and cron's numbers.
+_CRON_DAYS: dict[str, str] = {
+    "sunday": "SUN",
+    "monday": "MON",
+    "tuesday": "TUE",
+    "wednesday": "WED",
+    "thursday": "THU",
+    "friday": "FRI",
+    "saturday": "SAT",
+}
 
 _WEEKDAYS: dict[str, int] = {
     "sunday": 0,
@@ -151,9 +166,60 @@ class CronScheduler:
         )
 
 
+class EventBridgeScheduler:
+    """An EventBridge Scheduler schedule, rendered rather than created.
+
+    This is the AWS substitution for launchd or cron (TRD section 50). It emits the JSON an operator
+    or a deployment tool passes to `aws scheduler create-schedule`; nothing here calls AWS, so it
+    needs no credentials, no dependency, and cannot become required locally. The target invokes the
+    long-running worker — never the whole graph inside one Lambda (TRD section 51).
+    """
+
+    backend: SchedulerBackend = "eventbridge"
+
+    def __init__(
+        self, role_arn: str = ROLE_ARN_PLACEHOLDER, target_arn: str = TARGET_ARN_PLACEHOLDER
+    ) -> None:
+        self._role_arn = role_arn
+        self._target_arn = target_arn
+
+    def render(self, request: ScheduleRequest) -> ScheduleArtifact:
+        name = f"research-agent-{request.topic_id.replace('_', '-')}"
+        schedule = {
+            "Name": name,
+            "ScheduleExpression": (
+                f"cron({request.at.minute} {request.at.hour} ? * "
+                f"{_CRON_DAYS[request.scheduling.day]} *)"
+            ),
+            "ScheduleExpressionTimezone": "UTC",
+            "FlexibleTimeWindow": {"Mode": "OFF"},
+            "Description": f"Weekly research run for {request.topic_id}",
+            "Target": {
+                "Arn": self._target_arn,
+                "RoleArn": self._role_arn,
+                "Input": json.dumps({"command": command(request)}),
+                "RetryPolicy": {"MaximumRetryAttempts": 0},
+            },
+        }
+        return ScheduleArtifact(
+            backend=self.backend,
+            filename=f"{name}.schedule.json",
+            content=json.dumps(schedule, indent=2, sort_keys=True) + "\n",
+            install_hint=(
+                f"Create it with `aws scheduler create-schedule --cli-input-json file://{name}"
+                ".schedule.json` once Arn and RoleArn are real. Retries are off because the run is "
+                "idempotent and long: a retry would collide with the per-topic lock."
+            ),
+        )
+
+
 def build_scheduler(backend: SchedulerBackend) -> Scheduler:
     """Resolve a configured backend to its implementation."""
-    return LaunchdScheduler() if backend == "launchd" else CronScheduler()
+    if backend == "launchd":
+        return LaunchdScheduler()
+    if backend == "cron":
+        return CronScheduler()
+    return EventBridgeScheduler()
 
 
 def render_schedule(

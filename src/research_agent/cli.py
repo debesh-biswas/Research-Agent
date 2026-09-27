@@ -1215,7 +1215,8 @@ app.add_typer(schedule_app, name="schedule")
 def generate_schedule(
     topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
     backend: Annotated[
-        str | None, typer.Option(help="launchd or cron; defaults to the configured backend.")
+        str | None,
+        typer.Option(help="launchd, cron or eventbridge; defaults to the configured backend."),
     ] = None,
     at: Annotated[str, typer.Option(help="Local time of day, HH:MM.")] = "07:00",
     output: Annotated[
@@ -1230,7 +1231,7 @@ def generate_schedule(
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
         chosen = backend or application.scheduler_backend
-        if chosen not in ("launchd", "cron"):
+        if chosen not in ("launchd", "cron", "eventbridge"):
             raise ConfigurationError(f"unsupported scheduler backend: {chosen}")
         moment = time.fromisoformat(at)
     except (ConfigurationError, ValidationError, TopicStoreError, ValueError) as error:
