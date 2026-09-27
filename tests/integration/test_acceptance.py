@@ -8,6 +8,7 @@ tolerance of a corrupt cache, and no credential anywhere in what a run writes.
 import asyncio
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from tests.integration.test_workflow_graph import (
     END,
     START,
     FakeParser,
+    Handler,
     execute,
     handler,
     services,
@@ -33,7 +35,7 @@ from tests.integration.test_workflow_graph import (
 KEY = "nvapi-3f9Qz7LmT2xWv8pR4sKd6BhN1cYgE5jA0uZoI7"
 
 
-def counted(**options: object) -> tuple[object, dict[str, int]]:
+def counted(**options: object) -> tuple[Handler, dict[str, int]]:
     """The standard transport, plus a tally of what each stage was asked to do."""
     calls: dict[str, int] = {}
     base = handler(**options)  # type: ignore[arg-type]
@@ -151,9 +153,7 @@ def test_resource_limits_are_respected(connection: sqlite3.Connection, tmp_path:
         }
     )
 
-    final = execute(
-        type(workflow)(**{**workflow.__dict__, "topic": bounded})  # type: ignore[arg-type]
-    )
+    final = execute(replace(workflow, topic=bounded))
 
     assert len(final.candidates) <= 2
     assert len(final.classifications) <= 1
