@@ -36,6 +36,8 @@ class ArtifactStore(Protocol):
 
     def exists(self, topic_id: str, kind: ArtifactKind, name: str) -> bool: ...
 
+    def names(self, topic_id: str, kind: ArtifactKind) -> list[str]: ...
+
     def delete(self, topic_id: str, kind: ArtifactKind, name: str) -> None: ...
 
 
@@ -75,6 +77,13 @@ class LocalArtifactStore:
 
     def exists(self, topic_id: str, kind: ArtifactKind, name: str) -> bool:
         return self.path_for(topic_id, kind, name).is_file()
+
+    def names(self, topic_id: str, kind: ArtifactKind) -> list[str]:
+        """Stored artifact names in sorted order, so "the newest report" is a deterministic pick."""
+        directory = self._root / "topics" / safe_name(topic_id) / kind
+        if not directory.is_dir():
+            return []
+        return sorted(path.name for path in directory.iterdir() if path.is_file())
 
     def delete(self, topic_id: str, kind: ArtifactKind, name: str) -> None:
         self.path_for(topic_id, kind, name).unlink(missing_ok=True)

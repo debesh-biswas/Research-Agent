@@ -150,6 +150,13 @@ class IdeationSettings(StrictModel):
     max_input_chars: int = Field(default=24000, gt=0)
 
 
+class ReportSettings(StrictModel):
+    """The report is deterministic; only the executive summary is model-written, and optional."""
+
+    include_prose: bool = True
+    max_input_chars: int = Field(default=8000, gt=0)
+
+
 class DocumentSettings(StrictModel):
     """Pacing and safety limits for PDF acquisition; downloaded content is untrusted input."""
 
@@ -189,6 +196,7 @@ class ApplicationSettings(BaseSettings):
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
     synthesis: SynthesisSettings = Field(default_factory=SynthesisSettings)
     ideation: IdeationSettings = Field(default_factory=IdeationSettings)
+    reports: ReportSettings = Field(default_factory=ReportSettings)
 
     @classmethod
     def settings_customise_sources(

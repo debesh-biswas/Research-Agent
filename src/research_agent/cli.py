@@ -34,7 +34,7 @@ from research_agent.domain.analysis import PaperAnalysis, WeeklySynthesis
 from research_agent.domain.documents import ParsedPaper
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
-from research_agent.domain.runs import ErrorRecord, RunSummary
+from research_agent.domain.runs import ErrorRecord, RunRecord, RunSummary
 from research_agent.domain.selection import SelectionPlan
 from research_agent.ideation.cards import render_ideation
 from research_agent.ideation.generator import IdeationOutcome, IdeationService
@@ -46,6 +46,7 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner, base_query
+from research_agent.reports.service import ReportOutcome, ReportService
 from research_agent.selection.selector import select
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
@@ -1025,3 +1026,103 @@ async def _ideate(
     async with _http_client(application.models.nim.timeout_seconds) as client:
         service = IdeationService(build_router(client, application), results, application.ideation)
         return await service.generate(topic, run_id, synthesis)
+
+
+report_app = typer.Typer(help="Generate and retrieve weekly reports.")
+app.add_typer(report_app, name="report")
+
+
+@report_app.command("generate")
+def generate_report(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to report on; defaults to the most recent.")
+    ] = None,
+    days: Annotated[
+        int | None, typer.Option(help="Reporting period length; defaults to the topic lookback.")
+    ] = None,
+    prose: Annotated[bool, typer.Option(help="Ask a model for the executive summary.")] = True,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Assemble the weekly Markdown report for one run from its persisted records."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to report: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    record = None if run_id is None else SqliteRunRepository(connection).get(run_id)
+    if record is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    end_date = datetime.now(UTC).date()
+    start_date = end_date - timedelta(days=days or topic.lookback_days)
+    selected = SqliteSelectionRepository(connection).selected_for(record.id)
+    outcome = asyncio.run(
+        _report(application, topic, record, selected, start_date, end_date, connection, prose)
+    )
+
+    kind = "empty-week" if outcome.empty_week else f"{outcome.papers} paper(s)"
+    typer.echo(
+        f"{kind} report for run {record.id}"
+        + (" (degraded)" if outcome.degraded else "")
+        + (" with model-written summary" if outcome.prose else " with assembled summary")
+    )
+    typer.echo(outcome.path)
+
+
+@report_app.command("latest")
+def latest_report(
+    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Print the path of the newest stored report for one topic."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to read reports: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    service = ReportService(
+        LocalArtifactStore(application.data_directory),
+        SqliteResultRepository(connection),
+        SqlitePaperRepository(connection),
+        SqliteRunRepository(connection),
+    )
+    path = service.latest(topic_id)
+    if path is None:
+        typer.echo(f"No report stored for {topic_id}.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(path)
+
+
+async def _report(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    run: RunRecord,
+    paper_ids: list[str],
+    start_date: date,
+    end_date: date,
+    connection: sqlite3.Connection,
+    prose: bool,
+) -> ReportOutcome:
+    async with _http_client(application.models.nim.timeout_seconds) as client:
+        service = ReportService(
+            LocalArtifactStore(application.data_directory),
+            SqliteResultRepository(connection),
+            SqlitePaperRepository(connection),
+            SqliteRunRepository(connection),
+            build_router(client, application) if prose else None,
+            application.reports,
+        )
+        return await service.generate(topic, run, paper_ids, start_date, end_date)
