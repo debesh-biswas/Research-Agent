@@ -48,7 +48,9 @@ class OpenAlexSource(BaseSource):
     ) -> list[PaperCandidate]:
         candidates: list[PaperCandidate] = []
         cursor = "*"
-        while len(candidates) < limit and cursor:
+        pages = 0
+        while len(candidates) < limit and cursor and pages < self._settings.max_pages:
+            pages += 1
             payload = await request_json(
                 self._client,
                 _URL,
