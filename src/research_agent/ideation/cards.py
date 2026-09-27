@@ -5,6 +5,7 @@ stripped of the markup that could break the document.
 """
 
 from research_agent.domain.analysis import ResearchGap, ResearchIdea
+from research_agent.utils.markdown import inline as _inline
 
 
 def render_ideation(gaps: list[ResearchGap], ideas: list[ResearchIdea]) -> str:
@@ -64,7 +65,3 @@ def _ideas(ideas: list[ResearchIdea]) -> list[str]:
         if idea.risks:
             lines.extend(["**Risks.**", "", *(f"- {_inline(risk)}" for risk in idea.risks), ""])
     return lines
-
-
-def _inline(value: str) -> str:
-    return " ".join(value.replace("`", "'").split())

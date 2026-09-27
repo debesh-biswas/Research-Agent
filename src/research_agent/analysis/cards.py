@@ -6,6 +6,8 @@ originates in a model reply or a provider payload, so all of it is treated as un
 
 from research_agent.domain.analysis import Claim, PaperAnalysis
 from research_agent.domain.papers import PaperCandidate
+from research_agent.utils.markdown import block as _block
+from research_agent.utils.markdown import inline as _inline
 
 _ABSTRACT_ONLY_NOTE = (
     "> Abstract-only analysis: no parsed full text was available, so depth is limited."
@@ -78,14 +80,3 @@ def _claims(claims: list[Claim]) -> list[str]:
         if claim.evidence_excerpt:
             lines.append(f'  - evidence: "{_inline(claim.evidence_excerpt)}"')
     return lines
-
-
-def _inline(value: str) -> str:
-    """Collapse untrusted text to one line and neutralize the markup that could break the card."""
-    return " ".join(value.replace("`", "'").split())
-
-
-def _block(value: str) -> str:
-    """Keep paragraph breaks, but never let untrusted text open a heading or a code fence."""
-    paragraphs = [_inline(part) for part in value.split("\n\n")]
-    return "\n\n".join(part for part in paragraphs if part)
