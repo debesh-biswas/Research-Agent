@@ -112,6 +112,9 @@ def test_gaps_and_ideas_round_trip(connection: sqlite3.Connection) -> None:
             description="Existing benchmarks stop at 50 steps.",
             supporting_paper_ids=[paper_id],
             confidence=0.6,
+            model_provider="local",
+            model_name="qwen",
+            prompt_version="research_gaps.v1",
         )
     ]
     ideas = [
@@ -124,6 +127,9 @@ def test_gaps_and_ideas_round_trip(connection: sqlite3.Connection) -> None:
             proposed_direction="Extend ObjectNav episodes.",
             evaluation_plan="Compare SPL across horizons.",
             risks=["Compute cost"],
+            model_provider="local",
+            model_name="qwen",
+            prompt_version="research_ideas.v1",
         )
     ]
 

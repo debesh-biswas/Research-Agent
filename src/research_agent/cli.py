@@ -36,6 +36,8 @@ from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
 from research_agent.domain.runs import ErrorRecord, RunSummary
 from research_agent.domain.selection import SelectionPlan
+from research_agent.ideation.cards import render_ideation
+from research_agent.ideation.generator import IdeationOutcome, IdeationService
 from research_agent.models.base import (
     Capability,
     ModelMessage,
@@ -949,3 +951,77 @@ async def _synthesize(
             build_router(client, application), results, application.synthesis
         )
         return await synthesizer.synthesize(topic, run_id, analyses, titles, start_date, end_date)
+
+
+@app.command("ideate")
+def ideate(
+    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
+    run: Annotated[
+        str | None, typer.Option("--run", help="Run to work from; defaults to the most recent.")
+    ] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Turn a run's synthesis into supported research gaps and concrete research ideas."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        topic = SqliteTopicRepository(connection).get(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to ideate: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    if topic is None:
+        typer.echo(f"Unknown topic: {topic_id}", err=True)
+        raise typer.Exit(code=1)
+
+    run_id = run or _latest_run(connection, topic_id)
+    if run_id is None:
+        typer.echo(f"No run found for {topic_id}. Run 'classify' first.", err=True)
+        raise typer.Exit(code=1)
+
+    results = SqliteResultRepository(connection)
+    history = results.recent_syntheses(topic_id, limit=1)
+    if not history:
+        typer.echo(f"Topic {topic_id} has no synthesis. Run 'synthesize' first.", err=True)
+        raise typer.Exit(code=1)
+
+    outcome = asyncio.run(_ideate(application, topic, run_id, history[0], results))
+
+    if not outcome.gaps:
+        typer.echo(f"No gaps for run {run_id}: {outcome.reason}", err=True)
+        SqliteRunRepository(connection).record_error(
+            ErrorRecord(
+                run_id=run_id,
+                node="ideate",
+                category="MODEL_API_ERROR",
+                message=outcome.reason or "ideation failed",
+            )
+        )
+        raise typer.Exit(code=1)
+
+    path = LocalArtifactStore(application.data_directory).write_text(
+        topic.id, "runs", f"{run_id}-ideation.md", render_ideation(outcome.gaps, outcome.ideas)
+    )
+    typer.echo(
+        f"{len(outcome.gaps)} gap(s) and {len(outcome.ideas)} idea(s) for run {run_id}; "
+        f"{outcome.dropped_gaps} gap(s) and {outcome.dropped_ideas} idea(s) dropped as unsupported."
+    )
+    for gap in outcome.gaps:
+        typer.echo(f"gap\t{', '.join(gap.supporting_paper_ids)}\t{gap.title}")
+    for idea in outcome.ideas:
+        typer.echo(f"idea\t{', '.join(idea.supporting_paper_ids)}\t{idea.title}")
+    typer.echo(f"written to {path}")
+    if outcome.reason is not None:
+        typer.echo(f"partial: {outcome.reason}", err=True)
+
+
+async def _ideate(
+    application: ApplicationSettings,
+    topic: TopicSettings,
+    run_id: str,
+    synthesis: WeeklySynthesis,
+    results: SqliteResultRepository,
+) -> IdeationOutcome:
+    async with _http_client(application.models.nim.timeout_seconds) as client:
+        service = IdeationService(build_router(client, application), results, application.ideation)
+        return await service.generate(topic, run_id, synthesis)

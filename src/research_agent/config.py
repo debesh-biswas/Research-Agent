@@ -142,6 +142,14 @@ class SynthesisSettings(StrictModel):
     history_window: int = Field(default=4, ge=0)
 
 
+class IdeationSettings(StrictModel):
+    """Ceilings for gap detection and ideation; quality gates are the prompts' own instructions."""
+
+    max_gaps: int = Field(default=5, gt=0)
+    max_ideas: int = Field(default=5, gt=0)
+    max_input_chars: int = Field(default=24000, gt=0)
+
+
 class DocumentSettings(StrictModel):
     """Pacing and safety limits for PDF acquisition; downloaded content is untrusted input."""
 
@@ -180,6 +188,7 @@ class ApplicationSettings(BaseSettings):
     documents: DocumentSettings = Field(default_factory=DocumentSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
     synthesis: SynthesisSettings = Field(default_factory=SynthesisSettings)
+    ideation: IdeationSettings = Field(default_factory=IdeationSettings)
 
     @classmethod
     def settings_customise_sources(
