@@ -9,6 +9,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from research_agent.discovery.normalize import canonical_id
 from research_agent.domain.runs import ErrorCategory, ErrorRecord, RunStatus, RunSummary
 from research_agent.queries.planner import base_query
 from research_agent.selection.selector import select
@@ -65,17 +66,19 @@ def discover(services: WorkflowServices) -> Node:
     async def node(state: ResearchState) -> Update:
         limit = services.topic.limits.max_candidates
         candidates = list(state.candidates)
-        seen = {candidate.canonical_id for candidate in candidates}
+        # Keyed through `canonical_id`, not the field, because an adapter may not have set it yet.
+        seen = {canonical_id(paper) for paper in candidates}
         counts = dict(state.counts)
         errors = list(state.errors)
-        for query in state.queries:
+        for query in state.queries[: services.settings.queries.max_per_run]:
             result = await services.discovery.search(
                 query, state.period_start, state.period_end, limit
             )
-            for candidate in result.candidates:
-                if candidate.canonical_id not in seen:
-                    seen.add(candidate.canonical_id)
-                    candidates.append(candidate)
+            for paper in result.candidates:
+                identifier = canonical_id(paper)
+                if identifier not in seen:
+                    seen.add(identifier)
+                    candidates.append(paper)
             for source, found in result.counts.items():
                 counts[source] = counts.get(source, 0) + found
             # The aggregator does not know the run id, so it is stamped on here; an error row
@@ -119,7 +122,7 @@ def classify(services: WorkflowServices) -> Node:
         candidates = state.candidates[: services.topic.limits.max_classified]
         outcome = await services.classifiers.run(candidates, services.topic)
         run_id = state.run_id or ""
-        by_id = {candidate.canonical_id: candidate for candidate in state.candidates}
+        by_id = {canonical_id(paper): paper for paper in state.candidates}
         for result, provenance in outcome.active:
             candidate = by_id.get(result.paper_id)
             if candidate is not None:

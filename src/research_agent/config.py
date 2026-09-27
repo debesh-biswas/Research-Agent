@@ -88,6 +88,12 @@ class QuerySettings(StrictModel):
 
     min_queries: int = Field(default=5, gt=0)
     max_queries: int = Field(default=20, gt=0)
+    max_per_run: int = Field(default=5, gt=0)
+    """How many of a plan's queries one run actually searches.
+
+    A plan is stored in full for reproducibility, but the slowest source is paced at one request
+    every few seconds, so searching twenty queries would make a weekly run take an hour.
+    """
     history_syntheses: int = Field(default=1, ge=0)
 
     @model_validator(mode="after")
