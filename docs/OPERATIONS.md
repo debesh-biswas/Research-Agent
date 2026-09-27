@@ -86,6 +86,33 @@ The output ends with the one command that installs it (`launchctl bootstrap …`
 The same command is what an AWS EventBridge Scheduler target would invoke later; nothing about the
 workflow changes.
 
+## Logs
+
+Every command that touches the database configures structured logging: one JSON object per line on
+standard error, at the level from `log_level` in `config/settings.yaml`. Each line carries the
+context that makes a weekly run diagnosable — `run_id`, `topic_id`, `node_name`, `paper_id`,
+`provider`, `model`, `status`, `error_type`.
+
+Credentials are redacted before a line is formatted: known key shapes, `Authorization: Bearer …`,
+`?api_key=…` query parameters, and the literal value of any `RESEARCH_AGENT_*` variable whose name
+mentions `API_KEY`, `TOKEN`, `SECRET` or `PASSWORD`. Redaction also covers exception tracebacks,
+which is where a request URL most often leaks. `httpx` and `httpcore` are pinned to `WARNING`, since
+their INFO lines print full request URLs.
+
+To keep a run's logs, redirect standard error: `uv run research-agent run <id> 2>> data/logs/<id>.log`.
+The generated schedules already do this.
+
+## Reproducibility
+
+Every completed run writes `data/topics/<topic_id>/runs/<run_id>-manifest.json` describing the
+inputs that produced it: the reporting period and status, the resolved topic configuration and
+limits, which sources were enabled, the active and shadow classifier, the provider and model names,
+the prompt versions, the relevant settings blocks, and the run's counts. It contains names only —
+never a key — so it is safe to attach to a bug report.
+
+Together with the run row in SQLite and the report's own Run Provenance section, that is enough to
+say exactly how any report was produced.
+
 ## Troubleshooting
 
 | Symptom | Cause and fix |
@@ -96,3 +123,9 @@ workflow changes.
 | `MODEL_API_ERROR` in the report | The configured provider did not answer. `research-agent model check`. |
 | Empty week | Nothing new matched. The run broadens its search once automatically before concluding this. |
 | A report looks stale | An unchanged paper is not re-analysed. Force it with `analyze --force`. |
+| A rerun of the same week reports an empty week | Correct behaviour: every paper was already analysed and unchanged, so nothing was selected. Use `classify --reanalyze` to reconsider them. |
+| A run sits in `classify` for a long time | A shadow classifier sends up to `max_classified` papers to an LLM whose verdicts do not route. Turn it off with `research-agent classifier set A --topic <id>`, or lower `limits.max_classified`. |
+| `DISCOVERY_ERROR` from arXiv with HTTP 406 | Server-side: arXiv currently rejects most queries from some clients, whatever headers are sent. The run continues on the other sources. |
+| `RATE_LIMIT` from Semantic Scholar | Expected without an API key: it answers 429 with a `Retry-After`. Set `RESEARCH_AGENT_SOURCES__SEMANTIC_SCHOLAR_API_KEY`, or disable that source for the topic. |
+| The first `parse` is slow | Docling downloads its model weights once, then caches them. |
+| A run reports `failed` after Ctrl-C | The interrupted run is closed as `failed` and everything already written is kept. Start a new run; the lock is released. |

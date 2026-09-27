@@ -90,7 +90,7 @@ def test_a_single_run_completes_and_reports(
     result = invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID)
 
     assert result.exit_code == 0, result.output
-    assert result.output.startswith("completed\tspatial_intelligence")
+    assert "completed\tspatial_intelligence" in result.output
     assert "_weekly_report.md" in result.output
     statuses = rows(tmp_path, "SELECT status FROM runs")
     assert statuses == [("completed",)]
@@ -116,7 +116,7 @@ def test_an_overlapping_run_is_refused(
     result = invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID)
 
     assert result.exit_code == 1
-    assert result.output.startswith("locked\tspatial_intelligence")
+    assert "locked\tspatial_intelligence" in result.output
     assert rows(tmp_path, "SELECT status FROM runs") == []
 
 
@@ -128,7 +128,7 @@ def test_a_partial_failure_still_succeeds_but_is_marked_degraded(
     )
 
     assert result.exit_code == 0, result.output
-    assert result.output.startswith("degraded\tspatial_intelligence")
+    assert "degraded\tspatial_intelligence" in result.output
     assert rows(tmp_path, "SELECT status FROM runs") == [("degraded",)]
 
 
@@ -138,7 +138,7 @@ def test_a_disabled_topic_is_skipped_and_exits_non_zero(
     result = invoke(monkeypatch, settings_path, topics_path, "run", OTHER_ID)
 
     assert result.exit_code == 1
-    assert result.output.startswith("skipped\tdisabled_topic")
+    assert "skipped\tdisabled_topic" in result.output
     assert "disabled" in result.output
 
 

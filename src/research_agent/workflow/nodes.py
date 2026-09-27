@@ -5,12 +5,15 @@ never raise: a stage that fails records an `ErrorRecord` and lets the run contin
 is what keeps partial progress in a weekly run.
 """
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from research_agent.discovery.normalize import canonical_id
+from research_agent.domain.analysis import PaperAnalysis
 from research_agent.domain.runs import ErrorCategory, ErrorRecord, RunStatus, RunSummary
+from research_agent.observability.manifest import run_manifest
 from research_agent.queries.planner import base_query
 from research_agent.selection.selector import select
 from research_agent.workflow.services import WorkflowServices
@@ -342,7 +345,7 @@ def report(services: WorkflowServices) -> Node:
 
 
 def persist(services: WorkflowServices) -> Node:
-    """Close the run: record every tolerated error, then its summary and final status."""
+    """Close the run: record every tolerated error, then its summary, manifest and final status."""
 
     async def node(state: ResearchState) -> Update:
         run_id = state.run_id or ""
@@ -351,6 +354,13 @@ def persist(services: WorkflowServices) -> Node:
         status: RunStatus = "degraded" if state.errors else "completed"
         if state.report_path is None:
             status = "failed"
+        analyses = [
+            analysis
+            for analysis in (
+                services.results.analysis_for(paper_id) for paper_id in state.analyzed_ids
+            )
+            if analysis is not None
+        ]
         services.runs.complete(
             run_id,
             RunSummary(
@@ -361,10 +371,42 @@ def persist(services: WorkflowServices) -> Node:
                 downloads_succeeded=state.counts.get("downloaded", 0),
                 parse_failures=state.counts.get("parse_failures", 0),
                 deep_reads=state.counts.get("deep_reads", 0),
+                models_used=sorted({analysis.model_name for analysis in analyses}),
                 errors=len(state.errors),
             ),
             status=status,
         )
+        _write_manifest(services, state, analyses)
         return {"status": status}
 
     return node
+
+
+def _write_manifest(
+    services: WorkflowServices, state: ResearchState, analyses: list[PaperAnalysis]
+) -> None:
+    """Store the inputs that produced this run, so it can be repeated or audited."""
+    if services.store is None:
+        return
+    run = services.runs.get(state.run_id or "")
+    if run is None:
+        return
+    synthesis = services.results.recent_syntheses(state.topic_id, limit=1)
+    prompt_versions = {
+        "paper_analysis": analyses[0].prompt_version if analyses else "none",
+        "weekly_synthesis": synthesis[0].prompt_version if synthesis else "none",
+    }
+    manifest = run_manifest(
+        run,
+        services.topic,
+        services.settings,
+        {**state.counts, "errors": len(state.errors)},
+        [analysis.model_name for analysis in analyses],
+        prompt_versions,
+    )
+    services.store.write_text(
+        state.topic_id,
+        "runs",
+        f"{run.id}-manifest.json",
+        json.dumps(manifest, indent=2, sort_keys=True),
+    )

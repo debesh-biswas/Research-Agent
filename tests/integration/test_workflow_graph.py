@@ -7,12 +7,11 @@ this exercises the graph's wiring, its conditional branches and its failure isol
 import asyncio
 import json
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
 import httpx
-import pytest
 
 from research_agent.analysis.analyzer import PaperAnalyzer
 from research_agent.classifiers.factory import build_classifier
@@ -27,17 +26,16 @@ from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
 from research_agent.storage.artifacts import LocalArtifactStore
-from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
-from research_agent.storage.topics import SqliteTopicRepository
 from research_agent.synthesis.synthesizer import WeeklySynthesizer
 from research_agent.workflow.graph import run_workflow
 from research_agent.workflow.services import WorkflowServices
 from research_agent.workflow.state import ResearchState
-from tests.unit.conftest import TOPIC_ID, mock_client
+from tests.integration.conftest import graph_topic
+from tests.unit.conftest import mock_client
 
 START = date(2026, 9, 17)
 END = date(2026, 9, 27)
@@ -162,25 +160,8 @@ def handler(
     return respond
 
 
-@pytest.fixture
-def connection(tmp_path: Path) -> Iterator[sqlite3.Connection]:
-    """A migrated database seeded with this test's topic, so foreign keys are satisfiable."""
-    database = connect(tmp_path / "agent.db")
-    apply_migrations(database)
-    SqliteTopicRepository(database).add(topic())
-    yield database
-    database.close()
-
-
 def topic() -> TopicSettings:
-    return TopicSettings.model_validate(
-        {
-            "id": TOPIC_ID,
-            "name": "Spatial Intelligence",
-            "keywords": ["embodied navigation", "metric control"],
-            "discovery": {"openalex": True, "semantic_scholar": False, "arxiv": False},
-        }
-    )
+    return graph_topic()
 
 
 def services(
@@ -219,6 +200,7 @@ def services(
         synthesizer=WeeklySynthesizer(router, results, settings.synthesis),
         ideation=IdeationService(router, results, settings.ideation),
         reports=ReportService(store, results, papers, runs, router, settings.reports),
+        store=store,
         planner=QueryPlanner(router, settings.queries) if planner else None,
     )
 

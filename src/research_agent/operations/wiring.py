@@ -97,6 +97,7 @@ def build_services(
         synthesizer=WeeklySynthesizer(router, results, application.synthesis),
         ideation=IdeationService(router, results, application.ideation),
         reports=ReportService(store, results, papers, runs, router, application.reports),
+        store=store,
         planner=QueryPlanner(router, application.queries),
     )
 
