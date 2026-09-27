@@ -81,16 +81,41 @@ class PaperAnalysis(StrictModel):
     """True when no parsed full text was available, so a reader can tell a deep read from a skim."""
 
 
-class WeeklySynthesis(StrictModel):
-    """Cross-paper picture of one reporting period."""
+class SupportedFinding(StrictModel):
+    """A cross-paper statement and the papers that support it.
 
-    major_developments: list[str] = Field(default_factory=list)
-    emerging_directions: list[str] = Field(default_factory=list)
-    methods_gaining_attention: list[str] = Field(default_factory=list)
+    A finding with no supporting paper is not stored, so a reader can always follow a claim back
+    into the corpus.
+    """
+
+    text: str = Field(min_length=1)
+    supporting_paper_ids: list[str] = Field(default_factory=list)
+
+
+class SynthesisDraft(StrictModel):
+    """The part of a synthesis a model produces; the synthesizer adds provenance."""
+
+    major_developments: list[SupportedFinding] = Field(default_factory=list)
+    emerging_directions: list[SupportedFinding] = Field(default_factory=list)
+    methods_gaining_attention: list[SupportedFinding] = Field(default_factory=list)
+    contradictions: list[SupportedFinding] = Field(default_factory=list)
+    common_limitations: list[SupportedFinding] = Field(default_factory=list)
     new_datasets: list[str] = Field(default_factory=list)
     new_benchmarks: list[str] = Field(default_factory=list)
-    contradictions: list[str] = Field(default_factory=list)
     changes_from_history: list[str] = Field(default_factory=list)
+
+
+class WeeklySynthesis(SynthesisDraft):
+    """Cross-paper picture of one reporting period, with the provenance to reproduce it."""
+
+    paper_ids: list[str] = Field(default_factory=list)
+    """Every paper the synthesis was given, in deterministic order."""
+
+    model_provider: str = Field(min_length=1)
+    model_name: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    history_periods: int = Field(default=0, ge=0)
+    """How many previous syntheses were compared against; zero means no history existed."""
 
 
 class ResearchGap(StrictModel):

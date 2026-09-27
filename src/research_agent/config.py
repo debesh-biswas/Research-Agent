@@ -135,6 +135,13 @@ class AnalysisSettings(StrictModel):
     """When false, no claim extraction is requested and no claims are persisted."""
 
 
+class SynthesisSettings(StrictModel):
+    """Bounds for the synthesis prompt and the history window the PRD asks to compare against."""
+
+    max_input_chars: int = Field(default=24000, gt=0)
+    history_window: int = Field(default=4, ge=0)
+
+
 class DocumentSettings(StrictModel):
     """Pacing and safety limits for PDF acquisition; downloaded content is untrusted input."""
 
@@ -172,6 +179,7 @@ class ApplicationSettings(BaseSettings):
     selection: SelectionSettings = Field(default_factory=SelectionSettings)
     documents: DocumentSettings = Field(default_factory=DocumentSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    synthesis: SynthesisSettings = Field(default_factory=SynthesisSettings)
 
     @classmethod
     def settings_customise_sources(

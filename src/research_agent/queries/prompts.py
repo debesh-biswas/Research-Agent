@@ -44,8 +44,8 @@ def render(
 def _history(history: list[WeeklySynthesis]) -> str:
     """Flatten previous syntheses into bullets, so the model expands into what is already moving."""
     bullets = [
-        f"- {item}"
+        f"- {finding.text}"
         for synthesis in history
-        for item in (*synthesis.major_developments, *synthesis.emerging_directions)
+        for finding in (*synthesis.major_developments, *synthesis.emerging_directions)
     ]
     return "\n".join(bullets) if bullets else "- none recorded yet"
