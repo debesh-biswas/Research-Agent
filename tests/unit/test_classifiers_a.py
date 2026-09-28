@@ -141,7 +141,7 @@ def test_provenance_records_how_a_score_was_reached() -> None:
     )
 
     _, provenance = explained[0]
-    assert provenance["version"] == "classifier_a.v1"
+    assert provenance["version"] == "classifier_a.v2"
     assert provenance["embedding_score"] == 1.0
     assert provenance["embedding_weight"] == 0.5
     assert "spatial intelligence" in provenance["matched_terms"]  # type: ignore[operator]

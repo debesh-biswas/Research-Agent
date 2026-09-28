@@ -43,9 +43,12 @@ classifier_b:
   max_abstract_chars: 2000
 
 selection:
-  # Limits (max_downloads, max_deep_reads) live per topic; these are the quality gates.
+  # Relevance is the eligibility gate; quality orders eligible papers by recency, venue, and impact.
   min_relevance_score: 0.3
   require_action: true
+  quality_weight: 0.35
+  recency_window_days: 30
+  preferred_venues: [CVPR, ICCV, ECCV, NeurIPS, ICML, ICLR, AAAI, IJCAI, SIGGRAPH, TPAMI, JMLR, Nature, Science]
 
 documents:
   max_pdf_bytes: 26214400

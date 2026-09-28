@@ -132,11 +132,30 @@ class ClassifierBSettings(StrictModel):
 
 
 class SelectionSettings(StrictModel):
-    """Thresholds beneath the classifier's own action; limits live in `ResourceLimits`."""
+    """Relevance gate plus transparent quality ranking; limits live in `ResourceLimits`."""
 
     min_relevance_score: float = Field(default=0.3, ge=0, le=1)
     require_action: bool = True
     """When true, a paper the classifier marked `ignore` is never selected whatever it scored."""
+    quality_weight: float = Field(default=0.35, ge=0, le=1)
+    recency_window_days: int = Field(default=30, gt=0)
+    preferred_venues: list[str] = Field(
+        default_factory=lambda: [
+            "CVPR",
+            "ICCV",
+            "ECCV",
+            "NeurIPS",
+            "ICML",
+            "ICLR",
+            "AAAI",
+            "IJCAI",
+            "SIGGRAPH",
+            "TPAMI",
+            "JMLR",
+            "Nature",
+            "Science",
+        ]
+    )
 
 
 class AnalysisSettings(StrictModel):

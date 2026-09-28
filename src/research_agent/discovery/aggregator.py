@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from datetime import date
+from math import ceil
 
 import httpx
 
@@ -60,9 +61,12 @@ class DiscoveryAggregator:
         limit: int,
     ) -> DiscoveryResult:
         """Return one deduplicated candidate set; a failing source never discards the others."""
+        # Reserve an even share for every enabled source. Without this, the first source can fill
+        # the global limit and starve the others before classification ever sees their papers.
+        per_source_limit = max(1, ceil(limit / max(1, len(self._sources))))
         results = await asyncio.gather(
             *(
-                self._search_one(source, query, start_date, end_date, limit)
+                self._search_one(source, query, start_date, end_date, per_source_limit)
                 for source in self._sources
             ),
             return_exceptions=True,

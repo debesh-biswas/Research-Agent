@@ -8,10 +8,10 @@ research intelligence. The product and technical specifications are maintained i
 The sequential implementation plan, branch names, acceptance gates, and dependencies are tracked
 in [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
 
-This repository currently contains the project foundation: validated configuration, a CLI,
-structured JSON logging, package boundaries, and an offline test suite. Discovery providers,
-classifiers, LangGraph orchestration, persistence, document processing, and report generation
-will be added as separately reviewed features.
+The current v1 implementation includes discovery adapters, two interchangeable classifiers,
+quality-aware paper ranking, LangGraph orchestration, SQLite/filesystem persistence, legal PDF
+acquisition and parsing, evidence-backed analysis, synthesis, ideation, Markdown reports, local
+scheduling, structured logs, and AWS portability seams.
 
 ## Requirements
 
