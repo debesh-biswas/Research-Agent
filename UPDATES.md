@@ -2,10 +2,11 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
-## 2026-09-28 — F21 quality-aware paper ranking (in progress)
+## 2026-09-28 — F21 quality-aware paper ranking (complete, merged)
 
-- **Feature/branch:** `F21-quality-paper-ranking` (allocated after F20; not yet merged).
-- **Status:** Implementation and verification complete on the feature branch; commit/merge remains.
+- **Feature/branch:** `F21-quality-paper-ranking` (allocated after F20).
+- **Commits:** `91fa8c5` feat(ranking): prioritize relevant recent quality papers; merged as `94c1613`.
+- **Status:** Complete, merged, and re-verified on `main`.
 
 **Behavior added**
 
@@ -40,8 +41,7 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
   existing database or report artifacts.
 - Venue metadata is best-effort from providers; papers without a venue remain eligible when topical
   relevance is sufficient but rank below recent papers with known preferred venues.
-- Next step: commit this bounded feature, merge into `main`, then rerun
-  `research-agent run computer_vision` and inspect the selected papers/report.
+- Next step: rerun `research-agent run computer_vision` and inspect the selected papers/report.
 
 ## 2026-09-27 — F20 AWS portability validation (complete, merged)
 
