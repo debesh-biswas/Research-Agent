@@ -20,6 +20,7 @@ class FakeSource:
         error: Exception | None = None,
         inflight: list[int] | None = None,
         peak: list[int] | None = None,
+        requested_limits: list[int] | None = None,
     ) -> None:
         self.name = name
         self._candidates = candidates or []
@@ -27,11 +28,14 @@ class FakeSource:
         self.calls = 0
         self._inflight = inflight
         self._peak = peak
+        self._requested_limits = requested_limits
 
     async def search(
         self, query: str, start_date: date, end_date: date, limit: int
     ) -> list[PaperCandidate]:
         self.calls += 1
+        if self._requested_limits is not None:
+            self._requested_limits.append(limit)
         if self._inflight is not None and self._peak is not None:
             self._inflight.append(1)
             self._peak.append(len(self._inflight))
@@ -144,3 +148,15 @@ def test_the_limit_is_applied_to_the_merged_set() -> None:
     result = _search(DiscoveryAggregator(sources), limit=3)
 
     assert len(result.candidates) == 3
+
+
+def test_the_candidate_limit_is_shared_across_sources() -> None:
+    requested: list[int] = []
+    sources = [
+        FakeSource("openalex", requested_limits=requested),
+        FakeSource("arxiv", requested_limits=requested),
+    ]
+
+    _search(DiscoveryAggregator(sources), limit=10)
+
+    assert requested == [5, 5]

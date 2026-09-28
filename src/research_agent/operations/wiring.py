@@ -24,6 +24,7 @@ from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.papers import SqlitePaperRepository
+from research_agent.storage.queries import SqliteQueryPlanRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
@@ -99,6 +100,7 @@ def build_services(
         reports=ReportService(store, results, papers, runs, router, application.reports),
         store=store,
         planner=QueryPlanner(router, application.queries),
+        query_plans=SqliteQueryPlanRepository(connection),
     )
 
 

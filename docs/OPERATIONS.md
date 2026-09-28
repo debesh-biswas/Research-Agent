@@ -54,6 +54,16 @@ A degraded run is normal: a paper with no open-access PDF, one unparseable file 
 each degrade one part of the report and are listed in its Run Provenance section. Interrupting a run
 with Ctrl-C closes the open run as `failed` and leaves everything already written on disk.
 
+## Paper ranking
+
+The default Classifier A first checks topical relevance. A phrase match in a title or abstract is
+not diluted by unrelated optional keywords, so a paper that actually discusses the topic can pass
+the relevance gate. Eligible papers are then ordered deterministically using recency, a configurable
+preferred-venue list, citation metadata when available, and whether a provider supplies richer
+metadata. Relevance remains the eligibility gate; quality signals only decide which eligible papers
+fit the download/deep-read limits. The resolved query list is stored in the run manifest and query
+plan table for auditing.
+
 ## Where things land
 
 ```text

@@ -12,14 +12,13 @@ from research_agent.config import TopicSettings
 from research_agent.discovery.normalize import normalize_title
 from research_agent.domain.papers import PaperCandidate
 
-CUE_VERSION = "classifier_a.v1"
+CUE_VERSION = "classifier_a.v2"
 """Bumped whenever the weights or cue table below change, so stored verdicts stay interpretable."""
 
 PaperType = Literal["method", "dataset", "benchmark", "survey", "application", "other"]
 
 _TOPIC_WEIGHT = 2.0
 _KEYWORD_WEIGHT = 1.0
-_TOKEN_WEIGHT = 0.5
 _MIN_TOKEN_LENGTH = 4
 
 # How much a term contributes when it is found, by where and how precisely it matched.
@@ -80,25 +79,39 @@ def _match_factor(term: str, title: str, abstract: str) -> float:
 
 
 def lexical_score(paper: PaperCandidate, topic: TopicSettings) -> tuple[float, list[str]]:
-    """Score a paper against a topic in 0-1, with the terms that earned the score."""
+    """Score topical evidence without diluting a match by unused optional keywords.
+
+    The previous denominator divided by every configured term, which made an exact
+    ``computer vision`` abstract match score 0.25 and fail the default 0.3 gate.
+    """
     terms = dict(topic_terms(topic))
     if not terms:
         return 0.0, []
 
     title = normalize_title(paper.title)
     abstract = normalize_title(paper.abstract or "")
-    earned = 0.0
+    scored_terms: list[tuple[float, float]] = []
     matched: list[str] = []
     for term, weight in sorted(terms.items()):
         factor = _match_factor(term, title, abstract)
         if factor:
-            earned += factor * weight
+            strength = 1.0 if weight >= _TOPIC_WEIGHT else 0.55
+            scored_terms.append((factor * strength, weight))
             matched.append(term)
-    # Bonus tokens are numerator-only: matching "spatial" helps, but a paper is not penalized
-    # for missing it, so a topic with a long name stays as reachable as a short one.
-    for token in _bonus_terms(topic, terms):
-        earned += _match_factor(token, title, abstract) * _TOKEN_WEIGHT
-    return min(1.0, earned / sum(terms.values())), matched
+    if scored_terms:
+        total_weight = sum(weight for _, weight in scored_terms)
+        return min(
+            1.0, sum(score * weight for score, weight in scored_terms) / total_weight
+        ), matched
+
+    # Individual topic tokens are a weak discovery hint, never enough on their own to pass the
+    # normal relevance threshold. This keeps broad terms such as ``vision`` from selecting noise.
+    token_scores = [
+        _match_factor(token, title, abstract) * 0.2
+        for token in _bonus_terms(topic, terms)
+        if _match_factor(token, title, abstract)
+    ]
+    return (min(1.0, max(token_scores)), matched) if token_scores else (0.0, matched)
 
 
 def detect_paper_type(paper: PaperCandidate) -> PaperType:

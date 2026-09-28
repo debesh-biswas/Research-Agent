@@ -1,9 +1,11 @@
 import random
+from datetime import date
 
 from research_agent.config import ResourceLimits, SelectionSettings
 from research_agent.domain.analysis import ClassificationResult
 from research_agent.domain.selection import SelectionPlan
 from research_agent.selection.selector import select
+from tests.unit.conftest import candidate
 
 LIMITS = ResourceLimits(max_downloads=50, max_deep_reads=15)
 
@@ -142,3 +144,28 @@ def test_the_same_inputs_produce_an_identical_plan_twice() -> None:
     verdicts = [verdict("p1"), verdict("p2", action="summarize"), verdict("p3", action="ignore")]
 
     assert select(verdicts, LIMITS) == select(verdicts, LIMITS)
+
+
+def test_quality_orders_relevant_papers_with_the_same_action() -> None:
+    verdicts = [
+        verdict("weak", action="summarize", relevance="medium", score=0.5),
+        verdict("strong", action="summarize", relevance="medium", score=0.5),
+    ]
+    papers = {
+        "weak": candidate(title="A Vision Result", publication_date=date(2026, 9, 1)),
+        "strong": candidate(
+            title="A Vision Result",
+            publication_date=date(2026, 9, 27),
+            venue="CVPR",
+            citation_count=40,
+        ),
+    }
+
+    plan = select(
+        verdicts,
+        LIMITS,
+        papers=papers,
+        as_of=date(2026, 9, 28),
+    )
+
+    assert [decision.paper_id for decision in plan.decisions] == ["strong", "weak"]

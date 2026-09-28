@@ -20,6 +20,7 @@ def run_manifest(
     counts: dict[str, int],
     models_used: list[str],
     prompt_versions: dict[str, str],
+    queries: list[str] | None = None,
 ) -> dict[str, Any]:
     """Describe one run completely enough to repeat it, with no secret in it.
 
@@ -65,6 +66,7 @@ def run_manifest(
             "models_used": sorted(set(models_used)),
         },
         "prompt_versions": dict(sorted(prompt_versions.items())),
+        "queries": list(queries or []),
         "settings": {
             "concurrency": application.concurrency.model_dump(),
             "retries": application.retries.model_dump(),

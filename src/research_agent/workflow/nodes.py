@@ -58,6 +58,8 @@ def plan_queries(services: WorkflowServices) -> Node:
             return {"queries": [anchor]}
         history = services.results.recent_syntheses(state.topic_id, limit=4)
         plan = await services.planner.plan(services.topic, history)
+        if services.query_plans is not None:
+            services.query_plans.save(plan, state.run_id)
         return {"queries": plan.queries}
 
     return node
@@ -158,7 +160,12 @@ def select_papers(services: WorkflowServices) -> Node:
             result.paper_id for result in state.classifications
         )
         plan = select(
-            state.classifications, services.topic.limits, services.settings.selection, analyzed
+            state.classifications,
+            services.topic.limits,
+            services.settings.selection,
+            analyzed,
+            papers={canonical_id(paper): paper for paper in state.candidates},
+            as_of=state.period_end,
         )
         services.selections.save(state.run_id or "", plan)
         counts = {
@@ -403,6 +410,7 @@ def _write_manifest(
         {**state.counts, "errors": len(state.errors)},
         [analysis.model_name for analysis in analyses],
         prompt_versions,
+        queries=state.queries,
     )
     services.store.write_text(
         state.topic_id,

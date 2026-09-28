@@ -33,6 +33,15 @@ def test_a_matching_title_scores_higher_than_the_same_words_in_an_abstract() -> 
     assert "spatial intelligence" in title_terms
 
 
+def test_a_topic_phrase_in_an_abstract_clears_the_relevance_gate() -> None:
+    score, matched = lexical_score(
+        candidate(title="A Modern Result", abstract="We study spatial intelligence."), topic()
+    )
+
+    assert score >= 0.3
+    assert matched == ["spatial intelligence"]
+
+
 def test_every_score_stays_within_the_unit_interval() -> None:
     saturated = candidate(
         title="Spatial Intelligence Embodied Navigation Spatial Intelligence",
