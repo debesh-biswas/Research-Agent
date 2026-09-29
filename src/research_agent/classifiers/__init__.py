@@ -1,1 +1,0 @@
-"""Interchangeable paper classifier boundary."""

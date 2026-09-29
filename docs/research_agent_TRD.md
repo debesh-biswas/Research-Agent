@@ -7,7 +7,7 @@
 **Primary Orchestration:** LangGraph  
 **Deployment Strategy:** Local-first, AWS-compatible  
 **Cost Constraint:** Free/open-source/student-free-plan-oriented  
-**Classifier Scope:** Classifier A and Classifier B only
+**Screening Scope:** One semantic screener with NIM and local fallback
 
 ---
 
@@ -18,8 +18,7 @@ Build a modular weekly research-agent system that:
 - Runs locally on a 24 GB Apple Silicon MacBook.
 - Uses LangGraph for workflow orchestration.
 - Discovers papers from OpenAlex, Semantic Scholar, and arXiv.
-- Supports two hot-swappable pre-existing classifiers.
-- Supports active/shadow classifier execution.
+- Uses one semantic screener with a NIM-first, local-fallback policy.
 - Uses deterministic code for retrieval, normalization, deduplication, downloading, persistence, and validation.
 - Uses local LLM inference for lightweight semantic tasks.
 - Uses NVIDIA NIM free endpoints, when available, for expensive reasoning.

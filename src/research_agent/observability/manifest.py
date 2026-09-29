@@ -55,10 +55,7 @@ def run_manifest(
             )
             if enabled
         ),
-        "classifier": {
-            "active": topic.classifier.active,
-            "shadow": topic.classifier.shadow,
-        },
+        "screening": {"service": "semantic_screening"},
         "models": {
             "strong_provider": application.strong_model_provider,
             "local_model": application.models.local.model,

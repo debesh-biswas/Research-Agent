@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from research_agent.analysis.analyzer import PaperAnalyzer
-from research_agent.classifiers.runner import ClassifierRunner
 from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.discovery.aggregator import DiscoveryAggregator
 from research_agent.documents.downloader import DocumentAcquirer
@@ -17,6 +16,7 @@ from research_agent.domain.queries import QueryPlan
 from research_agent.ideation.generator import IdeationService
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
+from research_agent.screening.service import PaperScreener
 from research_agent.storage.artifacts import ArtifactStore
 from research_agent.storage.papers import PaperRepository
 from research_agent.storage.results import ResultRepository
@@ -42,7 +42,7 @@ class WorkflowServices:
     results: ResultRepository
     selections: SelectionRepository
     discovery: DiscoveryAggregator
-    classifiers: ClassifierRunner
+    screener: PaperScreener
     acquirer: DocumentAcquirer
     parsing: ParsingService
     analyzer: PaperAnalyzer

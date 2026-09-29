@@ -13,7 +13,7 @@ concurrency:
 retries:
   academic_apis: 3
   nim: 2
-  classifier_repair: 1
+  screening_repair: 1
   pdf_download: 2
 
 models:
@@ -31,15 +31,8 @@ models:
     timeout_seconds: 300
     max_output_tokens: 8192
 
-classifier_a:
-  deep_read_at: 0.6
-  summarize_at: 0.3
-  embedding_weight: 0.5
-  # Set a local embedding model to blend semantic similarity into the lexical score.
-  # embedding_model: nomic-embed-text
-
-classifier_b:
-  # The runtime and model come from models.local; this only bounds the prompt.
+screening:
+  # NIM screens by default; the local model is used after NIM errors.
   max_abstract_chars: 2000
 
 selection:

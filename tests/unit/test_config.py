@@ -5,8 +5,6 @@ from pydantic import ValidationError
 
 from research_agent.config import (
     ApplicationSettings,
-    ClassifierASettings,
-    ClassifierSettings,
     ConcurrencySettings,
     ConfigurationError,
     DocumentSettings,
@@ -28,12 +26,7 @@ def _write_valid_configuration(tmp_path: Path) -> tuple[Path, Path]:
     )
     topics_path = tmp_path / "topics.yaml"
     topics_path.write_text(
-        "topics:\n"
-        "  - id: test_topic\n"
-        "    name: Test Topic\n"
-        "    classifier:\n"
-        "      active: A\n"
-        "      shadow: B\n",
+        "topics:\n  - id: test_topic\n    name: Test Topic\n",
         encoding="utf-8",
     )
     return settings_path, topics_path
@@ -55,11 +48,6 @@ def test_environment_overrides_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = ApplicationSettings(concurrency=ConcurrencySettings(discovery=2))
 
     assert settings.concurrency.discovery == 7
-
-
-def test_active_and_shadow_classifiers_must_differ() -> None:
-    with pytest.raises(ValidationError, match="shadow classifier must differ"):
-        ClassifierSettings(active="A", shadow="A")
 
 
 def test_resource_limits_are_monotonic() -> None:
@@ -92,18 +80,6 @@ def test_query_settings_default_to_the_trd_range() -> None:
 
     assert (settings.queries.min_queries, settings.queries.max_queries) == (5, 20)
     assert settings.queries.history_syntheses == 1
-
-
-def test_classifier_a_thresholds_must_be_ordered() -> None:
-    with pytest.raises(ValidationError):
-        ClassifierASettings(summarize_at=0.7, deep_read_at=0.6)
-
-
-def test_classifier_a_defaults_to_lexical_scoring() -> None:
-    settings = ApplicationSettings()
-
-    assert settings.classifier_a.embedding_model is None
-    assert (settings.classifier_a.summarize_at, settings.classifier_a.deep_read_at) == (0.3, 0.6)
 
 
 def test_selection_defaults_require_an_action_and_a_minimum_score() -> None:

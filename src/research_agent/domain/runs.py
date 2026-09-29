@@ -46,8 +46,8 @@ class RunRecord(StrictModel):
     started_at: datetime
     completed_at: datetime | None = None
     status: RunStatus = "running"
-    active_classifier: Literal["A", "B"] = "A"
-    shadow_classifier: Literal["A", "B"] | None = None
+    active_classifier: str = "semantic_screening"
+    shadow_classifier: str | None = None
     duration_seconds: float | None = Field(default=None, ge=0)
     summary: RunSummary | None = None
 

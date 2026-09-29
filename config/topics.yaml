@@ -4,10 +4,6 @@ topics:
     enabled: true
     lookback_days: 10
 
-    classifier:
-      active: A
-      shadow: B
-
     discovery:
       openalex: true
       semantic_scholar: false   # 429s on every live run without an API key

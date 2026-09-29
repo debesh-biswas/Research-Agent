@@ -27,8 +27,7 @@ _CAPABILITIES: frozenset[str] = frozenset(
 class ModelRouter:
     """Send each capability to its provider, degrading to local inference when the strong one fails.
 
-    ``classification`` routes to the local provider here; picking between Classifier A and B is the
-    classifier factory's job, not the router's.
+    Screening and deep reasoning use the strong provider when configured.
     """
 
     def __init__(
@@ -74,6 +73,8 @@ class ModelRouter:
                     await provider.generate(label, messages, response_schema), response_schema
                 )
             except ModelValidationError:
+                # The task adapter owns one repair attempt, because only it knows how to repair
+                # its schema. It may then explicitly ask this router for local fallback.
                 raise
             except ModelProviderError as error:
                 last_error = error
@@ -103,21 +104,51 @@ class ModelRouter:
         )
         return result.model_copy(update={"fell_back": True})
 
+    async def generate_local(
+        self,
+        capability: Capability,
+        messages: list[ModelMessage],
+        response_schema: type[BaseModel] | None = None,
+        task: str | None = None,
+    ) -> ModelResult:
+        """Run a validated local fallback after a task-specific repair has been exhausted."""
+        label = task or capability
+        result = _validated(
+            await self._local.generate(label, messages, response_schema), response_schema
+        )
+        return result.model_copy(update={"fell_back": True})
+
 
 def _validated(result: ModelResult, response_schema: type[BaseModel] | None) -> ModelResult:
     """Validate structured output before it can reach routing or persistence.
 
-    Malformed output is not retried here: the TRD gives the single repair retry to Classifier B.
+    All structured output is validated before it can reach routing or persistence.
     """
     if response_schema is None:
         return result
     try:
-        parsed = response_schema.model_validate(json.loads(result.text))
+        parsed = response_schema.model_validate(_json_object(result.text))
     except (json.JSONDecodeError, ValidationError) as error:
         raise ModelValidationError(
             f"{result.provider} returned output that failed {response_schema.__name__}: {error}"
         ) from error
     return result.model_copy(update={"parsed": parsed})
+
+
+def _json_object(text: str) -> object:
+    """Accept a JSON object even when a chat model wraps it in Markdown prose or fences."""
+    content = text.strip()
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else ""
+        content = content.rsplit("```", 1)[0].strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        start = content.find("{")
+        if start < 0:
+            raise
+        value, _ = json.JSONDecoder().raw_decode(content[start:])
+        return value
 
 
 def build_router(client: httpx.AsyncClient, settings: ApplicationSettings) -> ModelRouter:

@@ -9,7 +9,6 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from research_agent.config import (
-    ClassifierSettings,
     ConfigurationError,
     TopicsConfiguration,
     TopicSettings,
@@ -47,8 +46,6 @@ class TopicRepository(Protocol):
 
     def set_enabled(self, topic_id: str, enabled: bool) -> None: ...
 
-    def set_classifier(self, topic_id: str, active: str, shadow: str | None) -> None: ...
-
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -61,8 +58,8 @@ def _to_row(topic: TopicSettings) -> dict[str, Any]:
         "enabled": int(topic.enabled),
         "lookback_days": topic.lookback_days,
         "keywords_json": json.dumps(topic.keywords),
-        "active_classifier": topic.classifier.active,
-        "shadow_classifier": topic.classifier.shadow,
+        "active_classifier": "semantic_screening",
+        "shadow_classifier": None,
         "schedule_frequency": topic.scheduling.frequency,
         "schedule_day": topic.scheduling.day,
         "source_openalex": int(topic.discovery.openalex),
@@ -83,10 +80,6 @@ def _from_row(row: sqlite3.Row) -> TopicSettings:
             "enabled": bool(row["enabled"]),
             "lookback_days": row["lookback_days"],
             "keywords": json.loads(row["keywords_json"]),
-            "classifier": {
-                "active": row["active_classifier"],
-                "shadow": row["shadow_classifier"],
-            },
             "discovery": {
                 "openalex": bool(row["source_openalex"]),
                 "semantic_scholar": bool(row["source_semantic_scholar"]),
@@ -140,18 +133,6 @@ class SqliteTopicRepository:
             cursor = self._connection.execute(
                 "UPDATE topics SET enabled = ?, updated_at = ? WHERE id = ?",
                 (int(enabled), _now(), topic_id),
-            )
-        if cursor.rowcount == 0:
-            raise TopicNotFoundError(f"unknown topic: {topic_id}")
-
-    def set_classifier(self, topic_id: str, active: str, shadow: str | None) -> None:
-        """Switch which classifier routes for one topic; validation happens before the write."""
-        ClassifierSettings(active=active, shadow=shadow)  # type: ignore[arg-type]
-        with self._connection:
-            cursor = self._connection.execute(
-                "UPDATE topics SET active_classifier = ?, shadow_classifier = ?, updated_at = ? "
-                "WHERE id = ?",
-                (active, shadow, _now(), topic_id),
             )
         if cursor.rowcount == 0:
             raise TopicNotFoundError(f"unknown topic: {topic_id}")

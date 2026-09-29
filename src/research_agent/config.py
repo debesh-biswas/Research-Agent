@@ -32,7 +32,7 @@ class ConcurrencySettings(StrictModel):
 class RetrySettings(StrictModel):
     academic_apis: int = Field(default=3, ge=0)
     nim: int = Field(default=2, ge=0)
-    classifier_repair: int = Field(default=1, ge=0)
+    screening_repair: int = Field(default=1, ge=0)
     pdf_download: int = Field(default=2, ge=0)
 
 
@@ -109,24 +109,8 @@ class QuerySettings(StrictModel):
         return self
 
 
-class ClassifierASettings(StrictModel):
-    """Tuning for the lightweight classifier; thresholds set both relevance and action."""
-
-    deep_read_at: float = Field(default=0.6, ge=0, le=1)
-    summarize_at: float = Field(default=0.3, ge=0, le=1)
-    embedding_model: str | None = None
-    """Enables the embedding half of the score; without it Classifier A is purely lexical."""
-    embedding_weight: float = Field(default=0.5, ge=0, le=1)
-
-    @model_validator(mode="after")
-    def require_ordered_thresholds(self) -> "ClassifierASettings":
-        if self.summarize_at >= self.deep_read_at:
-            raise ValueError("summarize_at must be below deep_read_at")
-        return self
-
-
-class ClassifierBSettings(StrictModel):
-    """Bounds for the LLM classifier prompt; the runtime and model come from `models.local`."""
+class ScreeningSettings(StrictModel):
+    """Bounds for semantic paper screening before quality ranking."""
 
     max_abstract_chars: int = Field(default=2000, gt=0)
 
@@ -220,8 +204,7 @@ class ApplicationSettings(BaseSettings):
     sources: DiscoveryClientSettings = Field(default_factory=DiscoveryClientSettings)
     models: ModelSettings = Field(default_factory=ModelSettings)
     queries: QuerySettings = Field(default_factory=QuerySettings)
-    classifier_a: ClassifierASettings = Field(default_factory=ClassifierASettings)
-    classifier_b: ClassifierBSettings = Field(default_factory=ClassifierBSettings)
+    screening: ScreeningSettings = Field(default_factory=ScreeningSettings)
     selection: SelectionSettings = Field(default_factory=SelectionSettings)
     documents: DocumentSettings = Field(default_factory=DocumentSettings)
     analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
@@ -241,17 +224,6 @@ class ApplicationSettings(BaseSettings):
         """Make process environment and .env values override YAML initializer values."""
         del settings_cls
         return env_settings, dotenv_settings, init_settings, file_secret_settings
-
-
-class ClassifierSettings(StrictModel):
-    active: Literal["A", "B"] = "A"
-    shadow: Literal["A", "B"] | None = None
-
-    @model_validator(mode="after")
-    def require_distinct_shadow(self) -> "ClassifierSettings":
-        if self.shadow == self.active:
-            raise ValueError("shadow classifier must differ from active classifier")
-        return self
 
 
 class DiscoverySettings(StrictModel):
@@ -302,7 +274,6 @@ class TopicSettings(StrictModel):
     enabled: bool = True
     lookback_days: int = Field(default=10, gt=0)
     keywords: list[str] = Field(default_factory=list)
-    classifier: ClassifierSettings = Field(default_factory=ClassifierSettings)
     discovery: DiscoverySettings = Field(default_factory=DiscoverySettings)
     limits: ResourceLimits = Field(default_factory=ResourceLimits)
     scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings)

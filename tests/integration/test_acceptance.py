@@ -47,7 +47,9 @@ def counted(**options: object) -> tuple[Handler, dict[str, int]]:
         elif url.endswith("/chat/completions"):
             prompt = str(json.loads(request.content)["messages"]).lower()
             stage = (
-                "synthesis"
+                "screening"
+                if "return relevance, relevance_score" in prompt
+                else "synthesis"
                 if "compare this week" in prompt
                 else "gaps"
                 if "identify unaddressed research questions" in prompt
@@ -111,7 +113,7 @@ def test_the_run_summary_is_complete(connection: sqlite3.Connection, tmp_path: P
     assert summary.models_used, "the models that produced the analyses are recorded"
     assert record.duration_seconds is not None and record.duration_seconds >= 0
     assert record.completed_at is not None
-    assert (record.active_classifier, record.shadow_classifier) == ("A", None)
+    assert (record.active_classifier, record.shadow_classifier) == ("semantic_screening", None)
 
 
 def test_the_manifest_records_the_inputs_and_no_secret(
@@ -131,7 +133,7 @@ def test_the_manifest_records_the_inputs_and_no_secret(
     assert manifest["run"]["id"] == final.run_id
     assert manifest["topic"]["lookback_days"] == topic().lookback_days
     assert manifest["sources_enabled"] == ["openalex"]
-    assert manifest["classifier"] == {"active": "A", "shadow": None}
+    assert manifest["screening"] == {"service": "semantic_screening"}
     assert manifest["prompt_versions"]["paper_analysis"] == "paper_analysis.v1"
     assert manifest["counts"]["classified"] >= 1
     assert KEY not in raw and "api_key" not in raw.lower()
