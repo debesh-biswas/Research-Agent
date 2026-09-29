@@ -53,6 +53,17 @@ uv run research-agent config validate \
 The broader CLI described by the TRD will be exposed feature by feature, when each command has a
 real implementation.
 
+## Reading desk
+
+A static desk for topics, runs, selected papers, and the weekly report lives in `web/`. The Ask
+page answers from the sample cards so the layout can be reviewed. It does not call NVIDIA NIM yet.
+
+```bash
+python -m http.server 8765 --directory web
+```
+
+Open `http://127.0.0.1:8765`. The page is sample data shaped like a weekly run, not the live database.
+
 ## Quality checks
 
 ```bash

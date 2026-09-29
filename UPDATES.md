@@ -2,6 +2,16 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-29 — F24 reading desk (implemented, not committed)
+
+- **Feature/branch:** `F24-reading-desk`, branched from `main` at `6e5317f`.
+- **Status:** Committed on `F24-reading-desk`. Not merged. `F23-multimodel-routing` is a separate branch and is not included here.
+- **Behavior:** `web/` is a single-user reading desk: this week, papers and paper cards, the weekly report, run history, and Ask. Topic and run switchers change the shelf. Ask answers from the sample cards and states that NVIDIA NIM is not connected.
+- **Files:** `web/index.html`, `web/css/desk.css`, `web/js/data.js`, `web/js/desk.js`, `tests/unit/test_reading_desk.py`, `README.md`.
+- **Decisions:** Plain HTML, CSS, and JavaScript, so the same files can sit on S3 later and call a small read API. No new runtime and no NIM call in this slice. Sample papers are fictional layout data, not a live run.
+- **Verification:** `node --check` on `web/js/data.js` and `web/js/desk.js` passed. `uv run pytest tests/unit/test_reading_desk.py --no-cov -q` passed (3). Headless Chrome screenshots of This week, Papers, a paper card, Report, Runs, Ask, and a 390px week. The page is not wired to SQLite or NIM.
+- **Next:** Merge `F24-reading-desk` when asked. Then a read API over the local repositories, then send Ask through the existing NIM router with local fallback.
+
 ## 2026-09-28 — F22 semantic paper screening (in progress)
 
 - **Feature/branch:** `F22-semantic-paper-screening`.
