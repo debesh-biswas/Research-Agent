@@ -86,6 +86,23 @@ def topics_path(tmp_path: Path) -> Path:
 def handler(request: httpx.Request) -> httpx.Response:
     if str(request.url).endswith(".pdf"):
         return httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"})
+    if str(request.url).endswith("/chat/completions"):
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"relevance":"high","relevance_score":0.9,'
+                                '"paper_type":"method","action":"summarize",'
+                                '"confidence":0.9,"reason_short":"Directly relevant."}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
     return httpx.Response(200, json=_OPENALEX_PAGE)
 
 

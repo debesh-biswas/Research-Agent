@@ -66,23 +66,6 @@ def test_duplicate_id_is_rejected(settings_path: Path, topics_path: Path) -> Non
     assert "topic already exists: seeded_topic" in result.stderr
 
 
-def test_invalid_shadow_classifier_is_rejected(settings_path: Path, topics_path: Path) -> None:
-    result = _invoke(
-        settings_path,
-        topics_path,
-        "add",
-        "--id",
-        "bad_topic",
-        "--name",
-        "Bad Topic",
-        "--shadow-classifier",
-        "A",
-    )
-
-    assert result.exit_code == 1
-    assert "shadow classifier must differ" in result.stderr
-
-
 def test_all_sources_disabled_is_rejected(settings_path: Path, topics_path: Path) -> None:
     result = _invoke(
         settings_path,

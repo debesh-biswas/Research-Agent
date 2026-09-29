@@ -136,8 +136,18 @@ def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"})
     if url.endswith("/chat/completions"):
         prompt = str(json.loads(request.content)["messages"]).lower()
-        if "compare this week" in prompt:
-            reply: dict[str, object] = SYNTHESIS
+        reply: dict[str, object]
+        if "return relevance, relevance_score" in prompt:
+            reply = {
+                "relevance": "high",
+                "relevance_score": 0.9,
+                "paper_type": "method",
+                "action": "summarize",
+                "confidence": 0.9,
+                "reason_short": "Directly relevant.",
+            }
+        elif "compare this week" in prompt:
+            reply = SYNTHESIS
         elif "identify unaddressed research questions" in prompt:
             reply = GAPS
         elif "turn identified research gaps" in prompt:
