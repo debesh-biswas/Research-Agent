@@ -5,6 +5,7 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 ## 2026-09-29 — F24 reading desk (implemented, not committed)
 
 - **Feature/branch:** `F24-reading-desk`, branched from `main` at `6e5317f`.
+- **Commit:** `ee6bad5` feat(desk): add a static reading desk for weekly runs.
 - **Status:** Committed on `F24-reading-desk`. Not merged. `F23-multimodel-routing` is a separate branch and is not included here.
 - **Behavior:** `web/` is a single-user reading desk: this week, papers and paper cards, the weekly report, run history, and Ask. Topic and run switchers change the shelf. Ask answers from the sample cards and states that NVIDIA NIM is not connected.
 - **Files:** `web/index.html`, `web/css/desk.css`, `web/js/data.js`, `web/js/desk.js`, `tests/unit/test_reading_desk.py`, `README.md`.
