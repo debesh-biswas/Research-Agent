@@ -12,9 +12,6 @@ from pydantic import ValidationError
 
 from research_agent import __version__
 from research_agent.analysis.analyzer import AnalysisOutcome, PaperAnalyzer
-from research_agent.classifiers.comparison import compare, render
-from research_agent.classifiers.factory import build_classifier
-from research_agent.classifiers.runner import ClassifierOutcome, ClassifierRunner
 from research_agent.config import (
     ApplicationSettings,
     ConfigurationError,
@@ -30,7 +27,7 @@ from research_agent.discovery.aggregator import (
 from research_agent.documents.docling_parser import DoclingParser
 from research_agent.documents.downloader import DownloadOutcome, PdfDownloader
 from research_agent.documents.parser import ParsingService, load_parsed
-from research_agent.domain.analysis import PaperAnalysis, WeeklySynthesis
+from research_agent.domain.analysis import ClassificationResult, PaperAnalysis, WeeklySynthesis
 from research_agent.domain.documents import ParsedPaper
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.queries import QueryPlan
@@ -50,6 +47,7 @@ from research_agent.operations.runner import RunOutcome, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.reports.service import ReportOutcome, ReportService
+from research_agent.screening.service import PaperScreener
 from research_agent.selection.selector import select
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
@@ -151,10 +149,6 @@ def add_topic(
     keyword: Annotated[
         list[str] | None, typer.Option("--keyword", help="Known keyword; repeat for more.")
     ] = None,
-    active_classifier: Annotated[str, typer.Option(help="Active classifier (A or B).")] = "A",
-    shadow_classifier: Annotated[
-        str | None, typer.Option(help="Optional shadow classifier (A or B).")
-    ] = None,
     openalex: Annotated[bool, typer.Option(help="Enable the OpenAlex source.")] = True,
     semantic_scholar: Annotated[
         bool, typer.Option(help="Enable the Semantic Scholar source.")
@@ -179,7 +173,6 @@ def add_topic(
                 "enabled": enabled,
                 "lookback_days": lookback_days,
                 "keywords": keyword or [],
-                "classifier": {"active": active_classifier, "shadow": shadow_classifier},
                 "discovery": {
                     "openalex": openalex,
                     "semantic_scholar": semantic_scholar,
@@ -220,11 +213,7 @@ def list_topics(
 
     for topic in stored:
         state = "enabled" if topic.enabled else "disabled"
-        shadow = topic.classifier.shadow or "none"
-        typer.echo(
-            f"{topic.id}\t{state}\t{topic.lookback_days}d\t"
-            f"classifier={topic.classifier.active}/shadow={shadow}\t{topic.name}"
-        )
+        typer.echo(f"{topic.id}\t{state}\t{topic.lookback_days}d\tsemantic-screening\t{topic.name}")
 
 
 def _set_enabled(topic_id: str, enabled: bool, settings: Path, topics: Path) -> None:
@@ -470,17 +459,10 @@ def classify(
     )
 
     typer.echo(
-        f"{len(outcome.active)} verdict(s) for {topic.id} via classifier "
-        f"{topic.classifier.active} on '{search}' ({start_date} to {end_date})."
+        f"{len(outcome)} screening verdict(s) for {topic.id} on '{search}' "
+        f"({start_date} to {end_date})."
     )
-    if topic.classifier.shadow is not None:
-        shadow = (
-            f"shadow classifier {topic.classifier.shadow} failed: {outcome.shadow_error}"
-            if outcome.shadow_error
-            else f"shadow classifier {topic.classifier.shadow}: {len(outcome.shadow)} verdict(s)"
-        )
-        typer.echo(shadow)
-    verdicts = [result for result, _ in outcome.active]
+    verdicts = [result for result, _ in outcome]
     analyzed = SqlitePaperRepository(connection).analyzed_unchanged(
         result.paper_id for result in verdicts
     )
@@ -510,18 +492,14 @@ async def _classify(
     start_date: date,
     end_date: date,
     limit: int,
-) -> tuple[DiscoveryResult, ClassifierOutcome]:
+) -> tuple[DiscoveryResult, list[tuple[ClassificationResult, dict[str, object]]]]:
     discovered = await _discover(application, topic, query, start_date, end_date, limit)
     candidates = discovered.candidates[: topic.limits.max_classified]
     timeout = application.models.local.timeout_seconds
     async with _http_client(timeout) as client:
-        runner = ClassifierRunner(
-            build_classifier(topic.classifier.active, client, application),
-            None
-            if topic.classifier.shadow is None
-            else build_classifier(topic.classifier.shadow, client, application),
-        )
-        return discovered, await runner.run(candidates, topic)
+        return discovered, await PaperScreener(
+            build_router(client, application), application
+        ).screen_many(candidates, topic)
 
 
 def _save_classifications(
@@ -529,91 +507,35 @@ def _save_classifications(
     application: ApplicationSettings,
     topic: TopicSettings,
     discovered: DiscoveryResult,
-    outcome: ClassifierOutcome,
+    outcome: list[tuple[ClassificationResult, dict[str, object]]],
     plan: SelectionPlan,
 ) -> str:
-    """Persist one run, its papers, and every verdict; shadow rows are stored but never route."""
+    """Persist one run and semantic screening verdicts."""
     runs = SqliteRunRepository(connection)
     papers = SqlitePaperRepository(connection)
     results = SqliteResultRepository(connection)
-    record = runs.start(topic.id, topic.classifier.active, topic.classifier.shadow)
+    record = runs.start(topic.id, "semantic_screening", None)
     by_id = {candidate.canonical_id: candidate for candidate in discovered.candidates}
-    for result, provenance in outcome.active:
+    for result, provenance in outcome:
         candidate = by_id.get(result.paper_id)
         if candidate is not None:
             papers.upsert(candidate)
         results.save_classification(record.id, result, raw_response=provenance)
-    for result, provenance in outcome.shadow:
-        if result.paper_id in {active.paper_id for active, _ in outcome.active}:
-            results.save_classification(record.id, result, is_active=False, raw_response=provenance)
     SqliteSelectionRepository(connection).save(record.id, plan)
     runs.complete(
         record.id,
         RunSummary(
             candidates_discovered=sum(discovered.counts.values()),
             candidates_deduplicated=len(discovered.candidates),
-            papers_classified=len(outcome.active),
+            papers_classified=len(outcome),
             papers_selected=len(plan.selected_ids),
             deep_reads=len(plan.deep_reads),
-            models_used=[application.classifier_a.embedding_model or "lexical"],
-            errors=len(discovered.errors) + (1 if outcome.shadow_error else 0),
+            models_used=[application.models.nim.model],
+            errors=len(discovered.errors),
         ),
-        status="degraded" if discovered.errors or outcome.shadow_error else "completed",
+        status="degraded" if discovered.errors else "completed",
     )
     return record.id
-
-
-classifier_app = typer.Typer(help="Choose which classifier routes a topic.")
-app.add_typer(classifier_app, name="classifier")
-
-
-@classifier_app.command("set")
-def set_classifier(
-    active: Annotated[str, typer.Argument(help="Classifier that controls routing: A or B.")],
-    topic_id: Annotated[str, typer.Option("--topic", help="Topic identifier.")],
-    shadow: Annotated[
-        str | None,
-        typer.Option("--shadow", help="Classifier to run for comparison only, or 'none'."),
-    ] = None,
-    settings: SettingsOption = Path("config/settings.yaml"),
-    topics: TopicsOption = Path("config/topics.yaml"),
-) -> None:
-    """Switch a topic's active and shadow classifiers; no workflow code changes."""
-    resolved = None if shadow is None or shadow.lower() == "none" else shadow.upper()
-    try:
-        repository = _open_repository(settings, topics)
-        repository.set_classifier(topic_id, active.upper(), resolved)
-    except (ConfigurationError, ValidationError, TopicStoreError) as error:
-        typer.echo(f"Unable to set classifier: {error}", err=True)
-        raise typer.Exit(code=1) from error
-
-    typer.echo(f"{topic_id}: active {active.upper()}, shadow {resolved or 'none'}")
-
-
-@app.command("compare-classifiers")
-def compare_classifiers(
-    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
-    runs: Annotated[int, typer.Option(help="How many recent runs to compare.")] = 4,
-    settings: SettingsOption = Path("config/settings.yaml"),
-    topics: TopicsOption = Path("config/topics.yaml"),
-) -> None:
-    """Report how the active and shadow classifiers differ on the papers they both judged."""
-    try:
-        connection = _open_connection(settings, topics)
-    except (ConfigurationError, ValidationError, TopicStoreError) as error:
-        typer.echo(f"Unable to compare classifiers: {error}", err=True)
-        raise typer.Exit(code=1) from error
-
-    active, shadow = SqliteResultRepository(connection).classification_pairs(topic_id, runs)
-    if not shadow:
-        typer.echo(
-            f"No shadow verdicts stored for {topic_id}. "
-            "Set a shadow classifier and run 'classify' first.",
-            err=True,
-        )
-        raise typer.Exit(code=1)
-
-    typer.echo(render(compare(active, shadow)))
 
 
 @app.command("acquire")

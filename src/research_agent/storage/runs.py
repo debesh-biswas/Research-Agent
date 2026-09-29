@@ -3,7 +3,7 @@
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Literal, Protocol
+from typing import Protocol
 
 from research_agent.domain.runs import ErrorRecord, RunRecord, RunStatus, RunSummary
 
@@ -19,8 +19,8 @@ class RunRepository(Protocol):
     def start(
         self,
         topic_id: str,
-        active_classifier: Literal["A", "B"] = "A",
-        shadow_classifier: Literal["A", "B"] | None = None,
+        active_classifier: str = "semantic_screening",
+        shadow_classifier: str | None = None,
     ) -> RunRecord: ...
 
     def complete(
@@ -61,8 +61,8 @@ class SqliteRunRepository:
     def start(
         self,
         topic_id: str,
-        active_classifier: Literal["A", "B"] = "A",
-        shadow_classifier: Literal["A", "B"] | None = None,
+        active_classifier: str = "semantic_screening",
+        shadow_classifier: str | None = None,
     ) -> RunRecord:
         record = RunRecord(
             id=uuid.uuid4().hex,

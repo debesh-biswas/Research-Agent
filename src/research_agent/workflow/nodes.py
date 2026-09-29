@@ -39,11 +39,8 @@ def load_topic(services: WorkflowServices) -> Node:
     """Open the run. Everything downstream is recorded against the id this node creates."""
 
     async def node(state: ResearchState) -> Update:
-        record = services.runs.start(
-            state.topic_id,
-            services.topic.classifier.active,
-            services.topic.classifier.shadow,
-        )
+        # Legacy run columns remain so existing databases and reports stay readable.
+        record = services.runs.start(state.topic_id, "semantic_screening", None)
         return {"run_id": record.id}
 
     return node
@@ -75,9 +72,11 @@ def discover(services: WorkflowServices) -> Node:
         seen = {canonical_id(paper) for paper in candidates}
         counts = dict(state.counts)
         errors = list(state.errors)
-        for query in state.queries[: services.settings.queries.max_per_run]:
+        query_count = min(len(state.queries), services.settings.queries.max_per_run)
+        per_query_limit = max(1, (limit + query_count - 1) // query_count)
+        for query in state.queries[:query_count]:
             result = await services.discovery.search(
-                query, state.period_start, state.period_end, limit
+                query, state.period_start, state.period_end, per_query_limit
             )
             for paper in result.candidates:
                 identifier = canonical_id(paper)
@@ -92,8 +91,6 @@ def discover(services: WorkflowServices) -> Node:
                 error.model_copy(update={"run_id": state.run_id or "unstarted"})
                 for error in result.errors
             )
-            if len(candidates) >= limit:
-                break
         counts["discovered"] = len(candidates)
         return {"candidates": candidates[:limit], "counts": counts, "errors": errors}
 
@@ -121,30 +118,22 @@ def broaden_queries(services: WorkflowServices) -> Node:
 
 
 def classify(services: WorkflowServices) -> Node:
-    """Triage with the active classifier; the shadow one is stored but never routes."""
+    """Screen papers once with semantic NIM/local-fallback screening."""
 
     async def node(state: ResearchState) -> Update:
         candidates = state.candidates[: services.topic.limits.max_classified]
-        outcome = await services.classifiers.run(candidates, services.topic)
+        outcome = await services.screener.screen_many(candidates, services.topic)
         run_id = state.run_id or ""
         by_id = {canonical_id(paper): paper for paper in state.candidates}
-        for result, provenance in outcome.active:
+        for result, provenance in outcome:
             candidate = by_id.get(result.paper_id)
             if candidate is not None:
                 services.papers.upsert(candidate)
             services.results.save_classification(run_id, result, raw_response=provenance)
-        active_ids = {result.paper_id for result, _ in outcome.active}
-        for result, provenance in outcome.shadow:
-            if result.paper_id in active_ids:
-                services.results.save_classification(
-                    run_id, result, is_active=False, raw_response=provenance
-                )
         errors = list(state.errors)
-        if outcome.shadow_error:
-            errors = _error(state, "classify", "CLASSIFIER_ERROR", str(outcome.shadow_error))
-        counts = {**state.counts, "classified": len(outcome.active)}
+        counts = {**state.counts, "classified": len(outcome)}
         return {
-            "classifications": [result for result, _ in outcome.active],
+            "classifications": [result for result, _ in outcome],
             "counts": counts,
             "errors": errors,
         }

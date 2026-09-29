@@ -14,8 +14,6 @@ from pathlib import Path
 import httpx
 
 from research_agent.analysis.analyzer import PaperAnalyzer
-from research_agent.classifiers.factory import build_classifier
-from research_agent.classifiers.runner import ClassifierRunner
 from research_agent.config import ApplicationSettings, RetrySettings, TopicSettings
 from research_agent.discovery.aggregator import DiscoveryAggregator, build_sources
 from research_agent.documents.downloader import PdfDownloader
@@ -25,6 +23,7 @@ from research_agent.ideation.generator import IdeationService
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
+from research_agent.screening.service import PaperScreener
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
@@ -67,6 +66,14 @@ DRAFT: dict[str, object] = {
     "method": "A transformer over a metric map.",
     "main_results": ["+7 SPL over the baseline"],
     "topic_relevance": "Directly on topic.",
+}
+SCREENING: dict[str, object] = {
+    "relevance": "high",
+    "relevance_score": 0.9,
+    "paper_type": "method",
+    "action": "deep_read",
+    "confidence": 0.9,
+    "reason_short": "The central contribution is directly on topic.",
 }
 SYNTHESIS: dict[str, object] = {
     "major_developments": [
@@ -144,6 +151,8 @@ def handler(
             if not model:
                 return httpx.Response(503, json={"error": "upstream is unwell"})
             prompt = str(json.loads(request.content)["messages"]).lower()
+            if "return relevance, relevance_score" in prompt:
+                return completion(SCREENING)
             if "compare this week" in prompt:
                 return completion(SYNTHESIS)
             if "identify unaddressed research questions" in prompt:
@@ -193,7 +202,7 @@ def services(
         discovery=DiscoveryAggregator(
             build_sources(client, settings, topic().discovery), settings=settings
         ),
-        classifiers=ClassifierRunner(build_classifier("A", client, settings)),
+        screener=PaperScreener(build_router(client, settings), settings),
         acquirer=PdfDownloader(client, store, papers, settings.documents),
         parsing=ParsingService(parser or FakeParser(), store, papers),
         analyzer=PaperAnalyzer(router, results, papers, store, settings.analysis),

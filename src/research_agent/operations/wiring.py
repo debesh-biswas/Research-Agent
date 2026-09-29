@@ -11,8 +11,6 @@ from contextlib import asynccontextmanager
 import httpx
 
 from research_agent.analysis.analyzer import PaperAnalyzer
-from research_agent.classifiers.factory import build_classifier
-from research_agent.classifiers.runner import ClassifierRunner
 from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.discovery.aggregator import DiscoveryAggregator, build_sources
 from research_agent.documents.docling_parser import DoclingParser
@@ -22,6 +20,7 @@ from research_agent.ideation.generator import IdeationService
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
+from research_agent.screening.service import PaperScreener
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.queries import SqliteQueryPlanRepository
@@ -72,12 +71,7 @@ def build_services(
             concurrency=application.concurrency.discovery,
             settings=application,
         ),
-        classifiers=ClassifierRunner(
-            build_classifier(topic.classifier.active, client, application),
-            None
-            if topic.classifier.shadow is None
-            else build_classifier(topic.classifier.shadow, client, application),
-        ),
+        screener=PaperScreener(router, application),
         acquirer=PdfDownloader(
             downloading,
             store,

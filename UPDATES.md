@@ -2,6 +2,46 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-28 — F22 semantic paper screening (in progress)
+
+- **Feature/branch:** `F22-semantic-paper-screening`.
+- **Status:** Implementation in progress; not merged.
+
+**Behavior changed**
+
+- Replaced executable Classifier A/B, lexical matching, embeddings, shadow execution, classifier
+  switching, and comparison commands with one semantic screening service. It sends structured
+  screening to the strong NIM capability and uses the configured local model when NIM fails.
+- Screening now requires the paper's central contribution to match the topic. Its structured audit
+  result records provider, model, fallback, repair status, and prompt version.
+- Candidate capacity is divided across the executed query plan, avoiding the previous first-query
+  monopoly. Source balancing from F21 remains in place.
+- Existing SQLite columns and historical classifier rows remain readable. New runs write the legacy
+  active-classifier column as `semantic_screening`; topic configuration no longer contains A/B
+  settings. The obsolete test suites and comparison script were removed.
+
+**Files and interfaces**
+
+- New `research_agent.screening.PaperScreener`; `WorkflowServices.screener` replaces
+  `WorkflowServices.classifiers`.
+- New model capability `screening`, routed through NIM with the existing local fallback.
+- Removed the `research_agent.classifiers` package and `research-agent classifier` / comparison CLI.
+- Updated sample config, topic configuration, manifests, PRD/TRD, README, and operations guidance.
+
+**Verification so far**
+
+- `.venv/bin/ruff check .` — passed.
+- `.venv/bin/mypy` — passed, 146 files.
+- `.venv/bin/python -m pytest tests/unit/test_screening_service.py --no-cov -q` — 1 passed.
+- `.venv/bin/research-agent config validate` — valid.
+
+**Known issue / next step**
+
+- The broad legacy suite still contains A/B-specific acceptance and CLI assertions and needs a
+  final replacement pass. The first full run also exposed an unchanged-rerun assertion failure in
+  the acceptance fixture after changing screening semantics; investigate before merge. Do not
+  merge until the updated full suite passes.
+
 ## 2026-09-28 — F21 quality-aware paper ranking (complete, merged)
 
 - **Feature/branch:** `F21-quality-paper-ranking` (allocated after F20).

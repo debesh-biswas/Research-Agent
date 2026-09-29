@@ -8,7 +8,7 @@ research intelligence. The product and technical specifications are maintained i
 The sequential implementation plan, branch names, acceptance gates, and dependencies are tracked
 in [`docs/FEATURE_ROADMAP.md`](docs/FEATURE_ROADMAP.md).
 
-The current v1 implementation includes discovery adapters, two interchangeable classifiers,
+The current v1 implementation includes discovery adapters and one semantic paper-screening service,
 quality-aware paper ranking, LangGraph orchestration, SQLite/filesystem persistence, legal PDF
 acquisition and parsing, evidence-backed analysis, synthesis, ideation, Markdown reports, local
 scheduling, structured logs, and AWS portability seams.
@@ -68,6 +68,6 @@ model downloads, or generated runtime data.
 ## Architecture boundaries
 
 Runtime code uses the `src/research_agent` package. The initial package boundaries reserve clear
-homes for domain models, workflow orchestration, discovery adapters, classifiers, model
+homes for domain models, workflow orchestration, discovery adapters, screening, model
 providers, documents, storage, observability, and deterministic utilities. Provider-specific
 logic must remain behind interfaces, and LangGraph will be used only for orchestration.

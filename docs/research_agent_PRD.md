@@ -17,7 +17,7 @@ For each topic, the system will:
 1. Discover recent research papers from academic sources.
 2. Expand the topic into multiple search queries.
 3. Deduplicate candidate papers.
-4. Classify and rank papers using one of two hot-swappable classifiers.
+4. Semantically screen and rank papers using NIM with local-model fallback.
 5. Download legally accessible paper PDFs.
 6. Parse papers into structured text.
 7. Use stronger LLM inference to deeply analyze selected papers.
@@ -159,21 +159,10 @@ The system:
 - Checks whether a paper has previously been seen.
 - Calculates basic recency and source metadata.
 
-### Dual Classifier Support
-The system supports two pre-existing classifier implementations:
-
-- **Classifier A:** lightweight Jev-style / small decision-classifier approach.
-- **Classifier B:** Qwen-style small LLM used as a structured classifier.
-
-The system must allow hot switching between A and B without changing LangGraph workflow logic.
-
-### Shadow Classification
-Optional mode:
-
-- One classifier is active.
-- The second classifier also runs.
-- Only the active classifier controls routing.
-- Both outputs are logged for comparison.
+### Semantic Paper Screening
+The system uses one structured semantic screening service. NVIDIA NIM is preferred when configured;
+a small local model completes the same work when NIM fails. A paper must be centrally relevant to
+the topic, not merely mention a topic phrase incidentally.
 
 ### PDF Acquisition
 The system should:

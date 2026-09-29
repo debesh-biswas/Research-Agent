@@ -10,6 +10,7 @@ from research_agent.domain.runs import ErrorCategory
 Capability = Literal[
     "cheap_text",
     "classification",
+    "screening",
     "deep_reasoning",
     "synthesis",
     "ideation",
@@ -19,7 +20,7 @@ Capability = Literal[
 # TRD section 26. Strong capabilities resolve to the configured strong provider, falling back to
 # local inference; the mapping is fixed by the specification, so it is code rather than settings.
 STRONG_CAPABILITIES: frozenset[Capability] = frozenset(
-    {"deep_reasoning", "synthesis", "ideation", "report_writing"}
+    {"screening", "deep_reasoning", "synthesis", "ideation", "report_writing"}
 )
 
 

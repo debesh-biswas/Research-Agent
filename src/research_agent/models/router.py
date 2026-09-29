@@ -27,8 +27,7 @@ _CAPABILITIES: frozenset[str] = frozenset(
 class ModelRouter:
     """Send each capability to its provider, degrading to local inference when the strong one fails.
 
-    ``classification`` routes to the local provider here; picking between Classifier A and B is the
-    classifier factory's job, not the router's.
+    Screening and deep reasoning use the strong provider when configured.
     """
 
     def __init__(
@@ -74,7 +73,20 @@ class ModelRouter:
                     await provider.generate(label, messages, response_schema), response_schema
                 )
             except ModelValidationError:
-                raise
+                _LOGGER.warning(
+                    "strong provider returned invalid structured output; using local fallback",
+                    extra={
+                        "provider": provider.name,
+                        "model": provider.model,
+                        "node_name": label,
+                        "error_type": "INVALID_CLASSIFIER_OUTPUT",
+                        "status": "fallback",
+                    },
+                )
+                result = _validated(
+                    await self._local.generate(label, messages, response_schema), response_schema
+                )
+                return result.model_copy(update={"fell_back": True})
             except ModelProviderError as error:
                 last_error = error
                 _LOGGER.warning(
@@ -107,7 +119,7 @@ class ModelRouter:
 def _validated(result: ModelResult, response_schema: type[BaseModel] | None) -> ModelResult:
     """Validate structured output before it can reach routing or persistence.
 
-    Malformed output is not retried here: the TRD gives the single repair retry to Classifier B.
+    All structured output is validated before it can reach routing or persistence.
     """
     if response_schema is None:
         return result
