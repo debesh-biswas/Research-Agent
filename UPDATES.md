@@ -34,6 +34,7 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
 - `.venv/bin/mypy` — passed, 146 files.
 - `.venv/bin/python -m pytest tests/unit/test_screening_service.py --no-cov -q` — 1 passed.
 - `.venv/bin/research-agent config validate` — valid.
+- `.venv/bin/python -m pytest tests/unit/test_models_router.py tests/unit/test_screening_service.py --no-cov -q` — 20 passed after the NIM structured-output repair.
 
 **Known issue / next step**
 
@@ -41,6 +42,10 @@ This is the append-at-top handoff log for the Personal Weekly AI Research Intell
   final replacement pass. The first full run also exposed an unchanged-rerun assertion failure in
   the acceptance fixture after changing screening semantics; investigate before merge. Do not
   merge until the updated full suite passes.
+- **2026-09-29 repair:** NIM replies that contain a JSON object wrapped in Markdown/prose are now
+  parsed safely. A schema failure reaches the screener, which sends one explicit repair prompt to
+  NIM and uses local inference only if repair fails. This replaces the previous immediate fallback
+  that produced the `strong provider returned invalid structured output` warnings.
 
 ## 2026-09-28 — F21 quality-aware paper ranking (complete, merged)
 

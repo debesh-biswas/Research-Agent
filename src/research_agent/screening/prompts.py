@@ -6,8 +6,15 @@ from research_agent.domain.papers import PaperCandidate
 PROMPT_VERSION = "screening.v1"
 SYSTEM_PROMPT = """You are a careful research-paper screener. Judge whether the paper's central
 contribution is relevant to the configured research topic. Do not mark a paper relevant merely
-because it incidentally mentions a topic term. Return only the requested JSON."""
-REPAIR_INSTRUCTION = "Return valid JSON only, matching the requested schema exactly."
+because it incidentally mentions a topic term. Return exactly one JSON object with these fields:
+relevance (high|medium|low), relevance_score (number 0 to 1), paper_type
+(method|dataset|benchmark|survey|application|other), action (ignore|summarize|deep_read),
+confidence (number 0 to 1), reason_short (string). Do not include Markdown, commentary, or other
+keys."""
+REPAIR_INSTRUCTION = (
+    "Your previous response was invalid. Return exactly the required JSON object, with every field "
+    "and no Markdown."
+)
 
 
 def render(paper: PaperCandidate, topic: TopicSettings, settings: ScreeningSettings) -> str:

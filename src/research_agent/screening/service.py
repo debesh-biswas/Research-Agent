@@ -76,10 +76,16 @@ class PaperScreener:
                     result = await self._router.generate(
                         "screening", messages, ClassifierVerdict, task="screening"
                     )
-                except (ModelValidationError, ModelProviderError) as final:
-                    raise ScreeningError(
-                        f"screening failed after repair: {final}", "INVALID_CLASSIFIER_OUTPUT"
-                    ) from error
+                except ModelValidationError:
+                    try:
+                        result = await self._router.generate_local(
+                            "screening", messages, ClassifierVerdict, task="screening"
+                        )
+                    except (ModelValidationError, ModelProviderError) as final:
+                        raise ScreeningError(
+                            f"screening failed after repair and fallback: {final}",
+                            "INVALID_CLASSIFIER_OUTPUT",
+                        ) from error
             except ModelProviderError as error:
                 raise ScreeningError(str(error), error.category) from error
             verdict = result.parsed
