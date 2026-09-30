@@ -61,7 +61,8 @@ class ModelRouter:
         label = task or capability
         if provider is self._local:
             return _validated(
-                await self._local.generate(label, messages, response_schema), response_schema
+                await self._local.generate(label, messages, response_schema, capability=capability),
+                response_schema,
             )
 
         # Only call failures are retried here; validation runs after the loop so deterministically
@@ -70,7 +71,10 @@ class ModelRouter:
         for attempt in range(self._retries + 1):
             try:
                 return _validated(
-                    await provider.generate(label, messages, response_schema), response_schema
+                    await provider.generate(
+                        label, messages, response_schema, capability=capability
+                    ),
+                    response_schema,
                 )
             except ModelValidationError:
                 # The task adapter owns one repair attempt, because only it knows how to repair
@@ -100,7 +104,8 @@ class ModelRouter:
             },
         )
         result = _validated(
-            await self._local.generate(label, messages, response_schema), response_schema
+            await self._local.generate(label, messages, response_schema, capability=capability),
+            response_schema,
         )
         return result.model_copy(update={"fell_back": True})
 
@@ -114,7 +119,8 @@ class ModelRouter:
         """Run a validated local fallback after a task-specific repair has been exhausted."""
         label = task or capability
         result = _validated(
-            await self._local.generate(label, messages, response_schema), response_schema
+            await self._local.generate(label, messages, response_schema, capability=capability),
+            response_schema,
         )
         return result.model_copy(update={"fell_back": True})
 

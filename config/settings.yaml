@@ -24,11 +24,15 @@ models:
     model: mlx-community/Qwen3-14B-4bit
     # Qwen3 defaults to a "thinking" trace that starves structured JSON output of tokens.
     disable_thinking: true
-    timeout_seconds: 120
+    # deep_reasoning/synthesis keep thinking on: live-tested at ~100s+ per call (vs a few seconds
+    # off) and 774 reasoning tokens for a trivial prompt, so the larger timeout and token budget
+    # below are sized for that, not for the fast structured-output capabilities.
+    thinking_capabilities: [deep_reasoning, synthesis]
+    timeout_seconds: 600
     # A full paper analysis does not fit in the 2048-token default, and 4096 still truncated the
     # longest ones in a live run. A truncated reply is invalid JSON, so this is a correctness
-    # setting rather than a tuning one.
-    max_output_tokens: 8192
+    # setting rather than a tuning one. Raised further for thinking_capabilities' reasoning trace.
+    max_output_tokens: 16000
   nim:
     base_url: https://integrate.api.nvidia.com/v1
     model: openai/gpt-oss-20b
@@ -36,7 +40,11 @@ models:
     # this its answer lands in reasoning_content with content left null, which this app's parser
     # treats as a failed response (see models/chat.py's disable_thinking handling).
     disable_thinking: true
-    timeout_seconds: 300
+    # deep_reasoning/synthesis keep thinking on; see the local block's comment for the measured
+    # latency and token cost this trades for a visible reasoning trace.
+    thinking_capabilities: [deep_reasoning, synthesis]
+    timeout_seconds: 600
+    max_output_tokens: 24000
     max_output_tokens: 8192
 
 screening:

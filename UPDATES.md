@@ -2,6 +2,64 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — Capability-scoped thinking mode for deep analysis/synthesis (complete, on branch)
+
+- **Feature/branch:** `F26-capability-scoped-thinking`, off `main` (which already carries FIX9).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** FIX5 and FIX9 turned thinking mode off everywhere (`disable_thinking: true`) to fix
+  Qwen3/GLM's `content`-goes-null bug. The user asked why deep analysis, which could genuinely
+  benefit from exposed reasoning, doesn't use the model's thinking capability. Explained the
+  mechanism (thinking mode splits output across `reasoning_content` and `content`; disabling it
+  doesn't reduce the model's reasoning, only the separate visible scratchpad) and offered to make
+  it capability-scoped. Live-tested the cost first: a trivial prompt with thinking on took 113s and
+  774 reasoning tokens versus a few seconds with it off. User chose to enable it for
+  `deep_reasoning`/`synthesis` anyway, accepting the latency.
+- **Files changed:**
+  - `src/research_agent/config.py` — `ModelEndpointSettings.thinking_capabilities: list[str] = []`,
+    capabilities exempted from `disable_thinking`.
+  - `src/research_agent/models/base.py` — `ModelProvider.generate()` protocol gained a keyword-only
+    `capability: str | None = None` parameter (mypy enforces exact structural match against
+    `ModelProvider`-typed variables, so every fake test provider assigned to one needed the same
+    signature — see below).
+  - `src/research_agent/models/chat.py` — `ChatCompletionsProvider.generate()` takes `capability`
+    and only sends `chat_template_kwargs.enable_thinking: false` when
+    `disable_thinking and capability not in thinking_capabilities`.
+  - `src/research_agent/models/router.py` — `ModelRouter.generate()`/`.generate_local()` now pass
+    `capability=capability` through to every `provider.generate()` call (local-only path, strong
+    provider retry loop, and the local fallback after retries are exhausted).
+  - `config/settings.yaml` — both `models.local` and `models.nim` gained
+    `thinking_capabilities: [deep_reasoning, synthesis]`; `local.max_output_tokens` raised
+    8192→16000, `nim.max_output_tokens` raised 8192→24000 (headroom for a reasoning trace plus a
+    full answer); `local.timeout_seconds` raised 120→600, `nim.timeout_seconds` raised 300→600
+    (thinking-mode calls are dramatically slower — measured, not guessed).
+  - `tests/unit/test_models_chat.py` — four new tests: `disable_thinking` sent by default; skipped
+    for an exempted capability; still applied for a non-exempted one; and untouched entirely when
+    `disable_thinking` is off. `tests/unit/test_models_router.py` — `FakeProvider` now records
+    `last_capability`; a new test confirms it reaches the provider on the local-only path, the
+    strong-provider path, the fallback-after-failure path, and `generate_local()`.
+    `tests/unit/test_desk_ask.py` — `ScriptProvider.generate()` signature updated to match the
+    widened protocol (mypy `[arg-type]` failure otherwise).
+- **Decisions:** Screening, ideation, report_writing, cheap_text, and classification stay
+  thinking-off — they need fast, reliable structured JSON and don't obviously benefit from an
+  exposed reasoning trace the app doesn't store or display anywhere. Only `deep_reasoning` and
+  `synthesis` were exempted, per explicit user choice after seeing the measured latency cost.
+- **Verification:**
+  - `uv run ruff format --check .`, `uv run ruff check .` → clean.
+  - `uv run mypy` → Success: no issues found in 158 source files.
+  - `uv run pytest -q` → 528 passed, 3 deselected, coverage 91.14% (gate 85%).
+  - Live, against the real NIM endpoint via `ModelRouter.generate()`: `capability="screening"`
+    returned plain `"OK"` quickly with thinking off; `capability="deep_reasoning"` returned a full
+    reasoned answer (sky-is-blue explanation) with thinking on, `content` correctly populated in
+    both cases — confirming the capability-scoped plumbing actually reaches the wire request.
+  - Live, direct curl to NIM with thinking on and a 16000-token budget: `content` populated (782
+    chars) after a 3932-char reasoning trace, `finish_reason: "stop"`, confirming a generous token
+    budget reliably avoids the original null-content bug even with thinking on.
+- **Known issues / next step:** Weekly runs that deep-read multiple papers will now take
+  meaningfully longer per paper during analysis/synthesis — this is the accepted tradeoff, not a
+  regression to fix. No live full-pipeline run has been timed end-to-end with this change; if
+  runtime becomes a real problem the next lever is narrowing `thinking_capabilities` further, not
+  raising timeouts again. Next: commit, push, merge into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — Sample data removed, clear-data buttons added, NIM thinking-mode fixed (complete, on branch)
 
 - **Feature/branch:** `FIX9-clear-data-nim-thinking-no-sample`, off `main` (which already carries

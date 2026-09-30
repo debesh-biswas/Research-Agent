@@ -65,6 +65,67 @@ def test_json_schema_requests_a_json_object_response() -> None:
     asyncio.run(run())
 
 
+def test_disable_thinking_is_sent_by_default_when_enabled() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        return httpx.Response(200, json=completion())
+
+    async def run() -> None:
+        async with mock_client(handler) as client:
+            await LocalModelProvider(client, settings(disable_thinking=True)).generate(
+                "probe", MESSAGES
+            )
+
+    asyncio.run(run())
+
+
+def test_disable_thinking_is_skipped_for_an_exempted_capability() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "chat_template_kwargs" not in json.loads(request.content)
+        return httpx.Response(200, json=completion())
+
+    async def run() -> None:
+        provider_settings = settings(
+            disable_thinking=True, thinking_capabilities=["deep_reasoning"]
+        )
+        async with mock_client(handler) as client:
+            await LocalModelProvider(client, provider_settings).generate(
+                "probe", MESSAGES, capability="deep_reasoning"
+            )
+
+    asyncio.run(run())
+
+
+def test_disable_thinking_still_applies_to_a_non_exempted_capability() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content)["chat_template_kwargs"] == {"enable_thinking": False}
+        return httpx.Response(200, json=completion())
+
+    async def run() -> None:
+        provider_settings = settings(
+            disable_thinking=True, thinking_capabilities=["deep_reasoning"]
+        )
+        async with mock_client(handler) as client:
+            await LocalModelProvider(client, provider_settings).generate(
+                "probe", MESSAGES, capability="screening"
+            )
+
+    asyncio.run(run())
+
+
+def test_thinking_stays_untouched_when_disable_thinking_is_off() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "chat_template_kwargs" not in json.loads(request.content)
+        return httpx.Response(200, json=completion())
+
+    async def run() -> None:
+        async with mock_client(handler) as client:
+            await LocalModelProvider(client, settings()).generate("probe", MESSAGES)
+
+    asyncio.run(run())
+
+
 def test_authorization_header_is_sent_only_when_a_key_is_configured() -> None:
     seen: list[str | None] = []
 
