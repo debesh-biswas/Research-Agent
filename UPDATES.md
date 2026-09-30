@@ -2,6 +2,36 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — New-topic form styled and cleaned up (complete, on branch)
+
+- **Feature/branch:** `FIX6-new-topic-form-styling`, off `main` (which already carries F25).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** Two problems the user flagged from a screenshot of `web/new-topic.html`: (1) the
+  page looked unstyled/unprofessional — plain browser-default inputs, no visual hierarchy between
+  the two action states; (2) the id/name fields' placeholder text literally read
+  `embodied_spatial_intelligence` / `Embodied Spatial Intelligence`, which read as if an old topic
+  were still selected in a filter rather than as example placeholder text. Restyled the form to
+  match the reading desk's existing visual language and swapped the placeholders for a generic,
+  unrelated example (`quantum_error_correction`).
+- **Files changed:**
+  - `web/css/desk.css` — added a `.topic-form`/`.field`/`.form-actions`/`.keyword-review`/
+    `.keyword-chips`/`.status-line` block reusing existing tokens (`--tide`, `--wash`, `--line`,
+    etc.); no existing selector was modified, so `index.html`'s pages are unaffected.
+  - `web/new-topic.html` — restructured into labeled `.field` groups, generic placeholders, the
+    existing `.primary` (filled) button for the two forward actions and `.button` (outline) for
+    "Back", matching the styling `desk.js` already uses elsewhere (e.g. the ask composer).
+  - `web/js/new-topic.js` — suggested keywords now render as a `<ul>` of pill-styled
+    `.keyword-chip` items instead of a plain comma-joined string; `setStatus()` takes an optional
+    tone (`error`/`success`) so failures show in the same carmine used elsewhere in the app.
+- **Decisions:** No Python changed, so the full pytest/mypy/ruff suite was not re-run (nothing it
+  covers changed); verified instead by curling the served HTML/JS/CSS from the running desk server
+  and re-exercising `POST /api/topics/suggest` live against `mlx_lm.server` to confirm the redesign
+  didn't break the request flow.
+- **Verification:** `curl http://127.0.0.1:8765/new-topic.html` — new placeholders present, old
+  topic names gone. `curl -X POST .../api/topics/suggest` — real keyword suggestions returned
+  unchanged.
+- **Known issues / next step:** None. Next: commit, push, merge into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — Local data reset; add-topic suggests keywords then triggers the pipeline (complete, on branch)
 
 - **Feature/branch:** `F25-topic-suggest-and-trigger`, off `main` (which already carries FIX5).

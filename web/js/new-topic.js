@@ -1,5 +1,13 @@
 /* New-topic form: suggest keywords with the local model, confirm, then start the pipeline. */
 
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 const form = document.getElementById("topic-form");
 const review = document.getElementById("review");
 const keywordList = document.getElementById("keyword-list");
@@ -8,10 +16,23 @@ const suggestButton = document.getElementById("suggest-button");
 const confirmButton = document.getElementById("confirm-button");
 const cancelButton = document.getElementById("cancel-button");
 
-let pending = null; // { id, name, lookbackDays, keywords }
+let pending = null; // { id, name, keywords }
 
-function setStatus(text) {
+function setStatus(text, tone) {
   statusEl.textContent = text;
+  if (tone) statusEl.setAttribute("data-tone", tone);
+  else statusEl.removeAttribute("data-tone");
+}
+
+function renderKeywords(keywords) {
+  if (!keywords.length) {
+    keywordList.innerHTML =
+      '<li class="keyword-chip" data-empty="true">No keywords suggested; the topic will start with none.</li>';
+    return;
+  }
+  keywordList.innerHTML = keywords
+    .map((keyword) => `<li class="keyword-chip">${esc(keyword)}</li>`)
+    .join("");
 }
 
 form.addEventListener("submit", async (event) => {
@@ -22,7 +43,7 @@ form.addEventListener("submit", async (event) => {
   if (!id || !name) return;
 
   suggestButton.disabled = true;
-  setStatus("Asking the local model for keywords...");
+  setStatus("Asking the local model for keywords…");
   try {
     const response = await fetch("/api/topics/suggest", {
       method: "POST",
@@ -31,19 +52,17 @@ form.addEventListener("submit", async (event) => {
     });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      setStatus(body.error || "Keyword suggestion failed.");
+      setStatus(body.error || "Keyword suggestion failed.", "error");
       return;
     }
     const body = await response.json();
     pending = { id, name, keywords: body.keywords || [] };
-    keywordList.textContent = pending.keywords.length
-      ? pending.keywords.join(", ")
-      : "(none suggested; the topic will start with no keywords)";
+    renderKeywords(pending.keywords);
     form.hidden = true;
     review.hidden = false;
     setStatus("");
   } catch {
-    setStatus("Could not reach the desk server.");
+    setStatus("Could not reach the desk server.", "error");
   } finally {
     suggestButton.disabled = false;
   }
@@ -52,7 +71,7 @@ form.addEventListener("submit", async (event) => {
 confirmButton.addEventListener("click", async () => {
   if (!pending) return;
   confirmButton.disabled = true;
-  setStatus("Creating the topic and starting the pipeline...");
+  setStatus("Creating the topic and starting the pipeline…");
   try {
     const response = await fetch("/api/topics", {
       method: "POST",
@@ -61,15 +80,16 @@ confirmButton.addEventListener("click", async () => {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus(body.error || "Could not create the topic.");
+      setStatus(body.error || "Could not create the topic.", "error");
       return;
     }
     setStatus(
       `Started. "${pending.name}" is running in the background; check "This week" shortly.`,
+      "success",
     );
     review.hidden = true;
   } catch {
-    setStatus("Could not reach the desk server.");
+    setStatus("Could not reach the desk server.", "error");
   } finally {
     confirmButton.disabled = false;
   }
