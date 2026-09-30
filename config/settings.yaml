@@ -18,8 +18,12 @@ retries:
 
 models:
   local:
-    base_url: http://localhost:11434/v1
-    model: qwen3:8b
+    # Served by `mlx_lm.server`, not Ollama: run
+    # `mlx_lm.server --model mlx-community/Qwen3-14B-4bit --port 8080` before a local run.
+    base_url: http://localhost:8080/v1
+    model: mlx-community/Qwen3-14B-4bit
+    # Qwen3 defaults to a "thinking" trace that starves structured JSON output of tokens.
+    disable_thinking: true
     timeout_seconds: 120
     # A full paper analysis does not fit in the 2048-token default, and 4096 still truncated the
     # longest ones in a live run. A truncated reply is invalid JSON, so this is a correctness
