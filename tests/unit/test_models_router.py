@@ -34,6 +34,7 @@ class FakeProvider:
         self.name = name
         self.model = f"{name}-model"
         self.calls = 0
+        self.last_capability: str | None = None
         self._text = text
         self._error = error
 
@@ -42,8 +43,11 @@ class FakeProvider:
         task: str,
         messages: list[ModelMessage],
         response_schema: type[BaseModel] | None = None,
+        *,
+        capability: str | None = None,
     ) -> ModelResult:
         del task, messages, response_schema
+        self.last_capability = capability
         self.calls += 1
         if self._error is not None:
             raise self._error
@@ -129,6 +133,25 @@ def test_malformed_structured_output_raises_without_a_repair_attempt(text: str) 
 
     # Invalid output is deterministic, so it is retried on neither provider.
     assert (strong.calls, local.calls) == (1, 0)
+
+
+def test_the_capability_reaches_the_provider_on_every_path() -> None:
+    strong = FakeProvider("nvidia_nim")
+    routed, local = router(strong)
+
+    asyncio.run(routed.generate("synthesis", MESSAGES))
+    assert strong.last_capability == "synthesis"
+
+    asyncio.run(routed.generate("cheap_text", MESSAGES))
+    assert local.last_capability == "cheap_text"
+
+    failing_strong = FakeProvider("nvidia_nim", error=ModelProviderError("down"))
+    fallback_routed, fallback_local = router(failing_strong)
+    asyncio.run(fallback_routed.generate("deep_reasoning", MESSAGES))
+    assert fallback_local.last_capability == "deep_reasoning"
+
+    asyncio.run(routed.generate_local("ideation", MESSAGES))
+    assert local.last_capability == "ideation"
 
 
 def test_cancellation_is_not_swallowed_by_the_fallback_path() -> None:

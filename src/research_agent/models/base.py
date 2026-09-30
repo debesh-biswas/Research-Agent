@@ -67,6 +67,8 @@ class ModelProvider(Protocol):
         task: str,
         messages: list[ModelMessage],
         response_schema: type[BaseModel] | None = None,
+        *,
+        capability: str | None = None,
     ) -> ModelResult: ...
 
 

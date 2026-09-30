@@ -25,8 +25,10 @@ class ScriptProvider:
         task: str,
         messages: list[ModelMessage],
         response_schema: type[BaseModel] | None = None,
+        *,
+        capability: str | None = None,
     ) -> ModelResult:
-        del task, messages, response_schema
+        del task, messages, response_schema, capability
         self.calls += 1
         if self.fail:
             raise ModelProviderError("unavailable")

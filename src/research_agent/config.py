@@ -74,6 +74,8 @@ class ModelEndpointSettings(StrictModel):
     max_output_tokens: int = Field(default=2048, gt=0)
     temperature: float = Field(default=0.2, ge=0, le=2)
     disable_thinking: bool = False
+    thinking_capabilities: list[str] = Field(default_factory=list)
+    """Capabilities to exempt from disable_thinking, e.g. ["deep_reasoning", "synthesis"]."""
 
 
 class NimEndpointSettings(ModelEndpointSettings):
