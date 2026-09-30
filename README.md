@@ -55,14 +55,16 @@ real implementation.
 
 ## Reading desk
 
-A static desk for topics, runs, selected papers, and the weekly report lives in `web/`. The Ask
-page answers from the sample cards so the layout can be reviewed. It does not call NVIDIA NIM yet.
+`research-agent desk` serves the reading desk on this machine. It reads topics, runs, papers,
+and the weekly report from the local library. Ask sends the question to NVIDIA NIM when that
+provider is configured, and to the local model otherwise. The answer is limited to the cards
+on the shelf.
 
 ```bash
-python -m http.server 8765 --directory web
+uv run research-agent desk
 ```
 
-Open `http://127.0.0.1:8765`. The page is sample data shaped like a weekly run, not the live database.
+Open `http://127.0.0.1:8765`. Opening `web/index.html` by itself shows the sample week instead.
 
 ## Quality checks
 

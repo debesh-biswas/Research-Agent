@@ -2,6 +2,17 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — F24 reading desk reads the local library (committed, ready to push)
+
+- **Feature/branch:** `F24-reading-desk`, continuing the static desk. Not a new feature number. `F23-multimodel-routing` is untouched.
+- **Status:** Implemented, verified, and committed on the branch. Push requested next. Not merged.
+- **Behavior:** `research-agent desk` serves `web/` and two loopback routes on `127.0.0.1:8765`. `GET /api/shelf` builds the page's shelf from SQLite and the stored weekly report. `POST /api/ask` sends the question and the cards on that run (or one paper) through the existing model router on `deep_reasoning`, so NVIDIA NIM is used when configured and the local model is used after NIM call failures or one invalid JSON reply. Cited paper ids that were not on the shelf are dropped. Opening the page without the desk command still shows the sample week. An empty library shows the empty state.
+- **Files:** `src/research_agent/desk/` (`shelf.py`, `ask.py`, `server.py`), `src/research_agent/cli.py` (`desk` command), `src/research_agent/storage/results.py` (`synthesis_for`, `classifications_for(..., active_only=True)`), `web/js/desk.js`, `tests/unit/test_desk_shelf.py`, `tests/unit/test_desk_ask.py`, `tests/unit/test_desk_server.py`, plus the existing desk and results tests, `README.md`.
+- **Decisions:** Stdlib `ThreadingHTTPServer`, no new dependency. The process binds to loopback only. Ask is not stored on the server. The prompt gets card fields, not PDF text. The public paper id is the stored canonical id. Executive summary is parsed from the report artifact; a missing report falls back to the first development or a short count sentence.
+- **Verification:** `uv run ruff check src/research_agent/desk src/research_agent/cli.py src/research_agent/storage/results.py tests/unit/test_desk_shelf.py tests/unit/test_desk_ask.py tests/unit/test_desk_server.py tests/unit/test_storage_results.py tests/unit/test_reading_desk.py` passed. `node --check web/js/desk.js` passed. `uv run pytest tests/unit/test_desk_shelf.py tests/unit/test_desk_ask.py tests/unit/test_desk_server.py tests/unit/test_storage_results.py tests/unit/test_reading_desk.py --no-cov -q` passed (18). Earlier branch verification also included `uv run ruff format --check` on touched Python files and `uv run mypy` passing. The full pytest suite was not run. No live NIM call was made.
+- **Commit:** This branch commit, `feat(desk): serve the local reading library`. Final hash is available from `git log` after amendment/push.
+- **Next:** Push `F24-reading-desk`, then merge it to `main` when requested. Do not start F23 from this branch.
+
 ## 2026-09-29 — F24 reading desk (implemented, not committed)
 
 - **Feature/branch:** `F24-reading-desk`, branched from `main` at `6e5317f`.

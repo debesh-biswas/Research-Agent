@@ -17,6 +17,8 @@ def test_desk_routes_cover_the_reading_surfaces() -> None:
     for route in ("week", "papers", "report", "runs", "ask"):
         assert route in script
     assert "NVIDIA NIM is not connected yet" in script
+    assert "/api/shelf" in script
+    assert "/api/ask" in script
 
 
 def test_sample_shelf_has_both_topics_and_paper_cards() -> None:

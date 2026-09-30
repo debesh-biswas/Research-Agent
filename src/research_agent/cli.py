@@ -19,6 +19,7 @@ from research_agent.config import (
     _load_yaml_mapping,
     load_configuration,
 )
+from research_agent.desk.server import LocalDesk, serve
 from research_agent.discovery.aggregator import (
     DiscoveryAggregator,
     DiscoveryResult,
@@ -1070,6 +1071,41 @@ def _echo_outcome(outcome: RunOutcome) -> None:
         f"{outcome.conclusion}\t{outcome.topic_id}\t"
         f"{outcome.papers_analyzed} paper(s)\t{outcome.errors} error(s)\t{detail}"
     )
+
+
+@app.command("desk")
+def serve_desk(
+    port: Annotated[int, typer.Option(help="Local port for the reading desk.")] = 8765,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Serve the reading desk on this machine. It reads the local library and can ask NIM."""
+    web_root = Path("web")
+    if not (web_root / "index.html").is_file():
+        typer.echo("The reading desk files are not in ./web.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+        stored = SqliteTopicRepository(connection).list()
+        connection.close()
+        if port < 1 or port > 65535:
+            raise ConfigurationError(f"port must be between 1 and 65535, got {port}")
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to serve the desk: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"Desk at http://127.0.0.1:{port}")
+    try:
+        serve(
+            LocalDesk(application.data_directory / "research_agent.db", application, stored),
+            web_root,
+            port,
+        )
+    except KeyboardInterrupt:
+        typer.echo("Desk stopped.")
+    except OSError as error:
+        typer.echo(f"Unable to serve the desk: {error}", err=True)
+        raise typer.Exit(code=1) from error
 
 
 @app.command("run")

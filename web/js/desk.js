@@ -20,6 +20,8 @@ const state = {
   draft: "",
   threads: {},
   moveFocus: false,
+  live: false,
+  pending: false,
 };
 
 function esc(value) {
@@ -31,14 +33,16 @@ function esc(value) {
 }
 
 function topics() {
-  return window.DESK.topics;
+  return (window.DESK && window.DESK.topics) || [];
 }
 
 function topicById(id) {
-  return topics().find((topic) => topic.id === id) || topics()[0];
+  const all = topics();
+  return all.find((topic) => topic.id === id) || all[0] || null;
 }
 
 function runById(topic, id) {
+  if (!topic || !topic.runs || !topic.runs.length) return null;
   return topic.runs.find((run) => run.id === id) || topic.runs[0];
 }
 
@@ -49,8 +53,8 @@ function paperById(run, id) {
 function current() {
   const topic = topicById(state.topicId);
   const run = runById(topic, state.runId);
-  state.topicId = topic.id;
-  state.runId = run.id;
+  if (topic) state.topicId = topic.id;
+  state.runId = run ? run.id : null;
   return { topic, run };
 }
 
@@ -465,7 +469,8 @@ function renderThread(run, turns) {
         return `<li class="turn you"><p class="turn-label">You</p><p>${esc(turn.text)}</p></li>`;
       }
       const paragraphs = turn.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("");
-      return `<li class="turn"><p class="turn-label">From the cards</p>${paragraphs}${renderCites(run, turn.cites)}</li>`;
+      const aside = turn.note ? `<p class="quiet">${esc(turn.note)}</p>` : "";
+      return `<li class="turn"><p class="turn-label">From the cards</p>${paragraphs}${renderCites(run, turn.cites)}${aside}</li>`;
     })
     .join("")}</ol>`;
 }
@@ -489,7 +494,11 @@ function viewAsk(run, paperId) {
       <textarea id="ask-input" name="question" rows="2" placeholder="Ask a question the card can answer" aria-label="Question">${esc(state.draft)}</textarea>
       <button class="primary" type="submit">Ask</button>
     </form>
-    <p class="note">Preview only. Answers are taken from the cards on this shelf. NVIDIA NIM is not connected yet.</p>`;
+    <p class="note">${
+      state.live
+        ? "Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does."
+        : "Preview only. Answers are taken from the cards on this shelf. NVIDIA NIM is not connected yet."
+    }</p>`;
 }
 
 function pageName(parts) {
@@ -501,7 +510,11 @@ function render() {
   const route = parseRoute();
   const name = pageName(route.parts);
   let body = "";
-  if (name === "papers" && route.parts[1]) body = viewPaper(run, route.parts[1]);
+  if (!topic) {
+    body = `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`;
+  } else if (!run) {
+    body = `<h1>${esc(topic.name)}</h1><p class="empty">No run is stored for this topic yet.</p>`;
+  } else if (name === "papers" && route.parts[1]) body = viewPaper(run, route.parts[1]);
   else if (name === "papers") body = viewPapers(run);
   else if (name === "report") body = viewReport(run);
   else if (name === "runs") {
@@ -528,15 +541,17 @@ function render() {
   const topicOptions = topics()
     .map(
       (item) =>
-        `<option value="${esc(item.id)}"${item.id === topic.id ? " selected" : ""}>${esc(item.name)}</option>`,
+        `<option value="${esc(item.id)}"${topic && item.id === topic.id ? " selected" : ""}>${esc(item.name)}</option>`,
     )
     .join("");
-  const runOptions = topic.runs
-    .map(
-      (item) =>
-        `<option value="${esc(item.id)}"${item.id === state.runId ? " selected" : ""}>${esc(formatPeriod(item))}</option>`,
-    )
-    .join("");
+  const runOptions = topic
+    ? topic.runs
+        .map(
+          (item) =>
+            `<option value="${esc(item.id)}"${item.id === state.runId ? " selected" : ""}>${esc(formatPeriod(item))}</option>`,
+        )
+        .join("")
+    : "";
 
   const titles = {
     week: "This week",
@@ -558,7 +573,11 @@ function render() {
       </div>
     </header>
     <main id="main">${body}</main>
-    <footer class="footer">Sample week for the layout. Live runs and NVIDIA NIM connect next.</footer>`;
+    <footer class="footer">${
+      state.live
+        ? "Reading the local library."
+        : "Sample week for the layout. Run research-agent desk to read the local library."
+    }</footer>`;
 
   persist();
   const section = route.params.get("section");
@@ -580,19 +599,61 @@ function persist() {
   sessionStorage.setItem("desk-state", JSON.stringify(payload));
 }
 
-function ask(question, paperId) {
+async function ask(question, paperId) {
   const text = question.trim();
-  if (!text) return;
+  if (!text || state.pending) return;
   const { run } = current();
+  if (!run) return;
   const paper = paperId ? paperById(run, paperId) : null;
   const key = threadKey(paper ? paper.id : null);
   const turns = state.threads[key] || [];
-  const answer = replyTo(text, run, paper);
-  state.threads[key] = turns.concat(
-    { role: "you", text },
-    { role: "desk", paragraphs: answer.paragraphs, cites: answer.cites },
-  );
+  const you = { role: "you", text };
+  if (!state.live) {
+    const answer = replyTo(text, run, paper);
+    state.threads[key] = turns.concat(you, {
+      role: "desk",
+      paragraphs: answer.paragraphs,
+      cites: answer.cites,
+    });
+    state.draft = "";
+    return;
+  }
+  state.pending = true;
   state.draft = "";
+  state.threads[key] = turns.concat(you, {
+    role: "desk",
+    paragraphs: ["Asking the cards…"],
+    cites: [],
+  });
+  render();
+  try {
+    const response = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: text,
+        topicId: state.topicId,
+        runId: state.runId,
+        paperId: paper ? paper.id : null,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "The model did not answer.");
+    state.threads[key] = turns.concat(you, {
+      role: "desk",
+      paragraphs: payload.paragraphs,
+      cites: payload.cites || [],
+      note: payload.note || "",
+    });
+  } catch (error) {
+    state.threads[key] = turns.concat(you, {
+      role: "desk",
+      paragraphs: [error instanceof Error ? error.message : "The model did not answer."],
+      cites: [],
+    });
+  } finally {
+    state.pending = false;
+  }
 }
 
 function onClick(event) {
@@ -608,10 +669,11 @@ function onClick(event) {
   const suggest = event.target.closest("[data-suggest]");
   if (suggest) {
     const paperId = parseRoute().params.get("paper");
-    ask(suggest.dataset.suggest, paperId);
-    state.moveFocus = false;
-    render();
-    document.getElementById("ask-input")?.focus();
+    void ask(suggest.dataset.suggest, paperId).then(() => {
+      state.moveFocus = false;
+      render();
+      document.getElementById("ask-input")?.focus();
+    });
   }
 }
 
@@ -620,9 +682,10 @@ function onSubmit(event) {
   if (form.id !== "ask-form") return;
   event.preventDefault();
   const paperId = parseRoute().params.get("paper");
-  ask(new FormData(form).get("question") || "", paperId);
-  render();
-  document.getElementById("ask-input")?.focus();
+  void ask(new FormData(form).get("question") || "", paperId).then(() => {
+    render();
+    document.getElementById("ask-input")?.focus();
+  });
 }
 
 function onInput(event) {
@@ -674,5 +737,22 @@ document.addEventListener("click", onClick);
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
-if (!location.hash) location.hash = "#/week";
-else render();
+
+async function boot() {
+  try {
+    const response = await fetch("/api/shelf");
+    if (response.ok) {
+      const shelf = await response.json();
+      if (shelf.live && Array.isArray(shelf.topics)) {
+        window.DESK = shelf;
+        state.live = true;
+      }
+    }
+  } catch {
+    state.live = false;
+  }
+  if (!location.hash) location.hash = "#/week";
+  else render();
+}
+
+void boot();

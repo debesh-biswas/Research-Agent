@@ -31,7 +31,9 @@ class ResultRepository(Protocol):
         raw_response: object = None,
     ) -> None: ...
 
-    def classifications_for(self, run_id: str) -> list[ClassificationResult]: ...
+    def classifications_for(
+        self, run_id: str, active_only: bool = False
+    ) -> list[ClassificationResult]: ...
 
     def classification_pairs(
         self, topic_id: str, limit: int = 4
@@ -51,6 +53,8 @@ class ResultRepository(Protocol):
     ) -> None: ...
 
     def recent_syntheses(self, topic_id: str, limit: int = 4) -> list[WeeklySynthesis]: ...
+
+    def synthesis_for(self, run_id: str) -> tuple[WeeklySynthesis, date, date] | None: ...
 
     def save_gaps(self, run_id: str, topic_id: str, gaps: list[ResearchGap]) -> None: ...
 
@@ -180,6 +184,21 @@ class SqliteResultRepository:
             (topic_id, limit),
         ).fetchall()
         return [WeeklySynthesis.model_validate_json(row["payload_json"]) for row in rows]
+
+    def synthesis_for(self, run_id: str) -> tuple[WeeklySynthesis, date, date] | None:
+        """The newest synthesis for one run, with the reporting period stored beside it."""
+        row = self._connection.execute(
+            "SELECT period_start, period_end, payload_json FROM weekly_syntheses "
+            "WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return (
+            WeeklySynthesis.model_validate_json(row["payload_json"]),
+            date.fromisoformat(row["period_start"]),
+            date.fromisoformat(row["period_end"]),
+        )
 
     def save_gaps(self, run_id: str, topic_id: str, gaps: list[ResearchGap]) -> None:
         self._save_many("research_gaps", run_id, topic_id, [gap.model_dump_json() for gap in gaps])
