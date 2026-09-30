@@ -2,6 +2,65 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — New topic folded into the SPA; nav bug fixed; switcher restyled; topic id derived (complete, on branch)
+
+- **Feature/branch:** `FIX8-new-topic-nav-and-switcher`, off `main` (which already carries FIX7).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** Three issues from the user, found while clicking through the redesigned desk:
+  1. **Bug:** clicking "New topic" navigated to the standalone `web/new-topic.html` page, whose
+     `<nav>` only had two hardcoded links ("This week", "New topic") — so every other nav item
+     (Papers, Report, Runs, Ask) visibly disappeared. Root cause: "New topic" was a second static
+     page duplicating the topbar markup instead of a route inside `desk.js`'s single-page app,
+     which is the only place that actually builds the full nav.
+  2. **Request:** "remove the old filters" — clarified via `AskUserQuestion` to mean the native
+     `<select>` Topic/Run switchers in the top bar, not the Papers-page filter buttons.
+  3. **Request:** make "New topic" a permanent, bold, brand-sized link (not a page-dependent nav
+     pill), and drop the "Topic id" field from the form, deriving it from the name instead.
+- **Fix — folded New topic into the SPA:** Deleted `web/new-topic.html` and `web/js/new-topic.js`.
+  `web/js/desk.js` gained: a `state.newTopic` object (`step: "form"|"review"`, `name`,
+  `description`, `keywords`, `pending`, `status`, `tone`); a `slugify(name)` helper; a
+  `viewNewTopic()` render function producing the same `.panel`/`.topic-form`/`.keyword-review`
+  markup the old static page used; a `"new"` branch in `render()`'s route dispatch (checked before
+  the "no topic"/"no run" empty-state branches, since topic creation must work with zero topics);
+  `suggestTopicKeywords()`/`createTopic()` async functions mirroring the existing `ask()`
+  pattern (mutate `state.newTopic`, call `render()`, `fetch`, mutate again, `render()` again);
+  `onSubmit`/`onClick`/`onInput` branches for the form's submit, the confirm/cancel buttons, and
+  a live topic-id preview under the Name field. Because this reuses `render()`'s own topbar
+  markup, the full nav is now structurally impossible to drop on the New topic route — the bug
+  class this fixes cannot recur for any future route added the same way.
+- **Fix — "New topic" is now a permanent, bold, brand-sized link:** Moved it out of the pill-style
+  `.nav` list into a new `.brand-group` (flex wrapper occupying the topbar's `brand` grid area)
+  alongside the "Desk" brand link, both `font-weight: 700` / `font-size: 1.2rem`. It renders
+  unconditionally in every `render()` call regardless of route, so it can no longer disappear.
+- **Fix — switcher restyled, not removed:** Kept the native `<select>` elements for Topic/Run
+  (the only way to switch what the header is scoped to from any page; removing them outright would
+  have been a functionality regression with no replacement) but stripped the bordered/boxed look
+  the user called "old" — `appearance: none`, no border, transparent background, pill-radius hover
+  highlight, chevron recolored to match the new muted palette. Reads as a text trigger now, not a
+  form control.
+- **Fix — topic id derived from name:** `new-topic-form` no longer has an id field. `slugify()`
+  lowercases, collapses runs of non-`[a-z0-9]` to `_`, and trims leading/trailing `_`. A live
+  preview under the Name field (`#new-topic-id-preview`, patched in `onInput` without a full
+  `render()`, matching the existing `paper-search` pattern) shows what the id will be as the user
+  types. The id is (re)computed once more at submit time from the same function.
+- **Decisions:** `createTopic()` only sends `{id, name, keywords}` to `POST /api/topics` — the
+  desk server's `TopicCreateRequest` in `src/research_agent/desk/server.py` already defaults
+  `lookback_days` to 10 server-side, so nothing there needed to change. No Python changed at all
+  in this branch.
+- **Verification:**
+  - `node --check web/js/desk.js` → no syntax errors.
+  - `uv run pytest tests/unit/test_reading_desk.py tests/unit/test_desk_server.py
+    tests/unit/test_desk_shelf.py tests/unit/test_desk_ask.py -q --no-cov` → 10 passed (these are
+    the only tests that touch `web/`; none assert DOM structure beyond literal substrings, none of
+    which moved).
+  - Live, against the running desk server and `mlx_lm.server`: `POST /api/topics/suggest` returned
+    real keywords for a throwaway topic; `POST /api/topics` with only `{id, name, keywords}`
+    (matching the new client payload shape) returned `202` and a `runs` row appeared with
+    `status="running"` within seconds. Smoke-test topic/run deleted afterward.
+- **Known issues / next step:** None. Browser-visual confirmation of the nav/switcher/brand
+  changes still needs the user to reload the page. Next: commit, push, merge into `main` per
+  `AGENTS.md`.
+
 ## 2026-09-30 — Desk visual redesign: premium neutral system, drop the vintage stamp/serif look (complete, on branch)
 
 - **Feature/branch:** `FIX7-premium-desk-redesign`, off `main` (which already carries FIX6).

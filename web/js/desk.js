@@ -22,7 +22,25 @@ const state = {
   moveFocus: false,
   live: false,
   pending: false,
+  newTopic: {
+    step: "form",
+    id: "",
+    name: "",
+    description: "",
+    keywords: [],
+    pending: false,
+    status: "",
+    tone: null,
+  },
 };
+
+function slugify(name) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 
 function esc(value) {
   return String(value ?? "")
@@ -501,6 +519,71 @@ function viewAsk(run, paperId) {
     }</p>`;
 }
 
+function viewNewTopic() {
+  const nt = state.newTopic;
+  const statusLine = nt.status
+    ? `<p class="status-line" data-tone="${esc(nt.tone || "")}">${esc(nt.status)}</p>`
+    : "";
+
+  if (nt.step === "review") {
+    const chips = nt.keywords.length
+      ? nt.keywords.map((keyword) => `<li class="keyword-chip">${esc(keyword)}</li>`).join("")
+      : `<li class="keyword-chip" data-empty="true">No keywords suggested; the topic will start with none.</li>`;
+    return `<p class="kicker">New topic</p>
+      <h1>New topic</h1>
+      <div class="panel">
+        <div class="keyword-review">
+          <h2>Suggested keywords</h2>
+          <ul class="keyword-chips">${chips}</ul>
+          <div class="form-actions">
+            <button class="primary" id="confirm-topic-button" type="button"${nt.pending ? " disabled" : ""}>Create topic and start pipeline</button>
+            <button class="button" id="cancel-topic-button" type="button"${nt.pending ? " disabled" : ""}>Back</button>
+          </div>
+        </div>
+        ${statusLine}
+      </div>`;
+  }
+
+  return `<p class="kicker">New topic</p>
+    <h1>New topic</h1>
+    <p class="empty">
+      Name it and, optionally, describe it. The local model will suggest keywords to review
+      before the topic is created and its pipeline starts.
+    </p>
+    <div class="panel">
+      <form id="new-topic-form" class="topic-form" novalidate>
+        <div class="field">
+          <label for="new-topic-name">Name</label>
+          <input
+            type="text"
+            id="new-topic-name"
+            name="name"
+            required
+            placeholder="e.g. Quantum Error Correction"
+            autocomplete="off"
+            value="${esc(nt.name)}"
+          />
+          <p class="quiet" id="new-topic-id-preview">${nt.name ? `Topic id: ${esc(slugify(nt.name)) || "—"}` : "The topic id is derived from the name."}</p>
+        </div>
+        <div class="field">
+          <label for="new-topic-description">Description <span class="quiet">(optional)</span></label>
+          <textarea
+            id="new-topic-description"
+            name="description"
+            rows="3"
+            placeholder="What this topic covers, to guide the keyword suggestions"
+          >${esc(nt.description || "")}</textarea>
+        </div>
+        <div class="form-actions">
+          <button class="primary" type="submit" id="suggest-topic-button"${nt.pending ? " disabled" : ""}>${
+            nt.pending ? "Asking the model…" : "Suggest keywords"
+          }</button>
+        </div>
+      </form>
+      ${statusLine}
+    </div>`;
+}
+
 function pageName(parts) {
   return parts[0] || "week";
 }
@@ -510,7 +593,9 @@ function render() {
   const route = parseRoute();
   const name = pageName(route.parts);
   let body = "";
-  if (!topic) {
+  if (name === "new") {
+    body = viewNewTopic();
+  } else if (!topic) {
     body = `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`;
   } else if (!run) {
     body = `<h1>${esc(topic.name)}</h1><p class="empty">No run is stored for this topic yet.</p>`;
@@ -536,7 +621,7 @@ function render() {
       const currentPage = name === id ? ' aria-current="page"' : "";
       return `<a href="${href}"${currentPage}>${label}</a>`;
     })
-    .join("") + '<a href="new-topic.html">New topic</a>';
+    .join("");
 
   const topicOptions = topics()
     .map(
@@ -559,11 +644,15 @@ function render() {
     report: "Report",
     runs: "Runs",
     ask: "Ask",
+    new: "New topic",
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
 
   document.getElementById("app").innerHTML = `<header class="topbar">
-      <a class="brand" href="#/week">Desk</a>
+      <div class="brand-group">
+        <a class="brand" href="#/week">Desk</a>
+        <a class="brand-action" href="#/new"${name === "new" ? ' aria-current="page"' : ""}>New topic</a>
+      </div>
       <nav class="nav" aria-label="Desk">${nav}</nav>
       <div class="tools">
         <label class="quiet" for="topic">Topic</label>
@@ -656,7 +745,85 @@ async function ask(question, paperId) {
   }
 }
 
+async function suggestTopicKeywords(name, description) {
+  state.newTopic = { ...state.newTopic, name, description, pending: true, status: "", tone: null };
+  render();
+  try {
+    const response = await fetch("/api/topics/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Keyword suggestion failed.");
+    state.newTopic = {
+      ...state.newTopic,
+      step: "review",
+      id: slugify(name),
+      keywords: payload.keywords || [],
+      pending: false,
+      status: "",
+      tone: null,
+    };
+  } catch (error) {
+    state.newTopic = {
+      ...state.newTopic,
+      pending: false,
+      status: error instanceof Error ? error.message : "Could not reach the desk server.",
+      tone: "error",
+    };
+  }
+  render();
+}
+
+async function createTopic() {
+  const nt = state.newTopic;
+  state.newTopic = { ...nt, pending: true, status: "", tone: null };
+  render();
+  try {
+    const response = await fetch("/api/topics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: nt.id, name: nt.name, keywords: nt.keywords }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Could not create the topic.");
+    state.newTopic = {
+      ...nt,
+      pending: false,
+      status: `Started. "${nt.name}" is running in the background; check "This week" shortly.`,
+      tone: "success",
+    };
+  } catch (error) {
+    state.newTopic = {
+      ...nt,
+      pending: false,
+      status: error instanceof Error ? error.message : "Could not reach the desk server.",
+      tone: "error",
+    };
+  }
+  render();
+}
+
 function onClick(event) {
+  if (event.target.id === "confirm-topic-button") {
+    void createTopic();
+    return;
+  }
+  if (event.target.id === "cancel-topic-button") {
+    state.newTopic = {
+      step: "form",
+      id: "",
+      name: state.newTopic.name,
+      description: state.newTopic.description,
+      keywords: [],
+      pending: false,
+      status: "",
+      tone: null,
+    };
+    render();
+    return;
+  }
   if (event.target.closest("a[href^='#/']")) state.moveFocus = true;
   const opener = event.target.closest("[data-open-run]");
   if (opener) state.runId = opener.dataset.openRun;
@@ -679,6 +846,15 @@ function onClick(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === "new-topic-form") {
+    event.preventDefault();
+    const data = new FormData(form);
+    const name = String(data.get("name") || "").trim();
+    const description = String(data.get("description") || "").trim();
+    if (!name) return;
+    void suggestTopicKeywords(name, description);
+    return;
+  }
   if (form.id !== "ask-form") return;
   event.preventDefault();
   const paperId = parseRoute().params.get("paper");
@@ -696,7 +872,17 @@ function onInput(event) {
     if (list) list.innerHTML = renderPaperList(run);
     return;
   }
-  if (event.target.id === "ask-input") state.draft = event.target.value;
+  if (event.target.id === "ask-input") {
+    state.draft = event.target.value;
+    return;
+  }
+  if (event.target.id === "new-topic-name") {
+    const slug = slugify(event.target.value);
+    const preview = document.getElementById("new-topic-id-preview");
+    if (preview) preview.textContent = slug ? `Topic id: ${slug}` : "The topic id is derived from the name.";
+    return;
+  }
+  if (event.target.id === "new-topic-description") state.newTopic.description = event.target.value;
 }
 
 function onChange(event) {
