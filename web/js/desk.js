@@ -258,7 +258,13 @@ function viewWeek(run) {
     )
     .join("");
   return `<p class="kicker">This week</p>
-    <div class="week-head"><h1>${esc(formatPeriod(run))}</h1>${stamp(run.status, true)}</div>
+    <div class="week-head">
+      <h1>${esc(formatPeriod(run))}</h1>
+      <div class="week-actions">
+        ${stamp(run.status, true)}
+        <button class="button" type="button" data-clear-run="${esc(run.id)}">Clear this run</button>
+      </div>
+    </div>
     ${funnel(run.summary)}
     <p class="quiet">${esc(formatDuration(run.durationSeconds))} · ${esc(run.models.join(" · "))}</p>
     <div class="desk-grid">
@@ -383,17 +389,23 @@ function viewReport(run) {
 function viewRuns(topic, run) {
   const rows = topic.runs
     .map((item) => {
-      const currentMark = item.id === run.id ? "On the desk" : "Read";
-      return `<li><a class="run-row" href="#/week" data-open-run="${esc(item.id)}">
-        <span class="run-period">${esc(formatPeriod(item))}</span>
-        <span class="run-meta">${esc(item.summary.papersSelected)} kept · ${esc(item.summary.deepReads)} read · ${esc(formatDuration(item.durationSeconds))}</span>
-        <span>${stamp(item.status, false)} <span class="quiet">${esc(currentMark)}</span></span>
-      </a></li>`;
+      const currentMark = run && item.id === run.id ? "On the desk" : "Read";
+      return `<li class="run-item">
+        <a class="run-row" href="#/week" data-open-run="${esc(item.id)}">
+          <span class="run-period">${esc(formatPeriod(item))}</span>
+          <span class="run-meta">${esc(item.summary.papersSelected)} kept · ${esc(item.summary.deepReads)} read · ${esc(formatDuration(item.durationSeconds))}</span>
+          <span>${stamp(item.status, false)} <span class="quiet">${esc(currentMark)}</span></span>
+        </a>
+        <button class="run-clear" type="button" data-clear-run="${esc(item.id)}" aria-label="Clear this run">Clear</button>
+      </li>`;
     })
     .join("");
-  return `<h1>Runs</h1>
+  const clearAll = topic.runs.length
+    ? `<button class="button" type="button" id="clear-topic-runs">Clear all runs</button>`
+    : "";
+  return `<div class="page-head"><h1>Runs</h1>${clearAll}</div>
     <p class="quiet">${esc(topic.name)}</p>
-    <ul class="run-list">${rows}</ul>`;
+    ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No runs yet for this topic.</p>`}`;
 }
 
 function threadKey(paperId) {
@@ -515,7 +527,7 @@ function viewAsk(run, paperId) {
     <p class="note">${
       state.live
         ? "Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does."
-        : "Preview only. Answers are taken from the cards on this shelf. NVIDIA NIM is not connected yet."
+        : "Can't reach the desk server, so this can't ask anything right now."
     }</p>`;
 }
 
@@ -596,18 +608,20 @@ function render() {
   if (name === "new") {
     body = viewNewTopic();
   } else if (!topic) {
-    body = `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`;
+    body = state.live
+      ? `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`
+      : `<h1>Can't reach the desk server</h1><p class="empty">Start it with <code>research-agent desk</code>, then reload this page.</p>`;
+  } else if (name === "runs") {
+    if (route.parts[1]) state.runId = route.parts[1];
+    const selected = runById(topic, state.runId);
+    state.runId = selected ? selected.id : null;
+    body = viewRuns(topic, selected);
   } else if (!run) {
     body = `<h1>${esc(topic.name)}</h1><p class="empty">No run is stored for this topic yet.</p>`;
   } else if (name === "papers" && route.parts[1]) body = viewPaper(run, route.parts[1]);
   else if (name === "papers") body = viewPapers(run);
   else if (name === "report") body = viewReport(run);
-  else if (name === "runs") {
-    if (route.parts[1]) state.runId = route.parts[1];
-    const selected = runById(topic, state.runId);
-    state.runId = selected.id;
-    body = viewRuns(topic, selected);
-  } else if (name === "ask") body = viewAsk(run, route.params.get("paper"));
+  else if (name === "ask") body = viewAsk(run, route.params.get("paper"));
   else body = viewWeek(run);
 
   const nav = [
@@ -629,13 +643,18 @@ function render() {
         `<option value="${esc(item.id)}"${topic && item.id === topic.id ? " selected" : ""}>${esc(item.name)}</option>`,
     )
     .join("");
-  const runOptions = topic
+  const hasRuns = Boolean(topic && topic.runs.length);
+  const runOptions = hasRuns
     ? topic.runs
         .map(
           (item) =>
             `<option value="${esc(item.id)}"${item.id === state.runId ? " selected" : ""}>${esc(formatPeriod(item))}</option>`,
         )
         .join("")
+    : "";
+  const runSwitcher = hasRuns
+    ? `<label class="quiet" for="run">Run</label>
+        <select class="switcher" id="run" aria-label="Run">${runOptions}</select>`
     : "";
 
   const titles = {
@@ -657,15 +676,14 @@ function render() {
       <div class="tools">
         <label class="quiet" for="topic">Topic</label>
         <select class="switcher" id="topic" aria-label="Topic">${topicOptions}</select>
-        <label class="quiet" for="run">Run</label>
-        <select class="switcher" id="run" aria-label="Run">${runOptions}</select>
+        ${runSwitcher}
       </div>
     </header>
     <main id="main">${body}</main>
     <footer class="footer">${
       state.live
         ? "Reading the local library."
-        : "Sample week for the layout. Run research-agent desk to read the local library."
+        : "Can't reach the desk server right now."
     }</footer>`;
 
   persist();
@@ -776,6 +794,42 @@ async function suggestTopicKeywords(name, description) {
   render();
 }
 
+async function refreshShelf() {
+  try {
+    const response = await fetch("/api/shelf");
+    if (response.ok) {
+      const shelf = await response.json();
+      if (shelf.live && Array.isArray(shelf.topics)) {
+        window.DESK = shelf;
+        state.live = true;
+      }
+    }
+  } catch {
+    // Keep whatever was loaded before; the footer already reflects reachability.
+  }
+  state.runId = null;
+  location.hash = "#/runs";
+  render();
+}
+
+async function deleteRun(runId) {
+  try {
+    await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  } catch {
+    // The shelf refetch below reflects whatever actually happened server-side.
+  }
+  await refreshShelf();
+}
+
+async function clearTopicRuns(topicId) {
+  try {
+    await fetch(`/api/topics/${encodeURIComponent(topicId)}/runs`, { method: "DELETE" });
+  } catch {
+    // The shelf refetch below reflects whatever actually happened server-side.
+  }
+  await refreshShelf();
+}
+
 async function createTopic() {
   const nt = state.newTopic;
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
@@ -822,6 +876,19 @@ function onClick(event) {
       tone: null,
     };
     render();
+    return;
+  }
+  if (event.target.id === "clear-topic-runs") {
+    const { topic } = current();
+    if (!topic) return;
+    if (!confirm(`Clear all runs for ${topic.name}? This cannot be undone.`)) return;
+    void clearTopicRuns(topic.id);
+    return;
+  }
+  const clearRun = event.target.closest("[data-clear-run]");
+  if (clearRun) {
+    if (!confirm("Clear this run? This cannot be undone.")) return;
+    void deleteRun(clearRun.dataset.clearRun);
     return;
   }
   if (event.target.closest("a[href^='#/']")) state.moveFocus = true;

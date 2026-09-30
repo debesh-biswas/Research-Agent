@@ -647,6 +647,44 @@ h2 {
   gap: 8px;
 }
 
+.run-item {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.run-item .run-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-clear {
+  flex: none;
+  align-self: center;
+  font: 500 0.82rem var(--sans);
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition:
+    color var(--fast) var(--ease),
+    border-color var(--fast) var(--ease);
+}
+
+.run-clear:hover {
+  color: var(--carmine);
+  border-color: var(--carmine);
+}
+
+.week-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .run-row {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) auto auto;

@@ -32,6 +32,10 @@ models:
   nim:
     base_url: https://integrate.api.nvidia.com/v1
     model: openai/gpt-oss-20b
+    # z-ai/glm-5.3-flash (the model actually selected via .env) is also a reasoning model: without
+    # this its answer lands in reasoning_content with content left null, which this app's parser
+    # treats as a failed response (see models/chat.py's disable_thinking handling).
+    disable_thinking: true
     timeout_seconds: 300
     max_output_tokens: 8192
 

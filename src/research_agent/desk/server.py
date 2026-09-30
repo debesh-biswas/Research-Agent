@@ -86,6 +86,10 @@ class DeskBackend(Protocol):
 
     def create_and_run(self, request: TopicCreateRequest) -> None: ...
 
+    def delete_run(self, run_id: str) -> None: ...
+
+    def clear_topic(self, topic_id: str) -> int: ...
+
 
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
@@ -170,6 +174,22 @@ class LocalDesk:
                 run_connection.close()
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def delete_run(self, run_id: str) -> None:
+        """Clear one week's run. Deduplicated papers and their files are untouched."""
+        connection = connect(self._database)
+        try:
+            SqliteRunRepository(connection).delete(run_id)
+        finally:
+            connection.close()
+
+    def clear_topic(self, topic_id: str) -> int:
+        """Clear every run a topic has, keeping the topic definition. Returns the count cleared."""
+        connection = connect(self._database)
+        try:
+            return SqliteRunRepository(connection).delete_for_topic(topic_id)
+        finally:
+            connection.close()
 
 
 def serve(backend: DeskBackend, web_root: Path, port: int) -> None:
@@ -257,6 +277,23 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(409, {"error": str(error)})
                 return
             self._json(202, {"status": "started", "topicId": request.topic_id})
+
+        def do_DELETE(self) -> None:
+            path = urlparse(self.path).path
+            segments = [segment for segment in path.split("/") if segment]
+            if len(segments) == 3 and segments[:2] == ["api", "runs"]:
+                backend.delete_run(unquote(segments[2]))
+                self._json(200, {"status": "cleared"})
+            elif (
+                len(segments) == 4
+                and segments[0] == "api"
+                and segments[1] == "topics"
+                and segments[3] == "runs"
+            ):
+                cleared = backend.clear_topic(unquote(segments[2]))
+                self._json(200, {"status": "cleared", "runs": cleared})
+            else:
+                self._json(404, {"error": "Not found."})
 
         def log_message(self, format: str, *args: object) -> None:
             _LOGGER.info(

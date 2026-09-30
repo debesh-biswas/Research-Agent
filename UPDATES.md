@@ -2,6 +2,73 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — Sample data removed, clear-data buttons added, NIM thinking-mode fixed (complete, on branch)
+
+- **Feature/branch:** `FIX9-clear-data-nim-thinking-no-sample`, off `main` (which already carries
+  FIX8).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** Four items from the user in one sitting:
+  1. **Confusion:** the user saw error text ("Semantic Scholar answered 429", "No legal PDF",
+     "The strong model failed one card") and asked whether a real run had happened. It hadn't —
+     `web/js/data.js` was a sample fixture `desk.js` fell back to silently whenever `/api/shelf`
+     was unreachable, with only a small footer line distinguishing it from real data. Per the
+     user's explicit "remove the sample": deleted `web/js/data.js`, dropped its `<script>` tag
+     from `web/index.html`. `desk.js` no longer has any fallback content — when the server can't
+     be reached, `topics()` returns `[]` and the app shows a plain "Can't reach the desk server"
+     message instead of fabricated data.
+  2. **New feature — clear data:** `src/research_agent/storage/runs.py` gained
+     `RunRepository.delete(run_id)` and `.delete_for_topic(topic_id)`, both one `DELETE` statement
+     relying on the schema's existing `ON DELETE CASCADE` foreign keys (classifications, analyses,
+     syntheses, gaps, ideas, errors, query plans, selections all cascade from `runs`; `papers`/
+     `paper_sources` are deliberately untouched since they're deduplicated and shared across runs).
+     `src/research_agent/desk/server.py` gained `LocalDesk.delete_run()`/`.clear_topic()` and two
+     routes: `DELETE /api/runs/<id>` (weekly clear) and `DELETE /api/topics/<id>/runs` (topic-wise
+     clear, keeps the topic definition). `web/js/desk.js`: a "Clear this run" button on the This
+     week page, a per-row "Clear" button plus a page-level "Clear all runs" button on the Runs
+     page, both behind a native `confirm()` dialog (destructive-action confirmation per the Web
+     Interface Guidelines this desk redesign was already following), wired through new
+     `deleteRun()`/`clearTopicRuns()`/`refreshShelf()` functions that refetch `/api/shelf` and
+     re-render after the server confirms.
+  3. **Fixed:** when a topic's runs are all cleared, the header's Run `<select>` now disappears
+     entirely instead of rendering empty — `render()` only emits the Run switcher when
+     `topic.runs.length` is nonzero.
+  4. **Bug found and fixed while checking "connect NIM"** — the user's NIM answer (via `/api/ask`)
+     was silently unusable. Live-tested `z-ai/glm-5.3-flash` (the model `.env` selects) directly:
+     it is also a reasoning/thinking model, same failure shape as FIX5's local Qwen3 fix —
+     `content` came back `null` with the answer in `reasoning_content`, and once `max_tokens` was
+     small the reasoning trace alone exhausted it (`finish_reason: "length"`). Added
+     `disable_thinking: true` to `config/settings.yaml`'s `models.nim` block (the
+     `ChatCompletionsProvider.disable_thinking` wiring from FIX5 already supports any endpoint,
+     this just turns it on for NIM too). Verified end-to-end through the actual `ModelRouter`
+     against the real NIM endpoint: `provider: nvidia_nim, model: z-ai/glm-5.3-flash, text: "OK"`.
+- **Files changed:** `config/settings.yaml`, `src/research_agent/desk/server.py`,
+  `src/research_agent/storage/runs.py`, `web/css/desk.css`, `web/index.html`, `web/js/desk.js`
+  (deleted `web/js/data.js`), `tests/unit/test_desk_server.py`, `tests/unit/test_reading_desk.py`,
+  `tests/unit/test_storage_runs.py`.
+- **Decisions:** Clearing is DB-only — generated files on disk (parsed Markdown, analysis cards,
+  reports) are not deleted by these endpoints. `build_shelf()` reads only from SQLite, so the UI
+  goes fully empty either way; leftover files are inert and just take up space. A full disk sweep
+  was judged out of scope for a UI "clear" action versus the manual `data/` reset done earlier this
+  session. Confirmation uses the browser's native `confirm()` rather than a custom modal — smallest
+  correct implementation of the Web Interface Guidelines' "destructive actions require
+  confirmation" rule.
+- **Verification:**
+  - `node --check web/js/desk.js` → no syntax errors.
+  - `uv run ruff format --check .`, `uv run ruff check .` → clean.
+  - `uv run mypy` → Success: no issues found in 158 source files.
+  - `uv run pytest -q` → 523 passed, 3 deselected, coverage 91.10% (gate 85%).
+  - Live, against the running desk server and a throwaway topic
+    (`clear_data_smoke_check`): confirmed a real run's row existed, `DELETE /api/runs/<id>`
+    removed exactly that row (`select count(*) from runs where id=...` → 0), then
+    `DELETE /api/topics/<id>/runs` cleared the rest (`{"status": "cleared", "runs": 0}`). Smoke
+    topic deleted afterward.
+  - Live, against the real NIM endpoint via `ModelRouter.generate("deep_reasoning", ...)`:
+    `provider: nvidia_nim, text: "OK"` — NIM is now genuinely answering, not silently failing over
+    to local on every call.
+- **Known issues / next step:** Disk artifacts (parsed text, analysis cards, reports) from a
+  cleared run are not deleted — noted above as a deliberate scope decision, not a bug. Next:
+  commit, push, merge into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — New topic folded into the SPA; nav bug fixed; switcher restyled; topic id derived (complete, on branch)
 
 - **Feature/branch:** `FIX8-new-topic-nav-and-switcher`, off `main` (which already carries FIX7).
