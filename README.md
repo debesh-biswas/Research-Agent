@@ -53,6 +53,19 @@ uv run research-agent config validate \
 The broader CLI described by the TRD will be exposed feature by feature, when each command has a
 real implementation.
 
+## Reading desk
+
+`research-agent desk` serves the reading desk on this machine. It reads topics, runs, papers,
+and the weekly report from the local library. Ask sends the question to NVIDIA NIM when that
+provider is configured, and to the local model otherwise. The answer is limited to the cards
+on the shelf.
+
+```bash
+uv run research-agent desk
+```
+
+Open `http://127.0.0.1:8765`. Opening `web/index.html` by itself shows the sample week instead.
+
 ## Quality checks
 
 ```bash

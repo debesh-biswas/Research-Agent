@@ -104,6 +104,24 @@ def test_recent_syntheses_returns_the_history_window(connection: sqlite3.Connect
     assert repository.recent_syntheses("other_topic") == []
 
 
+def test_synthesis_for_returns_the_run_period(connection: sqlite3.Connection) -> None:
+    repository, run_id, _ = _context(connection)
+    repository.save_synthesis(
+        run_id,
+        TOPIC_ID,
+        synthesis("named maps"),
+        period_start=date(2026, 9, 18),
+        period_end=date(2026, 9, 28),
+    )
+
+    stored = repository.synthesis_for(run_id)
+
+    assert stored is not None
+    assert stored[0].major_developments[0].text == "named maps"
+    assert stored[1:] == (date(2026, 9, 18), date(2026, 9, 28))
+    assert repository.synthesis_for("missing-run") is None
+
+
 def test_gaps_and_ideas_round_trip(connection: sqlite3.Connection) -> None:
     repository, run_id, paper_id = _context(connection)
     gaps = [
