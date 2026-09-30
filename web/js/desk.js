@@ -536,7 +536,7 @@ function render() {
       const currentPage = name === id ? ' aria-current="page"' : "";
       return `<a href="${href}"${currentPage}>${label}</a>`;
     })
-    .join("");
+    .join("") + '<a href="new-topic.html">New topic</a>';
 
   const topicOptions = topics()
     .map(

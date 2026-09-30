@@ -63,6 +63,7 @@ from research_agent.storage.topics import (
     bootstrap,
 )
 from research_agent.synthesis.synthesizer import SynthesisOutcome, WeeklySynthesizer
+from research_agent.topics.suggest import suggest_keywords
 
 app = typer.Typer(
     name="research-agent",
@@ -194,6 +195,69 @@ def add_topic(
         raise typer.Exit(code=1) from error
 
     typer.echo(f"Added topic {topic.id}.")
+
+
+@topic_app.command("new")
+def new_topic(
+    topic_id: Annotated[str, typer.Option("--id", help="Unique topic identifier.")],
+    name: Annotated[str, typer.Option("--name", help="Human-readable topic name.")],
+    description: Annotated[
+        str, typer.Option(help="Free-text description the local model uses to suggest keywords.")
+    ] = "",
+    lookback_days: Annotated[int, typer.Option(help="Discovery lookback window in days.")] = 10,
+    max_candidates: Annotated[int, typer.Option(help="Maximum discovered candidates.")] = 500,
+    max_classified: Annotated[int, typer.Option(help="Maximum classified papers.")] = 250,
+    max_downloads: Annotated[int, typer.Option(help="Maximum PDF downloads.")] = 50,
+    max_deep_reads: Annotated[int, typer.Option(help="Maximum deep reads.")] = 15,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Suggest keywords with the local model, confirm with the user, then run the pipeline."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        connection = _open_connection(settings, topics)
+    except (ConfigurationError, ValidationError) as error:
+        typer.echo(f"Unable to start: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    async def _suggest() -> list[str]:
+        async with _http_client(application.models.local.timeout_seconds) as client:
+            return await suggest_keywords(build_router(client, application), name, description)
+
+    keywords = asyncio.run(_suggest())
+    typer.echo(f"Suggested keywords: {', '.join(keywords) if keywords else '(none suggested)'}")
+
+    if not typer.confirm(
+        f"Create topic '{topic_id}' with these keywords and run the pipeline now?"
+    ):
+        typer.echo("Not created.")
+        raise typer.Exit(code=1)
+
+    try:
+        topic = TopicSettings.model_validate(
+            {
+                "id": topic_id,
+                "name": name,
+                "lookback_days": lookback_days,
+                "keywords": keywords,
+                "limits": {
+                    "max_candidates": max_candidates,
+                    "max_classified": max_classified,
+                    "max_downloads": max_downloads,
+                    "max_deep_reads": max_deep_reads,
+                },
+            }
+        )
+        SqliteTopicRepository(connection).add(topic)
+    except (ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to add topic: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    typer.echo(f"Added topic {topic.id}. Starting the pipeline...")
+    outcome = _run_one(connection, application, topic)
+    _echo_outcome(outcome)
+    if outcome.fatal:
+        raise typer.Exit(code=1)
 
 
 @topic_app.command("list")
