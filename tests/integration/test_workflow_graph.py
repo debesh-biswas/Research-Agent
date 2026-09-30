@@ -307,7 +307,9 @@ def test_a_dead_model_provider_still_produces_a_report(
     categories = {
         error.category for error in SqliteRunRepository(connection).errors_for(final.run_id or "")
     }
-    assert "MODEL_API_ERROR" in categories
+    # The mocked provider returns 503, a retryable status; once retries are exhausted this is a
+    # transient category, not an immediate one (see discovery/http.py's `_RETRYABLE_STATUS`).
+    assert "MODEL_TIMEOUT" in categories
 
 
 def test_a_failing_source_does_not_end_the_run(
