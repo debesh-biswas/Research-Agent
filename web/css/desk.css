@@ -108,13 +108,37 @@ a:hover {
   border-bottom: 1px solid var(--line);
 }
 
-.brand {
+.brand-group {
   grid-area: brand;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.brand {
   font-weight: 700;
   letter-spacing: -0.03em;
   font-size: 1.2rem;
   color: var(--ink);
   text-decoration: none;
+}
+
+.brand-action {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-size: 1.2rem;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--fast) var(--ease);
+}
+
+.brand-action:hover {
+  color: var(--ink);
+}
+
+.brand-action[aria-current="page"] {
+  color: var(--tide-deep);
 }
 
 .nav {
@@ -160,27 +184,28 @@ a:hover {
 
 .switcher {
   appearance: none;
-  font: 500 0.9rem var(--sans);
-  color: var(--ink);
-  background: var(--surface)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23565f60' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E")
-    no-repeat right 12px center;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 8px 30px 8px 12px;
+  font: 600 0.9rem var(--sans);
+  color: var(--muted);
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%237c8484' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 28px 8px 12px;
   max-width: 16rem;
+  cursor: pointer;
   transition:
-    border-color var(--fast) var(--ease),
-    box-shadow var(--fast) var(--ease);
+    background-color var(--fast) var(--ease),
+    color var(--fast) var(--ease);
 }
 
 .switcher:hover {
-  border-color: var(--line-strong);
+  color: var(--ink);
+  background-color: var(--surface-2);
 }
 
 .switcher:focus-visible {
   outline: none;
-  border-color: var(--tide);
   box-shadow: 0 0 0 3px var(--wash);
 }
 
