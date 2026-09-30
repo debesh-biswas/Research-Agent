@@ -47,7 +47,7 @@ from research_agent.operations.runner import RunOutcome, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.reports.service import ReportOutcome, ReportService
-from research_agent.screening.service import PaperScreener
+from research_agent.screening.service import PaperScreener, ScreeningFailure
 from research_agent.selection.selector import select
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
@@ -452,7 +452,7 @@ def classify(
     search = query or base_query(topic)
     end_date = datetime.now(UTC).date()
     start_date = end_date - timedelta(days=days or topic.lookback_days)
-    discovered, outcome = asyncio.run(
+    discovered, outcome, screening_failures = asyncio.run(
         _classify(
             application, topic, search, start_date, end_date, limit or topic.limits.max_candidates
         )
@@ -474,6 +474,8 @@ def classify(
     )
     for error_record in discovered.errors:
         typer.echo(f"source error: {error_record.category} {error_record.message}", err=True)
+    for failure in screening_failures:
+        typer.echo(f"screening error: {failure.category} {failure.paper_id}", err=True)
     for decision in plan.decisions:
         typer.echo(
             f"{decision.rank}\t{'select' if decision.selected else 'skip'}\t"
@@ -492,14 +494,17 @@ async def _classify(
     start_date: date,
     end_date: date,
     limit: int,
-) -> tuple[DiscoveryResult, list[tuple[ClassificationResult, dict[str, object]]]]:
+) -> tuple[
+    DiscoveryResult, list[tuple[ClassificationResult, dict[str, object]]], list[ScreeningFailure]
+]:
     discovered = await _discover(application, topic, query, start_date, end_date, limit)
     candidates = discovered.candidates[: topic.limits.max_classified]
     timeout = application.models.local.timeout_seconds
     async with _http_client(timeout) as client:
-        return discovered, await PaperScreener(
+        outcome, failures = await PaperScreener(
             build_router(client, application), application
         ).screen_many(candidates, topic)
+        return discovered, outcome, failures
 
 
 def _save_classifications(

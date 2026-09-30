@@ -2,6 +2,49 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — FIX4 screening failures now surface as run errors (complete, merged)
+
+- **Feature/branch:** `FIX4-screening-status-and-stale-test`, branched from `main` at `6e5317f`.
+- **Status:** Complete, merged.
+- **Summary:** Two regressions from the F22 merge, found while verifying `main` before merging
+  `F24-reading-desk`. Neither is caused by F24, which touches none of the affected files.
+  1. `PaperScreener.screen_many` swallowed every screening failure into a log line and dropped the
+     paper, so a dead model provider produced zero `ErrorRecord`s and the run reported
+     `status="completed"` instead of `"degraded"`, even though papers were silently unscreened.
+     `screen_many` now returns `(accepted, failures)`, where each `ScreeningFailure` carries the
+     paper id and the `ErrorCategory` raised (`MODEL_API_ERROR`, `MODEL_TIMEOUT`,
+     `INVALID_CLASSIFIER_OUTPUT`, or `CLASSIFIER_ERROR`). The graph's `classify` node appends one
+     `ErrorRecord` per failure, matching the acquire/parse/analyze nodes' existing pattern, so
+     `persist` now correctly marks the run `degraded`. The standalone `research-agent classify` CLI
+     command was updated for the new return shape and now echoes screening errors alongside source
+     errors.
+  2. `tests/unit/test_storage_topics.py::test_add_round_trips_every_field` built a `TopicSettings`
+     with `classifier={"active": "B", "shadow": None}`, a field F22 removed when it replaced
+     Classifier A/B with semantic screening; the test raised `ValidationError: extra_forbidden` on
+     every run. Removed at the user's direction (no remaining use once the classifier field is
+     gone); the `_topic()` helper and its other non-default-field coverage stay, used by the
+     surrounding tests.
+- **Files:** `src/research_agent/screening/service.py` (new `ScreeningFailure`, `screen_many`
+  return type), `src/research_agent/workflow/nodes.py` (`classify` node records errors),
+  `src/research_agent/cli.py` (`_classify` return type, `classify` command echoes failures),
+  `tests/unit/test_screening_service.py` (updated existing test, new
+  `test_a_dead_provider_is_reported_as_a_screening_failure` regression test),
+  `tests/integration/test_workflow_graph.py` (`test_a_dead_model_provider_still_produces_a_report`
+  now asserts `MODEL_TIMEOUT`, not `MODEL_API_ERROR` — the mocked provider returns HTTP 503, which
+  `discovery/http.py`'s `_RETRYABLE_STATUS` retries and then reports under the transient category
+  by design; the old assertion was stale, not a real bug), `tests/unit/test_storage_topics.py`
+  (removed the stale test).
+- **Decisions:** No schema/migration change — `ScreeningFailure` is a transient in-process model,
+  not persisted directly; it only feeds the existing `ErrorRecord` path. Left the CLI's standalone
+  `_save_classifications` run-summary status logic (based only on discovery errors) as-is; that
+  command is a separate ad-hoc path from the graph and was out of scope for this fix.
+- **Verification:** `uv run ruff format --check .` — passed. `uv run ruff check .` — passed.
+  `uv run mypy` — passed, 145 files. `uv run pytest` — 505 passed, 3 deselected, 93.39% coverage.
+  `uv run pytest -m slow` — 3 passed. `uv run research-agent config validate` — valid.
+- **Commit/merge:** commit `fix(screening): surface screening failures as run errors`; merged to
+  `main` as `merge: FIX4-screening-status-and-stale-test surface screening failures as run errors`.
+- **Next:** Merge `F24-reading-desk` onto this now-green `main`.
+
 ## 2026-09-28 — F22 semantic paper screening (in progress)
 
 - **Feature/branch:** `F22-semantic-paper-screening`.

@@ -37,28 +37,6 @@ def test_migrations_are_idempotent(tmp_path: Path) -> None:
     assert len(tables) == 1
 
 
-def test_add_round_trips_every_field(tmp_path: Path) -> None:
-    repository = _repository(tmp_path / "agent.db")
-    topic = _topic(
-        enabled=False,
-        lookback_days=21,
-        classifier={"active": "B", "shadow": None},
-        discovery={"openalex": False, "semantic_scholar": True, "arxiv": False},
-        limits={
-            "max_candidates": 40,
-            "max_classified": 30,
-            "max_downloads": 20,
-            "max_deep_reads": 10,
-        },
-        scheduling={"frequency": "weekly", "day": "monday"},
-    )
-
-    repository.add(topic)
-
-    assert repository.get(topic.id) == topic
-    assert repository.list() == [topic]
-
-
 def test_get_returns_none_for_unknown_topic(tmp_path: Path) -> None:
     assert _repository(tmp_path / "agent.db").get("missing") is None
 

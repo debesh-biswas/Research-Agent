@@ -122,7 +122,7 @@ def classify(services: WorkflowServices) -> Node:
 
     async def node(state: ResearchState) -> Update:
         candidates = state.candidates[: services.topic.limits.max_classified]
-        outcome = await services.screener.screen_many(candidates, services.topic)
+        outcome, failures = await services.screener.screen_many(candidates, services.topic)
         run_id = state.run_id or ""
         by_id = {canonical_id(paper): paper for paper in state.candidates}
         for result, provenance in outcome:
@@ -131,6 +131,16 @@ def classify(services: WorkflowServices) -> Node:
                 services.papers.upsert(candidate)
             services.results.save_classification(run_id, result, raw_response=provenance)
         errors = list(state.errors)
+        for failure in failures:
+            errors.append(
+                ErrorRecord(
+                    run_id=state.run_id or "unstarted",
+                    node="classify",
+                    category=failure.category,
+                    message=failure.reason,
+                    paper_id=failure.paper_id,
+                )
+            )
         counts = {**state.counts, "classified": len(outcome)}
         return {
             "classifications": [result for result, _ in outcome],
