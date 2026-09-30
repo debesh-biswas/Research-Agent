@@ -23,6 +23,8 @@ class FakeDesk:
 
     def __init__(self) -> None:
         self.created: list[TopicCreateRequest] = []
+        self.deleted_runs: list[str] = []
+        self.cleared_topics: list[str] = []
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -47,6 +49,13 @@ class FakeDesk:
         if request.topic_id == "duplicate":
             raise TopicStoreError("topic already exists")
         self.created.append(request)
+
+    def delete_run(self, run_id: str) -> None:
+        self.deleted_runs.append(run_id)
+
+    def clear_topic(self, topic_id: str) -> int:
+        self.cleared_topics.append(topic_id)
+        return 2
 
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
@@ -140,6 +149,41 @@ def test_the_server_suggests_keywords_and_creates_a_topic(tmp_path: Path) -> Non
         )
         with pytest_http_error(duplicate) as error:
             assert error.code == 409
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_the_server_clears_a_run_and_a_topic_s_runs(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<p>desk</p>", encoding="utf-8")
+    backend = FakeDesk()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(backend, web.resolve()))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    try:
+        delete_run = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/runs/run-123", method="DELETE"
+        )
+        with urllib.request.urlopen(delete_run) as response:
+            assert json.load(response) == {"status": "cleared"}
+        assert backend.deleted_runs == ["run-123"]
+
+        clear_topic = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/topics/spatial/runs", method="DELETE"
+        )
+        with urllib.request.urlopen(clear_topic) as response:
+            assert json.load(response) == {"status": "cleared", "runs": 2}
+        assert backend.cleared_topics == ["spatial"]
+
+        unknown = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/topics/spatial", method="DELETE"
+        )
+        with pytest_http_error(unknown) as error:
+            assert error.code == 404
     finally:
         server.shutdown()
         server.server_close()

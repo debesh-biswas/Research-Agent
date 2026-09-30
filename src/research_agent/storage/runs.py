@@ -35,6 +35,10 @@ class RunRepository(Protocol):
 
     def errors_for(self, run_id: str) -> list[ErrorRecord]: ...
 
+    def delete(self, run_id: str) -> None: ...
+
+    def delete_for_topic(self, topic_id: str) -> int: ...
+
 
 def _from_row(row: sqlite3.Row) -> RunRecord:
     completed = row["completed_at"]
@@ -160,3 +164,17 @@ class SqliteRunRepository:
             )
             for row in rows
         ]
+
+    def delete(self, run_id: str) -> None:
+        """Delete one run; foreign keys cascade to its classifications, analyses, errors, etc.
+
+        Papers themselves are never deleted here — they are deduplicated and shared across runs.
+        """
+        with self._connection:
+            self._connection.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+
+    def delete_for_topic(self, topic_id: str) -> int:
+        """Delete every run for a topic, keeping the topic definition itself. Returns the count."""
+        with self._connection:
+            cursor = self._connection.execute("DELETE FROM runs WHERE topic_id = ?", (topic_id,))
+            return cursor.rowcount

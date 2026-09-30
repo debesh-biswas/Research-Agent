@@ -86,6 +86,38 @@ def test_errors_persist_category_and_recoverability(connection: sqlite3.Connecti
     assert errors[0].occurred_at is not None
 
 
+def test_delete_removes_one_run_and_cascades_its_errors(connection: sqlite3.Connection) -> None:
+    repository = SqliteRunRepository(connection)
+    run = repository.start(TOPIC_ID)
+    other = repository.start(TOPIC_ID)
+    repository.record_error(
+        ErrorRecord(run_id=run.id, node="discover", category="RATE_LIMIT", message="429")
+    )
+
+    repository.delete(run.id)
+
+    assert repository.get(run.id) is None
+    assert repository.get(other.id) is not None
+    assert repository.errors_for(run.id) == []
+
+
+def test_delete_for_topic_clears_every_run_but_keeps_the_topic(
+    connection: sqlite3.Connection,
+) -> None:
+    repository = SqliteRunRepository(connection)
+    for _ in range(3):
+        repository.start(TOPIC_ID)
+
+    cleared = repository.delete_for_topic(TOPIC_ID)
+
+    assert cleared == 3
+    assert repository.recent(TOPIC_ID, limit=10) == []
+    assert (
+        connection.execute("SELECT COUNT(*) FROM topics WHERE id = ?", (TOPIC_ID,)).fetchone()[0]
+        == 1
+    )
+
+
 def test_a_failed_transaction_leaves_no_run(connection: sqlite3.Connection) -> None:
     with pytest.raises(sqlite3.IntegrityError), connection:
         connection.execute(
