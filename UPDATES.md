@@ -2,6 +2,73 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — Desk visual redesign: premium neutral system, drop the vintage stamp/serif look (complete, on branch)
+
+- **Feature/branch:** `FIX7-premium-desk-redesign`, off `main` (which already carries FIX6).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** User flagged the desk UI (both `index.html`'s SPA views and `new-topic.html`) as
+  "old and vintage and unpolished" and asked for a premium redesign across every page and click
+  path. `web/css/desk.css`'s own header comment described the prior look as "cool paper, ink, one
+  tide accent... the rubber stamp is the only playful mark" — a deliberate print/editorial
+  aesthetic (serif Literata headings, a rotated passport-stamp status badge, flat hairline-divided
+  rows) that read as dated rather than premium. Rewrote the whole stylesheet as a modern neutral
+  design system; no HTML structure or JS template logic changed except wrapping the new-topic form
+  in a `.panel` card, so every view `desk.js` renders (`week`/`papers`/`report`/`runs`/`ask`)
+  picked up the new system automatically through shared class names.
+- **What changed (all in `web/css/desk.css` unless noted):**
+  - New tokens: `--surface`/`--surface-2` (card vs. canvas), `--shadow-sm/md/lg`, `--radius-sm/md/
+    lg`, `--ease`/`--fast`/`--speed`. Palette kept the existing teal brand accent but refined it
+    (`--tide: #0e7c72`) rather than replacing it.
+  - Headings (`h1`/`h2`/`h3`), `.paper-row-title`, and `.run-period` moved from serif Literata to
+    the sans (`Schibsted Grotesk`) — serif is now scoped only to long-form reading content
+    (`.card-block`, `.lede`, `.turn p`, the paper-card body and ask answers), where it still reads
+    as a deliberate editorial choice rather than as the whole app's chrome.
+  - `.stamp` (run status) replaced the rotated, bordered "rubber stamp" with a plain rounded pill +
+    dot indicator, tinted by status (`--wash`/`--carmine-wash`).
+  - `.paper-row`, `.run-row`, `.finding`/`.idea`/`.gap`, `.turn` changed from hairline-divided list
+    rows to individual cards (`--surface` background, border, `--radius-md`, hover elevation via
+    `box-shadow` + `translateY(-1px)`).
+  - `.filters` became a segmented control (pill container, active filter gets a white chip with
+    `--shadow-sm`) instead of individually bordered pill buttons.
+  - `.topbar` gained a translucent `backdrop-filter` blur; `.nav` active/hover states became pill
+    chips instead of an underline `box-shadow`.
+  - `.search`, `.switcher`, `.field input`/`.field textarea` unified to the same bordered
+    `--radius-sm` style with a focus ring (`box-shadow: 0 0 0 3px var(--wash)`) instead of
+    `outline: none` with no visible replacement (Web Interface Guidelines: focus indicators
+    required, no bare `outline-none`).
+  - `.composer` (the ask box) became a floating card with `--shadow-lg`, borderless textarea inside
+    it, sticky above the bottom of the viewport.
+  - Added a broad `@media (prefers-reduced-motion: reduce)` rule collapsing all transition/
+    animation durations to near-zero, replacing the narrower rule that only covered `.stamp-land`
+    (the new hover-elevation transitions on cards needed the same treatment).
+  - `web/new-topic.html` — wrapped the form and the keyword-review step in a new `.panel` card
+    (padding, border, `--radius-lg`, `--shadow-sm`) so the page reads as one coherent surface
+    instead of loose fields on the bare canvas.
+- **Decisions:**
+  - Did not touch `web/js/desk.js`'s template strings — every class it emits already existed in
+    the old stylesheet, so a CSS-only rewrite reaches every page (`week`, `papers`, `report`,
+    `runs`, `ask`) without risking the DOM-structure assumptions `tests/unit/test_reading_desk.py`
+    and `tests/unit/test_desk_server.py` make (both only check for literal substrings — route
+    names, `/api/shelf`, `/api/ask`, sample topic ids — none of which moved).
+  - Checked all internal links across both pages (`grep -n 'href=' web/index.html web/new-topic.html`):
+    `new-topic.html` ↔ `index.html` cross-links both directions, `index.html`'s hash router covers
+    all five views, no dead links found. Did not add a "New topic" affordance beyond the existing
+    nav link — no other entry point into topic creation exists in the app to redesign.
+  - Ran this against the Web Interface Guidelines (vercel-labs/web-interface-guidelines) via the
+    `/web-design-guidelines` skill: labels-for-inputs, focus-visible rings, reduced-motion support,
+    and `tabular-nums` on numeric columns were already present or were added; did not add
+    `Intl.NumberFormat`/list virtualization/line-clamp truncation since nothing in this single-user
+    local tool's data volume needs them and no existing content overflows its containers.
+- **Verification:** `uv run pytest tests/unit/test_reading_desk.py tests/unit/test_desk_server.py
+  tests/unit/test_desk_shelf.py tests/unit/test_desk_ask.py -q --no-cov` → 10 passed. Verified live
+  against the running desk server (`curl http://127.0.0.1:8765/css/desk.css` and `/new-topic.html`)
+  that the new stylesheet and the `.panel`-wrapped form are actually served. No Python changed, so
+  the full ruff/mypy/pytest gate was not re-run (nothing it covers changed); confirmed no HTML tag
+  imbalance in `new-topic.html` with a small parse check.
+- **Known issues / next step:** This was a CSS/HTML-only pass; browser-visual confirmation still
+  needs the user to reload the page (I cannot render a browser here). Next: commit, push, merge
+  into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — New-topic form styled and cleaned up (complete, on branch)
 
 - **Feature/branch:** `FIX6-new-topic-form-styling`, off `main` (which already carries F25).
