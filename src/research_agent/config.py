@@ -73,6 +73,7 @@ class ModelEndpointSettings(StrictModel):
     timeout_seconds: float = Field(default=120.0, gt=0)
     max_output_tokens: int = Field(default=2048, gt=0)
     temperature: float = Field(default=0.2, ge=0, le=2)
+    disable_thinking: bool = False
 
 
 class NimEndpointSettings(ModelEndpointSettings):

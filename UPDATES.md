@@ -2,6 +2,49 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — Local model switched to Qwen3-14B via mlx_lm.server (complete, on branch)
+
+- **Feature/branch:** `FIX5-local-model-qwen3-14b-thinking`.
+- **Status:** Complete on branch, not yet merged.
+- **Summary:** User moved local inference off Ollama onto `mlx_lm.server` running
+  `mlx-community/Qwen3-14B-4bit` (already resolved in the HF cache from earlier session setup).
+  Live testing against the running server (`curl .../v1/chat/completions`) surfaced a real
+  correctness bug: Qwen3's default "thinking" mode returns its answer in a `reasoning` message
+  field and, once `max_tokens` is spent on the thinking trace, omits `content` entirely — but
+  `ChatCompletionsProvider._content()` in `src/research_agent/models/chat.py` requires `content`
+  to be a string, so every local-provider call would have raised `ModelProviderError`. Confirmed
+  the fix by curling with `chat_template_kwargs: {"enable_thinking": false}`, which restores a
+  normal `content` field and `finish_reason: "stop"`.
+- **Files changed:**
+  - `config/settings.yaml` — `models.local.base_url` → `http://localhost:8080/v1` (mlx_lm.server's
+    port, not Ollama's 11434), `models.local.model` → `mlx-community/Qwen3-14B-4bit`, added
+    `models.local.disable_thinking: true`.
+  - `src/research_agent/config.py` — added `ModelEndpointSettings.disable_thinking: bool = False`
+    (opt-in, so NIM and any Ollama-style endpoint without thinking-mode quirks are unaffected).
+  - `src/research_agent/models/chat.py` — `ChatCompletionsProvider.generate()` now sends
+    `chat_template_kwargs: {"enable_thinking": false}` when `disable_thinking` is set. Top-level
+    `enable_thinking` in the request body is silently ignored by `mlx_lm.server`; only the
+    `chat_template_kwargs`-nested form works, confirmed by direct curl comparison.
+- **Decisions:** Kept `disable_thinking` a settings flag rather than hardcoding the behavior, since
+  NIM and non-thinking local models must not receive this field. Did not change the JSON-fence
+  stripping in `models/router.py:_parse_json` — Qwen3 still wraps JSON replies in ```` ```json ````
+  fences even with `response_format: json_object`, and that stripping already exists and was
+  verified working via the same curl test.
+- **Verification:**
+  - Live: `curl http://localhost:8080/v1/chat/completions ... enable_thinking:false` → normal
+    `content` field, `finish_reason: "stop"`.
+  - Live: same request with `response_format: json_object` → fenced JSON, confirmed parseable by
+    existing `_parse_json` fence-stripping logic.
+  - `uv run ruff format --check .` → 149 files already formatted.
+  - `uv run ruff check .` → All checks passed.
+  - `uv run mypy` → Success: no issues found in 153 source files.
+  - `uv run pytest -q` → 515 passed, 3 deselected, coverage 91.63% (gate 85%).
+- **Known issues / next step:** No unit test added for `disable_thinking`'s wire-level effect since
+  it's a pure pass-through of a config flag into the request body, exercised live above; the
+  existing `test_models_chat.py` fixtures don't hit a real Qwen3 thinking-mode response shape. If
+  this becomes a recurring pain point, consider a unit test asserting the request body when the
+  flag is set. Next: commit, push, merge into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — F24 reading desk merged to main (complete, merged)
 
 - **Feature/branch:** `F24-reading-desk`, merged onto `main` after `FIX4-screening-status-and-stale-test`.

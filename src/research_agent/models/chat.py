@@ -56,6 +56,11 @@ class ChatCompletionsProvider:
         }
         if response_schema is not None:
             body["response_format"] = {"type": "json_object"}
+        if self._settings.disable_thinking:
+            # Qwen3's thinking mode puts the answer in a "reasoning" field and often omits
+            # "content" entirely once max_tokens is spent on the thinking trace; _content()
+            # below requires "content", so thinking mode must stay off for this endpoint.
+            body["chat_template_kwargs"] = {"enable_thinking": False}
 
         started = time.monotonic()
         try:
