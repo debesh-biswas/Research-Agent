@@ -7,6 +7,7 @@ a weekly run stays a separate command, and this process only reads the library a
 import asyncio
 import json
 import logging
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol
@@ -20,12 +21,15 @@ from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
 from research_agent.desk.shelf import build_shelf
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
+from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
-from research_agent.storage.database import connect
+from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
+from research_agent.storage.topics import SqliteTopicRepository, TopicStoreError
+from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
@@ -51,12 +55,36 @@ class AskRequest(StrictModel):
     paper_id: str | None = Field(default=None, alias="paperId")
 
 
+class TopicSuggestRequest(StrictModel):
+    """The name and optional description the desk page posts for keyword suggestions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+
+
+class TopicCreateRequest(StrictModel):
+    """A confirmed new topic, with the keywords the user reviewed."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    topic_id: str = Field(min_length=1, alias="id")
+    name: str = Field(min_length=1, max_length=200)
+    keywords: list[str] = Field(default_factory=list)
+    lookback_days: int = Field(default=10, gt=0, alias="lookbackDays")
+
+
 class DeskBackend(Protocol):
     """What the HTTP handler needs from the library. Tests substitute this."""
 
     def shelf(self) -> dict[str, object]: ...
 
     async def ask(self, request: AskRequest) -> DeskReply: ...
+
+    async def suggest(self, request: TopicSuggestRequest) -> list[str]: ...
+
+    def create_and_run(self, request: TopicCreateRequest) -> None: ...
 
 
 class LocalDesk:
@@ -102,6 +130,47 @@ class LocalDesk:
                 max_chars=self._settings.reports.max_input_chars,
             )
 
+    async def suggest(self, request: TopicSuggestRequest) -> list[str]:
+        timeout = self._settings.models.local.timeout_seconds
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            router = build_router(client, self._settings)
+            return await suggest_keywords(router, request.name, request.description)
+
+    def create_and_run(self, request: TopicCreateRequest) -> None:
+        """Create the topic, then run its pipeline on a background thread.
+
+        The HTTP response returns as soon as the topic is stored; the run itself can take
+        minutes (downloads, model calls), so it must not block the request thread.
+        """
+        topic = TopicSettings.model_validate(
+            {
+                "id": request.topic_id,
+                "name": request.name,
+                "lookback_days": request.lookback_days,
+                "keywords": request.keywords,
+            }
+        )
+        connection = connect(self._database)
+        try:
+            apply_migrations(connection)
+            SqliteTopicRepository(connection).add(topic)
+        finally:
+            connection.close()
+
+        def _run() -> None:
+            run_connection = connect(self._database)
+            try:
+                asyncio.run(execute_run(run_connection, self._settings, topic))
+            except Exception:
+                _LOGGER.exception(
+                    "background pipeline run failed",
+                    extra={"node_name": "topic_run", "status": "failed"},
+                )
+            finally:
+                run_connection.close()
+
+        threading.Thread(target=_run, daemon=True).start()
+
 
 def serve(backend: DeskBackend, web_root: Path, port: int) -> None:
     """Block until the process is interrupted. The socket listens on 127.0.0.1 only."""
@@ -126,9 +195,17 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self._file(path)
 
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/api/ask":
+            path = urlparse(self.path).path
+            if path == "/api/ask":
+                self._ask()
+            elif path == "/api/topics/suggest":
+                self._suggest_topic()
+            elif path == "/api/topics":
+                self._create_topic()
+            else:
                 self._json(404, {"error": "Not found."})
-                return
+
+        def _ask(self) -> None:
             try:
                 payload = _read_json(self)
                 request = AskRequest.model_validate(payload)
@@ -148,6 +225,38 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(502, {"error": "The model did not answer."})
                 return
             self._json(200, _reply_body(reply))
+
+        def _suggest_topic(self) -> None:
+            try:
+                payload = _read_json(self)
+                request = TopicSuggestRequest.model_validate(payload)
+            except (ValueError, ValidationError):
+                self._json(400, {"error": "The topic name could not be read."})
+                return
+            try:
+                keywords = asyncio.run(backend.suggest(request))
+            except ModelProviderError:
+                _LOGGER.warning(
+                    "keyword suggestion failed",
+                    extra={"node_name": "topic_keywords", "status": "failed"},
+                )
+                self._json(502, {"error": "The model did not answer."})
+                return
+            self._json(200, {"keywords": keywords})
+
+        def _create_topic(self) -> None:
+            try:
+                payload = _read_json(self)
+                request = TopicCreateRequest.model_validate(payload)
+            except (ValueError, ValidationError):
+                self._json(400, {"error": "The topic could not be read."})
+                return
+            try:
+                backend.create_and_run(request)
+            except TopicStoreError as error:
+                self._json(409, {"error": str(error)})
+                return
+            self._json(202, {"status": "started", "topicId": request.topic_id})
 
         def log_message(self, format: str, *args: object) -> None:
             _LOGGER.info(

@@ -2,6 +2,76 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-09-30 — Local data reset; add-topic suggests keywords then triggers the pipeline (complete, on branch)
+
+- **Feature/branch:** `F25-topic-suggest-and-trigger`, off `main` (which already carries FIX5).
+- **Status:** Complete on branch, not yet merged.
+- **Summary:**
+  1. Wiped all run-derived local data at the user's request: `runs`, `papers`, `paper_sources`,
+     `classifications`, `paper_files`, `paper_analyses`, `weekly_syntheses`, `research_gaps`,
+     `research_ideas`, `errors`, `selections`, `query_plans` rows, and the generated PDFs/parsed
+     text/analyses/reports under `data/topics/*/{papers,analyses,runs,reports,parsed}`. The
+     `topics` table and `config/topics.yaml` were left untouched, as were the directory shells.
+     Not part of this branch's diff — `data/` is gitignored, nothing to commit.
+  2. New feature: creating a topic can now ask the local model for candidate keywords, show them
+     for confirmation, and on yes immediately run the pipeline — both from the CLI and from the
+     reading desk website, per explicit user request ("if we add a new topic, local llm finds the
+     relevant keywords confirms with user then starts pipeline").
+- **Files changed:**
+  - `src/research_agent/topics/` (new package) — `prompts.py` (`PROMPT_VERSION =
+    "topic_keywords.v1"`, asks for 5-8 short keyword phrases as JSON), `suggest.py`
+    (`suggest_keywords(router, name, description) -> list[str]`, always routed to the
+    `cheap_text` capability so it never needs NIM; a `ModelProviderError` degrades to `[]` rather
+    than raising, matching the query-planner's existing fallback style).
+  - `src/research_agent/cli.py` — new `topic new` command: suggests keywords, prints them,
+    `typer.confirm`s once ("Create topic '<id>' with these keywords and run the pipeline now?"),
+    and on yes adds the topic then calls the existing `_run_one` synchronously (same path `run`
+    uses), so the terminal blocks until the run finishes and prints the same outcome line.
+  - `src/research_agent/desk/server.py` — new `TopicSuggestRequest`/`TopicCreateRequest` request
+    models, `LocalDesk.suggest()` and `LocalDesk.create_and_run()`, and two routes:
+    `POST /api/topics/suggest` (returns `{"keywords": [...]}`) and `POST /api/topics` (stores the
+    topic, returns `202 {"status": "started", "topicId": ...}` immediately, and runs the pipeline
+    on a background `threading.Thread` with its own SQLite connection — the request must not
+    block on a multi-minute run). A `TopicStoreError` (duplicate id) returns `409`.
+  - `web/new-topic.html`, `web/js/new-topic.js` (new) — a small standalone form (not integrated
+    into `desk.js`'s hash-router, to keep the diff small): name/description → suggest → review →
+    confirm → started. `web/js/desk.js` — added a "New topic" link in the top nav.
+  - `tests/unit/test_topics_suggest.py`, `tests/unit/test_desk_server.py` (extended),
+    `tests/integration/test_topic_new_cli.py` (new).
+- **Decisions:**
+  - The desk endpoint runs the pipeline in a background thread rather than blocking the HTTP
+    response, since a real run can take minutes; the existing `run_lock` in `execute_run` already
+    prevents two concurrent runs of the same topic, so a second `POST /api/topics` (or a CLI
+    `run`) for the same id while one is in flight reports `locked` rather than corrupting state.
+  - Kept the CLI's confirm a single yes/no covering both topic creation and the run start, per the
+    user's literal ask ("confirms with user than starts pipeline") rather than two separate
+    prompts.
+  - The website form is a standalone page rather than a new route inside `desk.js`'s SPA, to avoid
+    a large diff in a 758-line file for a form with no shared state with the reading views.
+- **Verification:**
+  - `uv run ruff format --check .`, `uv run ruff check .` → clean.
+  - `uv run mypy` → Success: no issues found in 158 source files.
+  - `uv run pytest -q` → 520 passed, 3 deselected, coverage 91.21% (gate 85%).
+  - Live, against the running `mlx_lm.server` (Qwen3-14B): `research-agent topic new` printed real
+    suggested keywords and correctly aborted on "n". Live also surfaced and fixed an unrelated
+    `.env` problem (see below).
+  - Live, against the running desk server: `POST /api/topics/suggest` returned real keywords;
+    `POST /api/topics` returned `202` and a `runs` row appeared with `status="running"` within
+    seconds, confirming the background trigger actually starts `execute_run`. The smoke-test
+    topic/run were deleted afterward; `runs`/`papers` are back to 0 rows, matching the reset above.
+- **Found and fixed while verifying live:** `.env` still had four `RESEARCH_AGENT_MODELS__LOCAL__*`
+  overrides from an earlier session's "NIM standing in for the local runtime" validation setup,
+  which silently pointed the `local` provider at Ollama/`qwen3:8b` (and NIM's API key) regardless
+  of `config/settings.yaml`. This made `topic new`'s keyword suggestion silently degrade to
+  `(none suggested)` on the first live run. Removed the four override lines; `.env` now defers to
+  `config/settings.yaml`'s `models.local` block (`mlx_lm.server`, `Qwen3-14B-4bit`) unmodified.
+  `.env` is gitignored, so this fix is local-only and not part of the branch diff.
+- **Known issues / next step:** `topic new`'s pipeline run is synchronous in the CLI (matches
+  `run`'s existing behavior) but fire-and-forget in the desk endpoint (necessary for an HTTP
+  response); the desk UI has no polling/progress indicator yet, the user must reload "This week"
+  to see when a background run finishes. Not built, since it wasn't requested. Next: commit, push,
+  merge into `main` per `AGENTS.md`.
+
 ## 2026-09-30 — Local model switched to Qwen3-14B via mlx_lm.server (complete, on branch)
 
 - **Feature/branch:** `FIX5-local-model-qwen3-14b-thinking`.

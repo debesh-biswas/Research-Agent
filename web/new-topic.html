@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>New topic · Desk</title>
+    <meta name="theme-color" content="#f3f6f4" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Literata:opsz,wght@7..72,480;7..72,650&family=Schibsted+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/desk.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="wrap">
+      <header class="topbar">
+        <a class="brand" href="index.html">Desk</a>
+        <nav class="nav" aria-label="Desk">
+          <a href="index.html">This week</a>
+          <a href="new-topic.html" aria-current="page">New topic</a>
+        </nav>
+      </header>
+      <main id="main">
+        <h1>New topic</h1>
+        <p class="empty" id="intro">
+          Name it, describe it, and the local model will suggest keywords. Review them, then
+          confirm to create the topic and start the pipeline.
+        </p>
+
+        <form id="topic-form">
+          <p>
+            <label for="topic-id">Topic id</label><br />
+            <input class="search" id="topic-id" name="id" required pattern="[a-z0-9_]+"
+              placeholder="embodied_spatial_intelligence" />
+          </p>
+          <p>
+            <label for="topic-name">Name</label><br />
+            <input class="search" id="topic-name" name="name" required
+              placeholder="Embodied Spatial Intelligence" />
+          </p>
+          <p>
+            <label for="topic-description">Description (optional, guides the suggestions)</label
+            ><br />
+            <textarea id="topic-description" name="description" rows="3"
+              placeholder="What this topic is about"></textarea>
+          </p>
+          <p><button class="button" type="submit" id="suggest-button">Suggest keywords</button></p>
+        </form>
+
+        <div id="review" hidden>
+          <h2>Suggested keywords</h2>
+          <p id="keyword-list"></p>
+          <p>
+            <button class="button" id="confirm-button" type="button">
+              Create topic and start pipeline
+            </button>
+            <button class="button" id="cancel-button" type="button">Back</button>
+          </p>
+        </div>
+
+        <p id="status" role="status"></p>
+      </main>
+      <footer class="footer">Runs in the background; check "This week" once it finishes.</footer>
+    </div>
+    <script src="js/new-topic.js"></script>
+  </body>
+</html>
