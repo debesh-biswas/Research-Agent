@@ -665,6 +665,95 @@ h2 {
   font-size: 0.85rem;
 }
 
+.topic-form {
+  margin-top: 28px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font: 600 0.85rem var(--sans);
+  color: var(--muted);
+}
+
+.field input[type="text"],
+.field textarea {
+  font: 1rem/1.4 var(--sans);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.field input[type="text"]:focus,
+.field textarea:focus {
+  border-color: var(--tide);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.keyword-review {
+  margin-top: 28px;
+  max-width: 480px;
+}
+
+.keyword-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.keyword-chip {
+  font: 500 0.88rem var(--sans);
+  color: var(--tide-deep);
+  background: var(--wash);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.keyword-chip[data-empty="true"] {
+  color: var(--faint);
+  background: transparent;
+  border: 1px dashed var(--line);
+}
+
+.status-line {
+  margin-top: 18px;
+  max-width: 480px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  min-height: 1.2em;
+}
+
+.status-line[data-tone="error"] {
+  color: var(--carmine);
+}
+
+.status-line[data-tone="success"] {
+  color: var(--tide-deep);
+}
+
 .noscript {
   width: min(1080px, calc(100% - 40px));
   margin: 24px auto;
