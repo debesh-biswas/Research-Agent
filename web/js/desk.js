@@ -1,4 +1,4 @@
-/* Reading desk. Sample data in data.js. Ask previews cards and does not call NIM. */
+/* Reading desk: renders the shelf from /api/shelf and asks through /api/ask. */
 
 const STATUS_LABEL = {
   completed: "Complete",
@@ -419,55 +419,6 @@ function suggestions(paper) {
   return ["What changed this week?", "Where do the papers disagree?", "What should I read first?"];
 }
 
-function replyTo(question, run, paper) {
-  const q = question.toLowerCase();
-  if (paper) {
-    if (/weak|limit|fail|risk/.test(q)) {
-      return {
-        paragraphs: paper.limitations.length ? paper.limitations : [paper.contribution],
-        cites: [{ paperId: paper.id, note: "Limitations" }],
-      };
-    }
-    if (/evidence|claim|page|result/.test(q)) {
-      const lines = paper.claims.map((claim) => claim.text);
-      return {
-        paragraphs: lines.length ? lines : ["This card has no page-level claim."],
-        cites: paper.claims.map((claim) => ({
-          paperId: paper.id,
-          note: [claim.section, claim.page ? `p. ${claim.page}` : ""].filter(Boolean).join(", "),
-        })),
-      };
-    }
-    if (/method|how/.test(q)) {
-      return { paragraphs: [paper.method], cites: [{ paperId: paper.id, note: "Method" }] };
-    }
-    return {
-      paragraphs: [paper.contribution],
-      cites: [{ paperId: paper.id, note: "Contribution" }],
-    };
-  }
-  if (/disagree|contradict|compet/.test(q)) {
-    const items = run.contradictions;
-    return {
-      paragraphs: items.length ? items.map((item) => item.text) : ["This week has no recorded disagreement."],
-      cites: items.flatMap((item) => item.paperIds.map((paperId) => ({ paperId, note: "" }))),
-    };
-  }
-  if (/read first|reading|start/.test(q)) {
-    return {
-      paragraphs: ["Start with the essential shelf, then the useful papers if you want the counter-result."],
-      cites: run.readingOrder.essential.map((paperId) => ({ paperId, note: "Essential" })),
-    };
-  }
-  if (/change|history|last|previous/.test(q)) {
-    return { paragraphs: run.changes, cites: [] };
-  }
-  return {
-    paragraphs: [run.executiveSummary],
-    cites: run.developments.flatMap((item) => item.paperIds.map((paperId) => ({ paperId, note: "" }))),
-  };
-}
-
 function uniqueCites(cites) {
   const seen = new Set();
   return cites.filter((cite) => {
@@ -524,11 +475,7 @@ function viewAsk(run, paperId) {
       <textarea id="ask-input" name="question" rows="2" placeholder="Ask a question the card can answer" aria-label="Question">${esc(state.draft)}</textarea>
       <button class="primary" type="submit">Ask</button>
     </form>
-    <p class="note">${
-      state.live
-        ? "Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does."
-        : "Can't reach the desk server, so this can't ask anything right now."
-    }</p>`;
+    <p class="note">Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
 }
 
 function viewNewTopic() {
@@ -715,16 +662,6 @@ async function ask(question, paperId) {
   const key = threadKey(paper ? paper.id : null);
   const turns = state.threads[key] || [];
   const you = { role: "you", text };
-  if (!state.live) {
-    const answer = replyTo(text, run, paper);
-    state.threads[key] = turns.concat(you, {
-      role: "desk",
-      paragraphs: answer.paragraphs,
-      cites: answer.cites,
-    });
-    state.draft = "";
-    return;
-  }
   state.pending = true;
   state.draft = "";
   state.threads[key] = turns.concat(you, {
