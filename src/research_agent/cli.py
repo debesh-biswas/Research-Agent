@@ -44,6 +44,7 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.observability.logging import configure_logging
+from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import RunOutcome, close_orphaned_runs, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
@@ -59,6 +60,7 @@ from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
+    TopicNotFoundError,
     TopicStoreError,
     bootstrap,
 )
@@ -128,8 +130,11 @@ def _open_connection(settings_path: Path, topics_path: Path) -> sqlite3.Connecti
     # here rather than in the callback uses the level from the settings file actually in use.
     configure_logging(configuration.log_level)
     connection = connect(configuration.data_directory / "research_agent.db")
+    fresh = connection.execute("PRAGMA user_version").fetchone()[0] == 0
     apply_migrations(connection)
-    bootstrap(SqliteTopicRepository(connection), topics_path)
+    # Seed a new library once; re-seeding whenever it is empty would revive deleted topics.
+    if fresh:
+        bootstrap(SqliteTopicRepository(connection), topics_path)
     return connection
 
 
@@ -279,6 +284,91 @@ def list_topics(
     for topic in stored:
         state = "enabled" if topic.enabled else "disabled"
         typer.echo(f"{topic.id}\t{state}\t{topic.lookback_days}d\tsemantic-screening\t{topic.name}")
+
+
+@topic_app.command("edit")
+def edit_topic(
+    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
+    name: Annotated[str | None, typer.Option(help="Human-readable topic name.")] = None,
+    lookback_days: Annotated[
+        int | None, typer.Option(help="Discovery lookback window in days.")
+    ] = None,
+    keyword: Annotated[
+        list[str] | None,
+        typer.Option("--keyword", help="Replaces all keywords; repeat for more."),
+    ] = None,
+    openalex: Annotated[bool | None, typer.Option(help="Use the OpenAlex source.")] = None,
+    semantic_scholar: Annotated[
+        bool | None, typer.Option(help="Use the Semantic Scholar source.")
+    ] = None,
+    arxiv: Annotated[bool | None, typer.Option(help="Use the arXiv source.")] = None,
+    max_candidates: Annotated[
+        int | None, typer.Option(help="Maximum discovered candidates.")
+    ] = None,
+    max_classified: Annotated[int | None, typer.Option(help="Maximum classified papers.")] = None,
+    max_downloads: Annotated[int | None, typer.Option(help="Maximum PDF downloads.")] = None,
+    max_deep_reads: Annotated[int | None, typer.Option(help="Maximum deep reads.")] = None,
+    day: Annotated[str | None, typer.Option(help="Scheduled weekday.")] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Change a stored topic. Only the options given change; the rest stay as they are."""
+    changes = {
+        "name": name,
+        "lookback_days": lookback_days,
+        "keywords": keyword,
+        "discovery": {"openalex": openalex, "semantic_scholar": semantic_scholar, "arxiv": arxiv},
+        "limits": {
+            "max_candidates": max_candidates,
+            "max_classified": max_classified,
+            "max_downloads": max_downloads,
+            "max_deep_reads": max_deep_reads,
+        },
+        "scheduling": {"day": day},
+    }
+    try:
+        repository = _open_repository(settings, topics)
+        current = repository.get(topic_id)
+        if current is None:
+            raise TopicNotFoundError(f"unknown topic: {topic_id}")
+        merged = current.model_dump()
+        for key, value in changes.items():
+            if isinstance(value, dict):
+                merged[key].update(
+                    {field: given for field, given in value.items() if given is not None}
+                )
+            elif value is not None:
+                merged[key] = value
+        repository.update(TopicSettings.model_validate(merged))
+    except (ConfigurationError, ValidationError, TopicStoreError) as error:
+        typer.echo(f"Unable to edit topic: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"Updated topic {topic_id}.")
+
+
+@topic_app.command("delete")
+def delete_topic(
+    topic_id: Annotated[str, typer.Argument(help="Topic identifier.")],
+    yes: Annotated[bool, typer.Option("--yes", help="Delete without asking.")] = False,
+    settings: SettingsOption = Path("config/settings.yaml"),
+    topics: TopicsOption = Path("config/topics.yaml"),
+) -> None:
+    """Delete a topic and every run stored for it. Files on disk are kept."""
+    if not yes and not typer.confirm(
+        f"Delete topic '{topic_id}' and all of its runs? This cannot be undone."
+    ):
+        typer.echo("Not deleted.")
+        raise typer.Exit(code=1)
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        repository = _open_repository(settings, topics)
+        # A run writing under this topic would fail mid-way if its rows vanished.
+        with run_lock(application.data_directory, topic_id):
+            repository.delete(topic_id)
+    except (ConfigurationError, ValidationError, TopicStoreError, RunLocked) as error:
+        typer.echo(f"Unable to delete topic: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"Deleted topic {topic_id} and its runs.")
 
 
 def _set_enabled(topic_id: str, enabled: bool, settings: Path, topics: Path) -> None:

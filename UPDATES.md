@@ -2,6 +2,42 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Edit and delete topics from the CLI (complete)
+
+- **Feature/branch:** `F27-topic-edit-delete`, off `main` at `fbfd81e`.
+- **Status:** Complete; merged into `main`. Roadmap M1, first item.
+- **Summary:** Topics could be added and enabled/disabled but never changed or removed, so a bad
+  keyword or lookback meant living with it. New:
+  - `TopicRepository.update(topic)` (replace all settings, keep id and `created_at`) and
+    `TopicRepository.delete(topic_id)` (foreign keys cascade to the topic's runs and everything
+    under them); both raise `TopicNotFoundError` for an unknown id.
+  - `research-agent topic edit <id>` — only the options given change (name, lookback, keywords
+    which replace the list, each source, each limit, schedule day); the merged result is
+    validated as a whole, so limit ordering and "at least one source" still hold.
+  - `research-agent topic delete <id>` — asks first (`--yes` skips), and refuses while a run of
+    that topic holds its lock (reusing `run_lock`), since a live run would fail once its rows
+    vanished. Files on disk are kept, matching FIX9's clear-runs decision.
+- **Bug fixed on the way:** `bootstrap()` re-seeded from `config/topics.yaml` whenever the topics
+  table was empty, so deleting the last topic would have revived the YAML topic on the next
+  command or desk start. `_open_connection` now seeds only a brand-new library
+  (`PRAGMA user_version` still 0 before migrating). `bootstrap()` itself is unchanged.
+- **Files affected:** `src/research_agent/storage/topics.py`, `src/research_agent/cli.py`,
+  `tests/unit/test_storage_topics.py`, `tests/integration/test_topic_cli.py`, `README.md`.
+- **Decisions:** Editing the topic id is not supported (it keys every run, synthesis, gap, idea and
+  artifact path); rename via a new topic if ever needed. No `--clear-keywords`; `--keyword`
+  replaces the list. Validation errors print pydantic's message, as `topic add` already does.
+- **Verification:** Repository tests for update and cascading delete; CLI tests for partial edit
+  (checked against the stored topic), invalid limits, unknown topic, delete prompt declined,
+  delete refused under a held lock, and a deleted last topic staying deleted. Mutation check:
+  restoring "always bootstrap" fails `test_a_deleted_last_topic_stays_deleted`. Smoke run of the
+  real binary on a temporary library: list → edit → invalid edit refused → delete declined →
+  delete `--yes` → "No topics stored". `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 543 passed, 3 deselected, coverage 91.72%.
+- **Known issues:** A library whose first command ran with a missing or invalid
+  `config/topics.yaml` is never seeded later; add topics with `topic add` or the desk.
+- **Next step:** `F28` — desk topics page: list, enable/disable, edit, delete with confirmation,
+  and a Run now button, on top of these repository methods.
+
 ## 2026-10-27 — Remove stale text and dead code (complete)
 
 - **Feature/branch:** `FIX17-remove-stale-text-and-dead-code`, off `main` at `de09093`.
