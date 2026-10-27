@@ -225,3 +225,47 @@ def test_local_desk_shelf_shows_a_topic_added_after_startup(tmp_path: Path) -> N
     topics = desk.shelf()["topics"]
     assert isinstance(topics, list)
     assert [topic["id"] for topic in topics] == ["new_topic"]
+
+
+def test_the_server_refuses_foreign_hosts_and_origins(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<p>desk</p>", encoding="utf-8")
+    backend = FakeDesk()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(backend, web.resolve()))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    port = server.server_address[1]
+    base = f"http://127.0.0.1:{port}"
+    create = json.dumps({"id": "robotics", "name": "Robotics"}).encode()
+    try:
+        rebound = urllib.request.Request(f"{base}/api/shelf", headers={"Host": "evil.example"})
+        with pytest_http_error(rebound) as error:
+            assert error.code == 403
+        cross_site = urllib.request.Request(
+            f"{base}/api/topics",
+            data=create,
+            headers={"Content-Type": "text/plain", "Origin": "https://evil.example"},
+        )
+        with pytest_http_error(cross_site) as error:
+            assert error.code == 403
+        cross_delete = urllib.request.Request(
+            f"{base}/api/runs/run-1", method="DELETE", headers={"Origin": "null"}
+        )
+        with pytest_http_error(cross_delete) as error:
+            assert error.code == 403
+        assert (backend.created, backend.deleted_runs) == ([], [])
+
+        own_page = urllib.request.Request(
+            f"{base}/api/topics",
+            data=create,
+            headers={"Content-Type": "application/json", "Origin": f"http://localhost:{port}"},
+        )
+        own_page.add_unredirected_header("Host", f"localhost:{port}")
+        with urllib.request.urlopen(own_page) as response:
+            assert response.status == 202
+        assert [request.topic_id for request in backend.created] == ["robotics"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

@@ -203,6 +203,8 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
         protocol_version = "HTTP/1.1"
 
         def do_GET(self) -> None:
+            if self._foreign():
+                return
             path = urlparse(self.path).path
             if path == "/api/shelf":
                 self._json(200, backend.shelf())
@@ -210,6 +212,8 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self._file(path)
 
         def do_POST(self) -> None:
+            if self._foreign():
+                return
             path = urlparse(self.path).path
             if path == "/api/ask":
                 self._ask()
@@ -274,6 +278,8 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self._json(202, {"status": "started", "topicId": request.topic_id})
 
         def do_DELETE(self) -> None:
+            if self._foreign():
+                return
             path = urlparse(self.path).path
             segments = [segment for segment in path.split("/") if segment]
             if len(segments) == 3 and segments[:2] == ["api", "runs"]:
@@ -289,6 +295,18 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(200, {"status": "cleared", "runs": cleared})
             else:
                 self._json(404, {"error": "Not found."})
+
+        def _foreign(self) -> bool:
+            """Refuse DNS rebinding (a foreign Host) and cross-site requests (a foreign Origin)."""
+            port = self.connection.getsockname()[1]
+            local = {f"127.0.0.1:{port}", f"localhost:{port}"}
+            origin = self.headers.get("Origin")
+            if self.headers.get("Host") in local and (
+                origin is None or origin.removeprefix("http://") in local
+            ):
+                return False
+            self._json(403, {"error": "Forbidden."})
+            return True
 
         def log_message(self, format: str, *args: object) -> None:
             _LOGGER.info(
