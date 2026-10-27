@@ -2,6 +2,30 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Drop the stale `classifiers` entry from the import-boundary test (complete)
+
+- **Feature/branch:** `FIX11-stale-classifiers-import-test`, off `main` at `b4f6e5c`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** On a fresh clone the suite was 527 passed, 1 failed:
+  `tests/unit/test_imports.py::test_architecture_boundary_imports[research_agent.classifiers]`.
+  F22 (`4964ecf`) deleted the `classifiers` package when screening replaced the dual classifiers,
+  but the boundary test still listed it. It kept passing on the development machine because a
+  leftover `src/research_agent/classifiers/` directory (holding only `__pycache__`) imports as an
+  empty namespace package. Reproduced here: such a directory imports with `__file__ = None`.
+- **Files affected:** `tests/unit/test_imports.py` only — `classifiers` replaced by `screening`,
+  and each boundary must now be a regular package (`module.__file__ is not None`), so a deleted
+  package left behind as a bare directory fails instead of passing silently.
+- **Decisions:** Kept the explicit boundary list rather than discovering packages dynamically; it
+  documents the intended architecture, and the new assertion is what closes the stale-directory
+  hole.
+- **Verification:** `uv run ruff format --check .` clean; `uv run ruff check .` clean;
+  `uv run mypy` no issues in 158 files; `uv run pytest -q` → 528 passed, 3 deselected, coverage
+  91.26%. The 3 `-m slow` Docling tests were not run (they need a model download).
+- **Known issues:** On the development Mac, delete the leftover `src/research_agent/classifiers/`
+  directory so local results match a clean clone.
+- **Next step:** Product-readiness roadmap M0 continues with `FIX12` — the desk reloads topics
+  from SQLite per shelf build so topics created in the desk appear without a restart.
+
 ## 2026-10-27 — Commit the missing `reports` package and track AGENTS.md/CLAUDE.md (complete)
 
 - **Feature/branch:** `FIX10-commit-missing-reports-package`, off `main`.
