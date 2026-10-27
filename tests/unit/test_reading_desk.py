@@ -51,3 +51,10 @@ def test_running_runs_show_live_progress() -> None:
     for stage in ("plan_queries", "discover", "classify", "analyze", "report", "persist"):
         assert f"{stage}:" in script
     assert "schedulePoll()" in script and "onFormPage()" in script
+
+
+def test_setup_page_shows_health_checks_and_first_steps() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert 'fetch("/api/health")' in script
+    assert 'href="#/setup"' in script and "Create your first topic" in script
+    assert "recheck-health" in script

@@ -81,7 +81,8 @@ uv run research-agent desk
 ```
 
 Open `http://127.0.0.1:8765`. The page needs the desk server; opened as a file it only says so.
-The Topics page edits, pauses, deletes and runs topics; New topic creates one.
+The Topics page edits, pauses, deletes and runs topics; New topic creates one. Setup check (in the
+footer, and the first page of a new library) runs the same checks as `research-agent doctor`.
 
 ## Quality checks
 

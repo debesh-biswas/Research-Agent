@@ -59,6 +59,7 @@ const state = {
   topicsPending: false,
   topicsStatus: null,
   awaitingRun: null,
+  health: null,
   finishedNotice: null,
   newTopic: {
     step: "form",
@@ -683,6 +684,61 @@ function settingsFields(settings) {
     </fieldset>`;
 }
 
+const HEALTH_LABEL = { ok: "OK", warn: "Warning", fail: "Problem" };
+
+function healthSummary(checks) {
+  const problems = checks.filter((check) => check.status === "fail").length;
+  const warnings = checks.filter((check) => check.status === "warn").length;
+  if (problems) return `${problems} ${problems === 1 ? "problem" : "problems"} to fix before a run.`;
+  if (warnings) return `Ready to run, with ${warnings} ${warnings === 1 ? "warning" : "warnings"}.`;
+  return "All set: a run has everything it needs.";
+}
+
+function viewSetup() {
+  const health = state.health || { pending: true };
+  const rows = (health.checks || [])
+    .map(
+      (check) => `<li class="health-item">
+        <span class="health-status" data-status="${esc(check.status)}">${esc(HEALTH_LABEL[check.status] || check.status)}</span>
+        <div>
+          <p class="health-name">${esc(check.name)}</p>
+          <p class="quiet">${esc(check.detail)}</p>
+          ${check.fix ? `<p class="health-fix">${esc(check.fix)}</p>` : ""}
+        </div>
+      </li>`,
+    )
+    .join("");
+  const summary = health.pending
+    ? statusMessage("Checking the library folder, models and sources. This can take up to a minute.", "")
+    : health.error
+      ? statusMessage(health.error, "error")
+      : statusMessage(healthSummary(health.checks), health.checks.some((check) => check.status === "fail") ? "error" : "success");
+  const firstTopic = topics().length ? "" : `<a class="primary" href="#/new">Create your first topic</a>`;
+  return `<p class="kicker">Setup</p>
+    <h1>Setup check</h1>
+    <p class="quiet">What a weekly run needs, checked on this machine.</p>
+    ${summary}
+    ${rows ? `<ul class="health-list">${rows}</ul>` : ""}
+    <div class="form-actions">
+      <button class="button" type="button" id="recheck-health"${health.pending ? " disabled" : ""}>Check again</button>
+      ${firstTopic}
+    </div>`;
+}
+
+async function checkHealth() {
+  state.health = { pending: true };
+  render();
+  try {
+    const response = await fetch("/api/health");
+    const payload = await response.json();
+    if (!response.ok || !Array.isArray(payload.checks)) throw new Error("bad response");
+    state.health = { checks: payload.checks };
+  } catch {
+    state.health = { checks: [], error: "Can't reach the desk server, so nothing could be checked." };
+  }
+  if (pageName(parseRoute().parts) === "setup") render();
+}
+
 function viewTopicEdit(topicId) {
   const topic = topics().find((item) => item.id === topicId);
   if (!topic) {
@@ -827,11 +883,19 @@ function render() {
   let body = "";
   if (name === "new") {
     body = viewNewTopic();
+  } else if (name === "setup" && state.live) {
+    body = viewSetup();
   } else if (name === "topics" && state.live) {
     body = route.parts[1] ? viewTopicEdit(route.parts[1]) : viewTopics();
   } else if (!topic) {
     body = state.live
-      ? `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`
+      ? `<p class="kicker">Welcome</p>
+        <h1>Set up your desk</h1>
+        <p class="empty">Two steps before your first weekly run.</p>
+        <div class="form-actions">
+          <a class="button" href="#/setup">1. Check setup</a>
+          <a class="primary" href="#/new">2. Create a topic</a>
+        </div>`
       : `<h1>Can't reach the desk server</h1><p class="empty">Start it with <code>research-agent desk</code>, then reload this page.</p>`;
   } else if (name === "runs") {
     if (route.parts[1]) state.runId = route.parts[1];
@@ -887,6 +951,7 @@ function render() {
     runs: "Runs",
     ask: "Ask",
     topics: "Topics",
+    setup: "Setup check",
     new: "New topic",
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
@@ -907,12 +972,13 @@ function render() {
     <main id="main">${body}</main>
     <footer class="footer">${
       state.live
-        ? "Reading the local library."
+        ? `Reading the local library. <a href="#/setup">Setup check</a>`
         : "Can't reach the desk server right now."
     }</footer>`;
 
   persist();
   schedulePoll();
+  if (name === "setup" && state.live && !state.health) void checkHealth();
   const section = route.params.get("section");
   if (section) document.getElementById(section)?.scrollIntoView();
   const main = document.getElementById("main");
@@ -1133,6 +1199,10 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  if (event.target.id === "recheck-health") {
+    void checkHealth();
+    return;
+  }
   if (event.target.id === "dismiss-notice") {
     state.finishedNotice = null;
     updateBanner();

@@ -963,10 +963,15 @@ fieldset.field {
   height: 16px;
 }
 
-a.button {
+a.button,
+a.primary {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+
+.health-list + .form-actions {
+  margin-top: 18px;
 }
 
 .button:disabled {
@@ -983,6 +988,66 @@ a.button {
   display: block;
   margin-top: 4px;
   font-variant-numeric: normal;
+}
+
+.health-list {
+  list-style: none;
+  margin: 20px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.health-item {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.health-item p {
+  margin: 0;
+}
+
+.health-name {
+  font: 600 0.98rem var(--sans);
+  color: var(--ink);
+}
+
+.health-fix {
+  margin-top: 6px !important;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.health-status {
+  justify-self: start;
+  font: 600 0.78rem var(--sans);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--tide-deep);
+  background: var(--wash);
+}
+
+.health-status[data-status="warn"] {
+  color: #8a5a00;
+  background: #fbf1dc;
+}
+
+.health-status[data-status="fail"] {
+  color: white;
+  background: var(--carmine);
+}
+
+.footer a {
+  color: inherit;
+  margin-left: 8px;
 }
 
 .run-banner {
