@@ -2,6 +2,36 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — First end-to-end cloud run since FIX11–F31 (recorded)
+
+- **Feature/branch:** `DOC3-record-cloud-run` (records results only; no code).
+- **Status:** Run finished `degraded` (by design: two sources rate-limited), with a full report.
+- **Setup:** Cloud container, isolated data directory and settings in the session scratchpad
+  (repository config untouched). Model: OpenRouter `nvidia/nemotron-3.5-super-vl:free` in the
+  local-provider slot, paced at 0.3 requests/s for the free tier; NIM unconfigured. Keys came from
+  the environment's network secrets (proxy-injected `Authorization` for openrouter.ai and
+  `x-api-key` for api.semanticscholar.org), never stored in the app. Paid `qwen/qwen3-14b` was
+  refused with HTTP 402 (OpenRouter account credit exhausted before this session: $20.21 of $20,
+  $0 spent today); free Gemma 4 models were rate-limited upstream. Started from the real
+  `research-agent desk` via `POST /api/topics/embodied_spatial_intelligence/run` (F28 path).
+- **Outcome:** 34.1 min. 87 candidates (arXiv only) → 87 screened → 2 selected (1 deep read,
+  1 summary) → 2 PDFs downloaded → 2 parsed by real Docling (models downloaded on first parse) →
+  2 analyses → synthesis (2 developments) → 5 gaps and 5 ideas, each citing paper ids → 2,596-word
+  Markdown report with every PRD section and run provenance. 10 recorded errors, all
+  `RATE_LIMIT`: OpenAlex and Semantic Scholar on each of the 5 queries after 4 attempts.
+- **Findings:**
+  - Run row appeared 84 s after Run now while Docling loaded → fixed in FIX18.
+  - No progress visible during a 15-minute discovery → fixed in F30/F31.
+  - OpenAlex 429s every call from the shared cloud IP without a contact email; Semantic Scholar
+    429s even with the key (new keys allow ~1 request/s, shared IP). Expect better on the
+    development Mac; `research-agent doctor` (F32) now reports both with the fix to apply.
+  - Screening kept 2 of 87: the default topic has no keywords, so the model read "Embodied Spatial
+    Intelligence" narrowly (humanoid loco-manipulation and world-action-model papers scored
+    0.2–0.3 and were dropped). Add keywords to the topic (now editable in the desk, F28/F29).
+  - Not covered: the Mac's local Qwen3-14B with thinking mode (quality and timing differ); a
+    Mac run remains the user's deferred timing check.
+- **Next step:** `F33` — first-run setup page using `/api/health`.
+
 ## 2026-10-27 — Health check: `research-agent doctor` and `/api/health` (complete)
 
 - **Feature/branch:** `F32-health-check`, off `main` at `0fe37ec`.
