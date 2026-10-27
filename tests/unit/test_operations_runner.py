@@ -9,8 +9,14 @@ import pytest
 from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.operations import runner as operations
 from research_agent.operations.locks import lock_path
-from research_agent.operations.runner import RunOutcome, execute_run, reporting_period
+from research_agent.operations.runner import (
+    RunOutcome,
+    close_orphaned_runs,
+    execute_run,
+    reporting_period,
+)
 from research_agent.storage.runs import SqliteRunRepository
+from research_agent.storage.topics import SqliteTopicRepository
 from research_agent.workflow.state import ResearchState
 from tests.unit.conftest import TOPIC_ID
 
@@ -100,9 +106,10 @@ def test_the_outcome_reflects_the_final_state(
 def test_a_cancelled_run_is_closed_as_failed(
     connection: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    started = SqliteRunRepository(connection).start(TOPIC_ID, "A")
+    started = []
 
     async def cancelled(services: object, start: date, end: date) -> ResearchState:
+        started.append(SqliteRunRepository(connection).start(TOPIC_ID, "A"))  # as load_topic does
         raise asyncio.CancelledError
 
     monkeypatch.setattr(operations, "run_workflow", cancelled)
@@ -110,16 +117,17 @@ def test_a_cancelled_run_is_closed_as_failed(
     outcome = run(connection, tmp_path)
 
     assert outcome.conclusion == "failed"
-    record = SqliteRunRepository(connection).get(started.id)
+    record = SqliteRunRepository(connection).get(started[0].id)
     assert record is not None and record.status == "failed"
 
 
 def test_an_interrupted_run_is_closed_as_failed(
     connection: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    started = SqliteRunRepository(connection).start(TOPIC_ID, "A")
+    started = []
 
     async def interrupted(services: object, start: date, end: date) -> ResearchState:
+        started.append(SqliteRunRepository(connection).start(TOPIC_ID, "A"))  # as load_topic does
         raise KeyboardInterrupt
 
     monkeypatch.setattr(operations, "run_workflow", interrupted)
@@ -128,6 +136,46 @@ def test_an_interrupted_run_is_closed_as_failed(
 
     assert outcome.conclusion == "failed" and outcome.fatal
     assert outcome.reason is not None and "interrupted" in outcome.reason
-    record = SqliteRunRepository(connection).get(started.id)
+    record = SqliteRunRepository(connection).get(started[0].id)
     assert record is not None and record.status == "failed"
     assert not lock_path(tmp_path / "data", TOPIC_ID).exists(), "the lock is always released"
+
+
+def test_a_run_closes_runs_a_dead_process_left_open(
+    connection: sqlite3.Connection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs = SqliteRunRepository(connection)
+    orphan = runs.start(TOPIC_ID, "A")
+    seen: list[str | None] = []
+
+    async def workflow(services: object, start: date, end: date) -> ResearchState:
+        record = runs.get(orphan.id)
+        seen.append(record.status if record else None)
+        return ResearchState(topic_id=TOPIC_ID, period_start=start, period_end=end)
+
+    monkeypatch.setattr(operations, "run_workflow", workflow)
+
+    run(connection, tmp_path)
+
+    assert seen == ["failed"], "closed before the new run starts"
+
+
+def test_desk_startup_closes_orphans_but_not_a_live_run(
+    connection: sqlite3.Connection, tmp_path: Path
+) -> None:
+    SqliteTopicRepository(connection).add(topic(id="other_topic"))
+    runs = SqliteRunRepository(connection)
+    orphan = runs.start(TOPIC_ID, "A")
+    live = runs.start("other_topic", "A")
+    held = lock_path(tmp_path, "other_topic")
+    held.parent.mkdir(parents=True, exist_ok=True)
+    held.write_text("not a pid", encoding="utf-8")  # unreadable locks count as held
+
+    closed = close_orphaned_runs(connection, tmp_path)
+
+    assert closed == [orphan.id]
+    statuses = {
+        record.id: record.status for record in (runs.get(orphan.id), runs.get(live.id)) if record
+    }
+    assert statuses == {orphan.id: "failed", live.id: "running"}
+    assert held.exists(), "a live run's lock is left alone"

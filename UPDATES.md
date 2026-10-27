@@ -2,6 +2,43 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Close runs a dead process left "running" (complete)
+
+- **Feature/branch:** `FIX13-close-orphaned-runs`, off `main` at `ca26d31`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** A run whose process died without unwinding (the desk's daemon run thread when the
+  desk is stopped, a killed terminal, a crash) stayed `running` forever, and the desk showed a
+  permanent "Running" stamp. `_interrupted` only covered in-process interruption. Now:
+  - `execute_run` fails every open run of its topic right after taking the topic lock. Holding
+    the lock proves no other run of that topic is live, so any open row is orphaned. This covers
+    `run`, `run-all` and scheduled runs.
+  - `research-agent desk` calls `close_orphaned_runs()` at startup: for each topic with an open
+    run it tries the topic lock, reusing `run_lock`'s dead-PID stale detection, and skips topics
+    whose run is live (`RunLocked`).
+- **Files affected:** `src/research_agent/storage/runs.py` (`RunRepository.open_runs()` +
+  SQLite implementation), `src/research_agent/operations/runner.py` (`close_orphaned_runs`,
+  `_close_open_runs`, typed against the `RunRepository` protocol), `src/research_agent/cli.py`
+  (desk startup), `tests/unit/test_operations_runner.py`, `tests/unit/test_storage_runs.py`.
+- **Decisions:** No new error category or error row for an orphan, matching `_interrupted`; the
+  close is logged as a structured warning with `status: "orphaned"`. The two existing
+  interruption tests used to create their run row before `execute_run`; they now create it inside
+  the fake workflow, where `load_topic` really does, so they still exercise `_interrupted` instead
+  of passing via the new orphan cleanup.
+- **Verification:** New tests for the run path, desk startup (orphan closed, live run with a held
+  lock left alone) and `open_runs`. Mutation check: deleting the `execute_run` call makes
+  `test_a_run_closes_runs_a_dead_process_left_open` fail. End to end: seeded a `running` row,
+  started the real `research-agent desk` against a temporary data directory, `/api/shelf`
+  reported it `failed`, and the structured warning was logged. `ruff format --check`,
+  `ruff check`, `mypy` clean; `uv run pytest -q` → 532 passed, 3 deselected, coverage 91.47%.
+- **Known issues:** A closed orphan's duration runs until it was noticed, not until the process
+  died. Desk startup holds each affected topic's lock for milliseconds; a scheduled run starting
+  in that instant would report `locked` and skip that week.
+- **User decisions recorded:** `F23-multimodel-routing` is dropped (never pushed; deleted
+  locally by the user). A Semantic Scholar API key has been requested; once it arrives, set
+  `RESEARCH_AGENT_SOURCES__SEMANTIC_SCHOLAR_API_KEY` in `.env` and re-enable the source in
+  `config/topics.yaml`. The live timed run with thinking mode on is deferred by the user.
+- **Next step:** `FIX14` — reject duplicate YAML keys and resolve `models.nim.max_output_tokens`.
+
 ## 2026-10-27 — Desk shows topics created after startup (complete)
 
 - **Feature/branch:** `FIX12-desk-reloads-topics`, off `main` at `27c2053`.

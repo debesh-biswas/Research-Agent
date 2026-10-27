@@ -31,6 +31,8 @@ class RunRepository(Protocol):
 
     def recent(self, topic_id: str, limit: int = 4) -> list[RunRecord]: ...
 
+    def open_runs(self) -> list[RunRecord]: ...
+
     def record_error(self, error: ErrorRecord) -> None: ...
 
     def errors_for(self, run_id: str) -> list[ErrorRecord]: ...
@@ -125,6 +127,13 @@ class SqliteRunRepository:
             f"SELECT {_RUN_COLUMNS} FROM runs WHERE topic_id = ? "
             "ORDER BY started_at DESC, id DESC LIMIT ?",
             (topic_id, limit),
+        ).fetchall()
+        return [_from_row(row) for row in rows]
+
+    def open_runs(self) -> list[RunRecord]:
+        """Every run still marked running, across topics."""
+        rows = self._connection.execute(
+            f"SELECT {_RUN_COLUMNS} FROM runs WHERE status = 'running' ORDER BY started_at, id"
         ).fetchall()
         return [_from_row(row) for row in rows]
 

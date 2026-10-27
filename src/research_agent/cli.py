@@ -44,7 +44,7 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.observability.logging import configure_logging
-from research_agent.operations.runner import RunOutcome, execute_run
+from research_agent.operations.runner import RunOutcome, close_orphaned_runs, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
 from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.reports.service import ReportOutcome, ReportService
@@ -1155,7 +1155,9 @@ def serve_desk(
         raise typer.Exit(code=1)
     try:
         application = ApplicationSettings(**_load_yaml_mapping(settings))
-        _open_connection(settings, topics).close()  # migrate and seed topics before serving
+        connection = _open_connection(settings, topics)
+        close_orphaned_runs(connection, application.data_directory)
+        connection.close()
         if port < 1 or port > 65535:
             raise ConfigurationError(f"port must be between 1 and 65535, got {port}")
     except (ConfigurationError, ValidationError, TopicStoreError) as error:

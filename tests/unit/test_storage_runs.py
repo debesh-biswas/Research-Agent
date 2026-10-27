@@ -132,3 +132,12 @@ def test_a_failed_transaction_leaves_no_run(connection: sqlite3.Connection) -> N
         )
 
     assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+def test_open_runs_lists_only_runs_still_running(connection: sqlite3.Connection) -> None:
+    repository = SqliteRunRepository(connection)
+    finished = repository.start(TOPIC_ID)
+    repository.complete(finished.id, RunSummary())
+    open_run = repository.start(TOPIC_ID)
+
+    assert [record.id for record in repository.open_runs()] == [open_run.id]
