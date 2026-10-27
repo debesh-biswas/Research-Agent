@@ -985,6 +985,36 @@ a.button {
   font-variant-numeric: normal;
 }
 
+.run-banner {
+  margin-top: 18px;
+  padding: 12px 16px;
+  background: var(--wash);
+  border-radius: var(--radius-md);
+  font: 500 0.92rem var(--sans);
+  color: var(--tide-deep);
+}
+
+.run-banner p {
+  margin: 0;
+}
+
+.run-banner p + p {
+  margin-top: 6px;
+}
+
+.banner-notice[data-tone="error"] {
+  color: var(--carmine);
+}
+
+.banner-dismiss {
+  margin-left: 6px;
+  font: 600 0.95rem/1 var(--sans);
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
 .topic-actions {
   display: flex;
   flex-wrap: wrap;

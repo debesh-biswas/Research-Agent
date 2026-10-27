@@ -2,6 +2,39 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Live run progress in the desk (complete)
+
+- **Feature/branch:** `F31-live-run-progress`, off `main` at `1a7b96d`.
+- **Status:** Complete; merged into `main`. Roadmap M2, second and last item.
+- **Summary:** The desk now shows every running run in a banner under the header ("Topic ·
+  Screening papers · 12 min so far", an `aria-live` region), polls the shelf every 5 s while a run
+  is running or was just started, and announces when a run ends ("… finished: Degraded.", with a
+  dismiss button). Runs and This week show the live stage for a running run and "Stopped while
+  analysing papers" for a failed one (F30's stored stage). Run now and topic creation wait for the
+  new run to appear ("Starting the run…").
+- **Files affected:** `web/js/desk.js` (`STAGE_LABEL`, `runProgress`, `runningRuns`,
+  `bannerHtml`/`updateBanner`, `schedulePoll`/`poll`, `awaitRun`, `onFormPage`), `web/css/desk.css`,
+  `tests/unit/test_reading_desk.py`.
+- **Decisions:** Polling reuses `/api/shelf` (no new endpoint). A poll only redraws the banner
+  unless a run started or finished; even then the edit and new-topic forms are never redrawn, so
+  typing is never wiped. Waiting for a new run is keyed on the topic's newest run id at the time of
+  the request, so a run that starts and ends between two polls still clears the wait (caught in
+  testing: keying on "any run running" left a stale "Starting the run…" for five minutes). The
+  wait gives up after five minutes. No cancel button: stopping the pipeline thread cleanly is its
+  own piece of work.
+- **Verification:** Browser (real `LocalDesk`, server and page; a helper script changed the run's
+  stage and status in SQLite mid-test): banner showed "Starting", then "Screening papers" after
+  `mark_stage`; with unsaved text in the edit form, finishing the run showed "finished: Degraded"
+  and the typed text survived; dismiss cleared it; a run failed during `analyze` showed "Stopped
+  while analysing papers" on Runs; a harness opening the run row 7 s after Run now showed
+  "Starting the run…" then live progress, and the Topics page redrew with Run now disabled; no
+  page errors. `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 552
+  passed, 3 deselected, coverage 91.84%.
+- **Known issues:** A run whose period starts and ends on the same day is labelled
+  "27–27 Oct 2026" in the run switcher (pre-existing `formatPeriod` behaviour) — UI polish (F52).
+- **Next step:** Record the cloud run's outcome; then roadmap M3 — `F32` health check
+  (`research-agent doctor` and `/api/health`).
+
 ## 2026-10-27 — Record which stage a run is in (complete)
 
 - **Feature/branch:** `F30-record-run-stage`, off `main` at `b1b5c34`.

@@ -8,6 +8,24 @@ const STATUS_LABEL = {
   paused: "Paused",
 };
 
+const STAGE_LABEL = {
+  plan_queries: "Planning searches",
+  discover: "Searching sources",
+  broaden: "Broadening the search",
+  classify: "Screening papers",
+  select: "Choosing papers",
+  acquire: "Downloading PDFs",
+  parse: "Reading PDFs",
+  analyze: "Analysing papers",
+  synthesize: "Writing the synthesis",
+  ideate: "Finding gaps and ideas",
+  report: "Writing the report",
+  persist: "Saving",
+};
+
+const POLL_MS = 5000;
+const AWAIT_RUN_MS = 5 * 60 * 1000;
+
 const SOURCES = [
   ["openalex", "OpenAlex"],
   ["semantic_scholar", "Semantic Scholar"],
@@ -40,6 +58,8 @@ const state = {
   pending: false,
   topicsPending: false,
   topicsStatus: null,
+  awaitingRun: null,
+  finishedNotice: null,
   newTopic: {
     step: "form",
     id: "",
@@ -284,7 +304,7 @@ function viewWeek(run) {
       </div>
     </div>
     ${funnel(run.summary)}
-    <p class="quiet">${esc(formatDuration(run.durationSeconds))} · ${esc(run.models.join(" · "))}</p>
+    <p class="quiet">${esc(runProgress(run) || [formatDuration(run.durationSeconds), ...run.models].join(" · "))}</p>
     <div class="desk-grid">
       <div>
         <p class="lede">${esc(run.executiveSummary)}</p>
@@ -404,6 +424,93 @@ function viewReport(run) {
     </div>`;
 }
 
+function minutesSince(iso) {
+  const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+/* Wait for a topic's next run: done once its newest run differs from the one seen now. */
+function awaitRun(topicId) {
+  const latestId = topics().find((topic) => topic.id === topicId)?.runs[0]?.id;
+  state.awaitingRun = { topicId, latestId, since: Date.now() };
+}
+
+/* Where a run is, or where a failed run stopped; empty for a finished one. */
+function runProgress(run) {
+  const stage = STAGE_LABEL[run.stage] || "Starting";
+  if (run.status === "running") return `${stage} · ${minutesSince(run.startedAt)} so far`;
+  if (run.status === "failed" && run.stage) return `Stopped while ${stage.toLowerCase()}`;
+  return "";
+}
+
+function runningRuns() {
+  return topics().flatMap((topic) =>
+    topic.runs.filter((run) => run.status === "running").map((run) => ({ topic, run })),
+  );
+}
+
+function bannerHtml() {
+  const items = runningRuns().map(
+    ({ topic, run }) => `<p><strong>${esc(topic.name)}</strong> · ${esc(runProgress(run))}</p>`,
+  );
+  if (!items.length && state.awaitingRun) items.push("<p>Starting the run…</p>");
+  const notice = state.finishedNotice;
+  if (notice) {
+    items.push(`<p class="banner-notice" data-tone="${esc(notice.tone)}">${esc(notice.text)}
+      <button class="banner-dismiss" type="button" id="dismiss-notice" aria-label="Dismiss">×</button></p>`);
+  }
+  return items.length ? `<div class="run-banner">${items.join("")}</div>` : "";
+}
+
+function updateBanner() {
+  const banner = document.getElementById("run-banner");
+  if (banner) banner.innerHTML = bannerHtml();
+}
+
+function onFormPage() {
+  const route = parseRoute();
+  return pageName(route.parts) === "new" || (pageName(route.parts) === "topics" && Boolean(route.parts[1]));
+}
+
+let pollTimer = null;
+
+function schedulePoll() {
+  if (pollTimer || (!runningRuns().length && !state.awaitingRun)) return;
+  pollTimer = setTimeout(() => void poll(), POLL_MS);
+}
+
+async function poll() {
+  pollTimer = null;
+  const before = new Map(runningRuns().map(({ topic, run }) => [run.id, topic.name]));
+  await loadShelf();
+  let changed = false;
+  for (const topic of topics()) {
+    for (const run of topic.runs) {
+      if (before.has(run.id) && run.status !== "running") {
+        const label = STATUS_LABEL[run.status] || run.status;
+        state.finishedNotice = {
+          text: `${topic.name} finished: ${label}.`,
+          tone: run.status === "failed" ? "error" : "success",
+        };
+        changed = true;
+      } else if (!before.has(run.id) && run.status === "running") {
+        changed = true;
+      }
+    }
+  }
+  const awaited = state.awaitingRun;
+  if (awaited) {
+    const latest = topics().find((topic) => topic.id === awaited.topicId)?.runs[0]?.id;
+    if (latest !== awaited.latestId || Date.now() - awaited.since > AWAIT_RUN_MS) state.awaitingRun = null;
+  }
+  // A full render would wipe what is being typed in a form, so those pages only refresh the banner.
+  if (changed && !onFormPage()) render();
+  else updateBanner();
+  schedulePoll();
+}
+
 function viewRuns(topic, run) {
   const rows = topic.runs
     .map((item) => {
@@ -411,7 +518,7 @@ function viewRuns(topic, run) {
       return `<li class="run-item">
         <a class="run-row" href="#/week" data-open-run="${esc(item.id)}">
           <span class="run-period">${esc(formatPeriod(item))}</span>
-          <span class="run-meta">${esc(item.summary.papersSelected)} kept · ${esc(item.summary.deepReads)} read · ${esc(formatDuration(item.durationSeconds))}</span>
+          <span class="run-meta">${esc(runProgress(item) || `${item.summary.papersSelected} kept · ${item.summary.deepReads} read · ${formatDuration(item.durationSeconds)}`)}</span>
           <span>${stamp(item.status, false)} <span class="quiet">${esc(currentMark)}</span></span>
         </a>
         <button class="run-clear" type="button" data-clear-run="${esc(item.id)}" aria-label="Clear this run">Clear</button>
@@ -796,6 +903,7 @@ function render() {
         ${runSwitcher}
       </div>
     </header>
+    <div id="run-banner" aria-live="polite">${bannerHtml()}</div>
     <main id="main">${body}</main>
     <footer class="footer">${
       state.live
@@ -804,6 +912,7 @@ function render() {
     }</footer>`;
 
   persist();
+  schedulePoll();
   const section = route.params.get("section");
   if (section) document.getElementById(section)?.scrollIntoView();
   const main = document.getElementById("main");
@@ -1005,10 +1114,11 @@ async function createTopic(form) {
     await loadShelf();
     state.topicId = nt.id;
     state.runId = null;
+    if (!runningRuns().some((item) => item.topic.id === nt.id)) awaitRun(nt.id);
     state.newTopic = {
       ...nt,
       pending: false,
-      status: `Created "${nt.name}" and started its first run. It appears under Runs shortly.`,
+      status: `Created "${nt.name}" and started its first run. Its progress shows at the top of the page.`,
       tone: "success",
     };
   } catch (error) {
@@ -1023,6 +1133,11 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  if (event.target.id === "dismiss-notice") {
+    state.finishedNotice = null;
+    updateBanner();
+    return;
+  }
   const runTopic = event.target.closest("[data-run-topic]");
   if (runTopic) {
     const topic = topicById(runTopic.dataset.runTopic);
@@ -1030,8 +1145,11 @@ function onClick(event) {
       "POST",
       `/api/topics/${encodeURIComponent(topic.id)}/run`,
       {},
-      `Started ${topic.name}. It appears under Runs within a few seconds.`,
-    ).then(render);
+      `Started ${topic.name}. Its progress shows at the top of the page.`,
+    ).then((started) => {
+      if (started && !runningRuns().some((item) => item.topic.id === topic.id)) awaitRun(topic.id);
+      render();
+    });
     return;
   }
   const toggleTopic = event.target.closest("[data-toggle-topic]");
