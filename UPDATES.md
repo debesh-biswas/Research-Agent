@@ -2,6 +2,34 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Record which stage a run is in (complete)
+
+- **Feature/branch:** `F30-record-run-stage`, off `main` at `b1b5c34`.
+- **Status:** Complete; merged into `main`. Roadmap M2, first item.
+- **Summary:** A running run showed only "Running" for its whole length (the cloud run spent
+  15 min in discovery with no outward sign). Each graph node now records itself as the run's
+  stage, with the time it started, before it executes. The last stage stays after the run ends,
+  so a failed run shows where it stopped. The shelf carries `stage`, `stageStartedAt` and
+  `startedAt` per run for the desk (F31 renders and polls them).
+- **Files affected:** `src/research_agent/storage/database.py` (migrations: `runs.stage`,
+  `runs.stage_started_at`), `src/research_agent/domain/runs.py` (`RunRecord.stage`,
+  `stage_started_at`), `src/research_agent/storage/runs.py` (`RunRepository.mark_stage`),
+  `src/research_agent/workflow/graph.py` (`_tracked` wraps every node in `build_graph`),
+  `src/research_agent/desk/shelf.py`, tests in `tests/unit/test_storage_runs.py`,
+  `tests/unit/test_workflow_routes.py`, `tests/integration/test_workflow_graph.py`.
+- **Decisions:** One wrapper in `build_graph` rather than a call in each of 13 nodes; it uses the
+  `RunRepository` interface, so graph code stays free of SQL. `load_topic` opens the run and so
+  records no stage itself; the run reads stage-less only until `plan_queries` starts. No separate
+  status endpoint: the desk already fetches the shelf, and polling it is cheap for one user.
+  Per-paper progress inside a long stage (e.g. "screening 120/250") and cancelling a run are not
+  part of this item.
+- **Verification:** Repository round trip (stage kept after a failed completion); wrapper marks a
+  stage only once the run id exists; a full mocked run ends with stage `persist`. Migration tests
+  pass on the extended list. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 551 passed, 3 deselected, coverage 91.84%.
+- **Next step:** `F31` — the desk shows the live stage and elapsed time for a running run,
+  polls the shelf while any run is running, and announces when it finishes.
+
 ## 2026-10-27 — Load Docling on the first parse, not when a run is wired (complete)
 
 - **Feature/branch:** `FIX18-load-docling-on-first-parse`, off `main` at `9dc7766`.

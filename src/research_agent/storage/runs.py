@@ -9,7 +9,7 @@ from research_agent.domain.runs import ErrorRecord, RunRecord, RunStatus, RunSum
 
 _RUN_COLUMNS = (
     "id, topic_id, started_at, completed_at, status, active_classifier, "
-    "shadow_classifier, duration_seconds, summary_json"
+    "shadow_classifier, duration_seconds, summary_json, stage, stage_started_at"
 )
 
 
@@ -31,6 +31,8 @@ class RunRepository(Protocol):
 
     def recent(self, topic_id: str, limit: int = 4) -> list[RunRecord]: ...
 
+    def mark_stage(self, run_id: str, stage: str) -> None: ...
+
     def open_runs(self) -> list[RunRecord]: ...
 
     def record_error(self, error: ErrorRecord) -> None: ...
@@ -45,6 +47,7 @@ class RunRepository(Protocol):
 def _from_row(row: sqlite3.Row) -> RunRecord:
     completed = row["completed_at"]
     summary = row["summary_json"]
+    stage_started = row["stage_started_at"]
     return RunRecord(
         id=row["id"],
         topic_id=row["topic_id"],
@@ -55,6 +58,8 @@ def _from_row(row: sqlite3.Row) -> RunRecord:
         shadow_classifier=row["shadow_classifier"],
         duration_seconds=row["duration_seconds"],
         summary=RunSummary.model_validate_json(summary) if summary else None,
+        stage=row["stage"],
+        stage_started_at=datetime.fromisoformat(stage_started) if stage_started else None,
     )
 
 
@@ -129,6 +134,14 @@ class SqliteRunRepository:
             (topic_id, limit),
         ).fetchall()
         return [_from_row(row) for row in rows]
+
+    def mark_stage(self, run_id: str, stage: str) -> None:
+        """Record the node a run has entered, so a watcher can see where it is."""
+        with self._connection:
+            self._connection.execute(
+                "UPDATE runs SET stage = ?, stage_started_at = ? WHERE id = ?",
+                (stage, datetime.now(UTC).isoformat(), run_id),
+            )
 
     def open_runs(self) -> list[RunRecord]:
         """Every run still marked running, across topics."""

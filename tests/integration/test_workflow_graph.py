@@ -233,6 +233,7 @@ def test_a_complete_run_produces_a_report_and_a_closed_run(
     record = SqliteRunRepository(connection).get(final.run_id)
     assert record is not None and record.status == "completed"
     assert record.summary is not None and record.summary.papers_selected == len(final.selected_ids)
+    assert (record.stage, record.stage_started_at is not None) == ("persist", True)
 
 
 def test_the_report_of_a_complete_run_contains_the_findings(

@@ -6,6 +6,7 @@ or a database.
 """
 
 from datetime import date
+from typing import Any
 
 from langgraph.graph import END, StateGraph
 
@@ -56,11 +57,22 @@ def after_synthesis(state: ResearchState) -> str:
     return "ideate" if state.synthesized else "report"
 
 
+def _tracked(name: str, node: nodes.Node, services: WorkflowServices) -> nodes.Node:
+    """Record the stage before a node runs; `load_topic` opens the run, so it has no id yet."""
+
+    async def run(state: ResearchState) -> Any:
+        if state.run_id:
+            services.runs.mark_stage(state.run_id, name)
+        return await node(state)
+
+    return run
+
+
 def build_graph(services: WorkflowServices) -> object:
     """Compile the weekly research graph for one topic's services."""
     graph = StateGraph(ResearchState)
     for name, factory in _NODES:
-        graph.add_node(name, factory(services))
+        graph.add_node(name, _tracked(name, factory(services), services))
 
     graph.set_entry_point("load_topic")
     graph.add_edge("load_topic", "plan_queries")

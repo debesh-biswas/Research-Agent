@@ -141,3 +141,16 @@ def test_open_runs_lists_only_runs_still_running(connection: sqlite3.Connection)
     open_run = repository.start(TOPIC_ID)
 
     assert [record.id for record in repository.open_runs()] == [open_run.id]
+
+
+def test_mark_stage_records_where_a_run_is(connection: sqlite3.Connection) -> None:
+    repository = SqliteRunRepository(connection)
+    run = repository.start(TOPIC_ID)
+    assert (run.stage, run.stage_started_at) == (None, None)
+
+    repository.mark_stage(run.id, "classify")
+    repository.complete(run.id, RunSummary(), status="failed")
+
+    stored = repository.get(run.id)
+    assert stored is not None and stored.stage == "classify", "kept to show where it ended"
+    assert stored.stage_started_at is not None
