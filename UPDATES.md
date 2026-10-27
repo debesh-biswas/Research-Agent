@@ -2,6 +2,36 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Desk refuses cross-site and DNS-rebinding requests (complete)
+
+- **Feature/branch:** `FIX15-desk-reject-foreign-requests`, off `main` at `53a5818`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** Binding to 127.0.0.1 did not protect the desk from the browser it serves. Any web
+  page the user visited could POST to `/api/topics` (creating topics, starting pipelines, spending
+  NIM quota) or DELETE runs, because the server parsed JSON regardless of `Content-Type` and
+  checked neither `Host` nor `Origin`; a DNS-rebinding page could also read `/api/shelf`. Every
+  request now must carry a local `Host` (`127.0.0.1:<port>` or `localhost:<port>`) and, when an
+  `Origin` is present, a matching `http://` origin; anything else gets `403 Forbidden.` before
+  any route runs.
+- **Files affected:** `src/research_agent/desk/server.py` (`DeskHandler._foreign()`, called first
+  in `do_GET`, `do_POST`, `do_DELETE`; the port comes from the accepted socket),
+  `tests/unit/test_desk_server.py`.
+- **Decisions:** Origin and Host checks only. A JSON `Content-Type` requirement was skipped as
+  redundant once a foreign Origin is refused. Requests with no `Origin` (curl, scripts, the
+  page's same-origin GETs) stay allowed: browsers send `Origin` on every cross-site POST/DELETE.
+  No session token: Origin/Host checks close both holes for a single local user.
+- **Verification:** New `test_the_server_refuses_foreign_hosts_and_origins` (foreign Host on a
+  GET, cross-site `text/plain` POST, `Origin: null` DELETE all 403 with the backend untouched;
+  the desk's own origin via `localhost` accepted) fails without the fix. Real Chromium attack:
+  a page served from another local port fired a `no-cors` `text/plain` POST at the desk — the
+  unfixed server created a `pwned` topic, the fixed one did not. The FIX12 browser flow (create a
+  topic from the desk page) still passes. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 535 passed, 3 deselected, coverage 91.53%.
+- **Known issues:** Opening the desk through any other host name (for example a custom
+  `/etc/hosts` alias) is now refused by design.
+- **Next step:** `FIX16` — Ask drops whole cards to fit the prompt budget instead of cutting the
+  JSON string mid-object.
+
 ## 2026-10-27 — Reject duplicate YAML keys; NIM output budget back to 24000 (complete)
 
 - **Feature/branch:** `FIX14-reject-duplicate-yaml-keys`, off `main` at `55df732`.
