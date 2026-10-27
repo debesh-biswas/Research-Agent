@@ -70,6 +70,24 @@ def test_malformed_yaml_has_actionable_error(tmp_path: Path) -> None:
         load_configuration(settings_path, topics_path)
 
 
+def test_a_repeated_key_is_rejected_not_silently_overwritten(tmp_path: Path) -> None:
+    settings_path, topics_path = _write_valid_configuration(tmp_path)
+    settings_path.write_text(
+        "models:\n  nim:\n    max_output_tokens: 24000\n    max_output_tokens: 8192\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match=r"(?s)duplicate key 'max_output_tokens'.*line 4"):
+        load_configuration(settings_path, topics_path)
+
+
+def test_the_committed_configuration_loads() -> None:
+    root = Path(__file__).resolve().parents[2]
+    configuration = load_configuration(root / "config/settings.yaml", root / "config/topics.yaml")
+
+    assert configuration.settings.models.nim.max_output_tokens == 24000
+
+
 def test_query_bounds_must_be_monotonic() -> None:
     with pytest.raises(ValidationError):
         QuerySettings(min_queries=21, max_queries=20)

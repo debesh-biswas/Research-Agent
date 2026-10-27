@@ -45,7 +45,6 @@ models:
     thinking_capabilities: [deep_reasoning, synthesis]
     timeout_seconds: 600
     max_output_tokens: 24000
-    max_output_tokens: 8192
 
 screening:
   # NIM screens by default; the local model is used after NIM errors.
