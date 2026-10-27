@@ -131,9 +131,11 @@ def _context(run: dict[str, object], allowed: set[str], max_chars: int) -> str:
         "papers": chosen,
     }
     text = json.dumps(payload, ensure_ascii=False)
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars]
+    # Drop the lowest-ranked whole cards rather than cut the JSON; the top card always stays.
+    while len(text) > max_chars and len(chosen) > 1:
+        chosen.pop()
+        text = json.dumps(payload, ensure_ascii=False)
+    return text
 
 
 def _card(paper: dict[str, object]) -> dict[str, object]:
