@@ -5,7 +5,23 @@ const STATUS_LABEL = {
   degraded: "Degraded",
   failed: "Failed",
   running: "Running",
+  paused: "Paused",
 };
+
+const SOURCES = [
+  ["openalex", "OpenAlex"],
+  ["semantic_scholar", "Semantic Scholar"],
+  ["arxiv", "arXiv"],
+];
+
+const LIMITS = [
+  ["max_candidates", "Candidates found", 1],
+  ["max_classified", "Papers screened", 1],
+  ["max_downloads", "PDFs downloaded", 0],
+  ["max_deep_reads", "Deep reads", 0],
+];
+
+const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 const ACTION_LABEL = {
   deep_read: "Deep read",
@@ -22,6 +38,8 @@ const state = {
   moveFocus: false,
   live: false,
   pending: false,
+  topicsPending: false,
+  topicsStatus: null,
   newTopic: {
     step: "form",
     id: "",
@@ -478,11 +496,118 @@ function viewAsk(run, paperId) {
     <p class="note">Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
 }
 
+function statusMessage(text, tone) {
+  return text ? `<p class="status-line" data-tone="${esc(tone || "")}" role="status">${esc(text)}</p>` : "";
+}
+
+function topicMeta(topic) {
+  const settings = topic.settings;
+  const sources = SOURCES.filter(([key]) => settings.discovery[key]).map(([, label]) => label);
+  const runs = `${topic.runs.length} ${topic.runs.length === 1 ? "run" : "runs"}`;
+  return [`${settings.lookback_days}-day lookback`, sources.join(", "), runs].join(" · ");
+}
+
+function viewTopics() {
+  const all = topics();
+  const busy = state.topicsPending ? " disabled" : "";
+  const rows = all
+    .map((topic) => {
+      const settings = topic.settings;
+      const running = topic.runs.some((run) => run.status === "running");
+      const canRun = settings.enabled && !running;
+      const why = !settings.enabled ? "Enable the topic to run it" : running ? "A run is already in progress" : "";
+      const keywords = settings.keywords.length ? settings.keywords.join(", ") : "No keywords";
+      return `<li class="run-item">
+        <div class="run-row topic-row">
+          <span>
+            <span class="run-period">${esc(topic.name)}</span>
+            <span class="run-meta">${esc(topicMeta(topic))}</span>
+            <span class="run-meta">${esc(keywords)}</span>
+          </span>
+          <span>${settings.enabled ? "" : stamp("paused", false)}${running ? stamp("running", false) : ""}</span>
+          <span class="topic-actions">
+            <button class="button" type="button" data-run-topic="${esc(topic.id)}" aria-label="Run ${esc(topic.name)} now"${canRun ? busy : " disabled"}${why ? ` title="${esc(why)}"` : ""}>Run now</button>
+            <button class="button" type="button" data-toggle-topic="${esc(topic.id)}" aria-label="${settings.enabled ? "Pause" : "Enable"} ${esc(topic.name)}"${busy}>${settings.enabled ? "Pause" : "Enable"}</button>
+            <a class="button" href="#/topics/${esc(topic.id)}" aria-label="Edit ${esc(topic.name)}">Edit</a>
+            <button class="run-clear" type="button" data-delete-topic="${esc(topic.id)}" aria-label="Delete ${esc(topic.name)}"${busy}>Delete</button>
+          </span>
+        </div>
+      </li>`;
+    })
+    .join("");
+  const status = state.topicsStatus || {};
+  return `<div class="page-head"><h1>Topics</h1><a class="button" href="#/new">New topic</a></div>
+    <p class="quiet">Paused topics are skipped by scheduled and all-topic runs.</p>
+    ${statusMessage(status.text, status.tone)}
+    ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}`;
+}
+
+function viewTopicEdit(topicId) {
+  const topic = topics().find((item) => item.id === topicId);
+  if (!topic) {
+    return `<a class="back" href="#/topics">Topics</a>
+      <h1>Not found</h1>
+      <p class="empty">There is no topic called ${esc(topicId)}.</p>`;
+  }
+  const settings = topic.settings;
+  const sources = SOURCES.map(
+    ([key, label]) =>
+      `<label class="check"><input type="checkbox" name="${key}"${settings.discovery[key] ? " checked" : ""} /> ${esc(label)}</label>`,
+  ).join("");
+  const limits = LIMITS.map(
+    ([key, label, min]) => `<div class="field">
+        <label for="limit-${key}">${esc(label)}</label>
+        <input type="number" id="limit-${key}" name="${key}" min="${min}" required value="${esc(settings.limits[key])}" />
+      </div>`,
+  ).join("");
+  const days = DAYS.map(
+    (day) => `<option value="${day}"${settings.scheduling.day === day ? " selected" : ""}>${day[0].toUpperCase()}${day.slice(1)}</option>`,
+  ).join("");
+  const status = state.topicsStatus || {};
+  return `<a class="back" href="#/topics">Topics</a>
+    <h1>${esc(topic.name)}</h1>
+    <p class="quiet">Topic id: ${esc(topic.id)}. The id stays fixed; everything else can change.</p>
+    <div class="panel">
+      <form id="topic-edit-form" class="topic-form" data-topic="${esc(topic.id)}">
+        <div class="field">
+          <label for="edit-name">Name</label>
+          <input type="text" id="edit-name" name="name" required value="${esc(settings.name)}" />
+        </div>
+        <label class="check"><input type="checkbox" name="enabled"${settings.enabled ? " checked" : ""} /> Enabled</label>
+        <div class="field">
+          <label for="edit-keywords">Keywords <span class="quiet">(one per line)</span></label>
+          <textarea id="edit-keywords" name="keywords" rows="4">${esc(settings.keywords.join("\n"))}</textarea>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="edit-lookback">Lookback (days)</label>
+            <input type="number" id="edit-lookback" name="lookback_days" min="1" required value="${esc(settings.lookback_days)}" />
+          </div>
+          <div class="field">
+            <label for="edit-day">Run day</label>
+            <select id="edit-day" name="day">${days}</select>
+          </div>
+        </div>
+        <fieldset class="field">
+          <legend>Sources</legend>
+          <div class="checks">${sources}</div>
+        </fieldset>
+        <fieldset class="field">
+          <legend>Limits per run</legend>
+          <div class="field-row">${limits}</div>
+        </fieldset>
+        <div class="form-actions">
+          <button class="primary" type="submit"${state.topicsPending ? " disabled" : ""}>${state.topicsPending ? "Saving…" : "Save"}</button>
+          <a class="button" href="#/topics">Cancel</a>
+        </div>
+      </form>
+      ${statusMessage(status.text, status.tone)}
+    </div>`;
+}
+
 function viewNewTopic() {
   const nt = state.newTopic;
-  const statusLine = nt.status
-    ? `<p class="status-line" data-tone="${esc(nt.tone || "")}">${esc(nt.status)}</p>`
-    : "";
+  const statusLine = statusMessage(nt.status, nt.tone);
 
   if (nt.step === "review") {
     const chips = nt.keywords.length
@@ -554,6 +679,8 @@ function render() {
   let body = "";
   if (name === "new") {
     body = viewNewTopic();
+  } else if (name === "topics" && state.live) {
+    body = route.parts[1] ? viewTopicEdit(route.parts[1]) : viewTopics();
   } else if (!topic) {
     body = state.live
       ? `<h1>No topic</h1><p class="empty">Add a topic, then run a week. It will show up here.</p>`
@@ -577,6 +704,7 @@ function render() {
     ["report", "Report", "#/report"],
     ["runs", "Runs", "#/runs"],
     ["ask", "Ask", "#/ask"],
+    ["topics", "Topics", "#/topics"],
   ]
     .map(([id, label, href]) => {
       const currentPage = name === id ? ' aria-current="page"' : "";
@@ -610,6 +738,7 @@ function render() {
     report: "Report",
     runs: "Runs",
     ask: "Ask",
+    topics: "Topics",
     new: "New topic",
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
@@ -771,6 +900,49 @@ async function clearTopicRuns(topicId) {
   await refreshShelf();
 }
 
+/* Returns null on success, or the message to show. */
+async function topicRequest(method, path, body) {
+  try {
+    const response = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (response.ok) return null;
+    const payload = await response.json().catch(() => ({}));
+    return payload.error || "The desk server refused that change.";
+  } catch {
+    return "Can't reach the desk server.";
+  }
+}
+
+async function topicAction(method, path, body, success) {
+  state.topicsPending = true;
+  state.topicsStatus = null;
+  render();
+  const problem = await topicRequest(method, path, body);
+  await loadShelf();
+  state.topicsPending = false;
+  state.topicsStatus = problem ? { text: problem, tone: "error" } : { text: success, tone: "success" };
+  return !problem;
+}
+
+function settingsFromForm(form) {
+  const data = new FormData(form);
+  return {
+    name: String(data.get("name") || "").trim(),
+    enabled: data.has("enabled"),
+    lookback_days: Number(data.get("lookback_days")),
+    keywords: String(data.get("keywords") || "")
+      .split("\n")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean),
+    discovery: Object.fromEntries(SOURCES.map(([key]) => [key, data.has(key)])),
+    limits: Object.fromEntries(LIMITS.map(([key]) => [key, Number(data.get(key))])),
+    scheduling: { frequency: "weekly", day: String(data.get("day")) },
+  };
+}
+
 async function createTopic() {
   const nt = state.newTopic;
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
@@ -804,6 +976,42 @@ async function createTopic() {
 }
 
 function onClick(event) {
+  const runTopic = event.target.closest("[data-run-topic]");
+  if (runTopic) {
+    const topic = topicById(runTopic.dataset.runTopic);
+    void topicAction(
+      "POST",
+      `/api/topics/${encodeURIComponent(topic.id)}/run`,
+      {},
+      `Started ${topic.name}. It appears under Runs within a few seconds.`,
+    ).then(render);
+    return;
+  }
+  const toggleTopic = event.target.closest("[data-toggle-topic]");
+  if (toggleTopic) {
+    const topic = topicById(toggleTopic.dataset.toggleTopic);
+    const settings = { ...topic.settings, enabled: !topic.settings.enabled };
+    delete settings.id;
+    void topicAction(
+      "PUT",
+      `/api/topics/${encodeURIComponent(topic.id)}`,
+      settings,
+      `${topic.name} is ${settings.enabled ? "enabled" : "paused"}.`,
+    ).then(render);
+    return;
+  }
+  const deleteTopic = event.target.closest("[data-delete-topic]");
+  if (deleteTopic) {
+    const topic = topicById(deleteTopic.dataset.deleteTopic);
+    if (!confirm(`Delete ${topic.name} and all of its runs? Files on disk are kept. This cannot be undone.`)) return;
+    void topicAction("DELETE", `/api/topics/${encodeURIComponent(topic.id)}`, undefined, `Deleted ${topic.name}.`).then(
+      () => {
+        if (state.topicId === topic.id) state.topicId = null;
+        render();
+      },
+    );
+    return;
+  }
   if (event.target.id === "confirm-topic-button") {
     void createTopic();
     return;
@@ -857,6 +1065,18 @@ function onClick(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === "topic-edit-form") {
+    event.preventDefault();
+    const topicId = form.dataset.topic;
+    const settings = settingsFromForm(form);
+    void topicAction("PUT", `/api/topics/${encodeURIComponent(topicId)}`, settings, `Saved ${settings.name}.`).then(
+      (saved) => {
+        if (saved) location.hash = "#/topics";
+        else render();
+      },
+    );
+    return;
+  }
   if (form.id === "new-topic-form") {
     event.preventDefault();
     const data = new FormData(form);
@@ -928,6 +1148,7 @@ function restore() {
 restore();
 window.addEventListener("hashchange", () => {
   state.moveFocus = true;
+  if (!location.hash.startsWith("#/topics")) state.topicsStatus = null;
   render();
 });
 document.addEventListener("click", onClick);

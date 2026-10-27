@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Protocol
@@ -21,6 +22,7 @@ from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
 from research_agent.desk.shelf import build_shelf
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
+from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
@@ -28,7 +30,11 @@ from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
-from research_agent.storage.topics import SqliteTopicRepository, TopicStoreError
+from research_agent.storage.topics import (
+    SqliteTopicRepository,
+    TopicNotFoundError,
+    TopicStoreError,
+)
 from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
@@ -89,6 +95,12 @@ class DeskBackend(Protocol):
     def delete_run(self, run_id: str) -> None: ...
 
     def clear_topic(self, topic_id: str) -> int: ...
+
+    def update_topic(self, topic: TopicSettings) -> None: ...
+
+    def delete_topic(self, topic_id: str) -> None: ...
+
+    def run_topic(self, topic_id: str) -> None: ...
 
 
 class LocalDesk:
@@ -155,6 +167,45 @@ class LocalDesk:
             SqliteTopicRepository(connection).add(topic)
         finally:
             connection.close()
+        self._start_run(topic)
+
+    def update_topic(self, topic: TopicSettings) -> None:
+        connection = connect(self._database)
+        try:
+            SqliteTopicRepository(connection).update(topic)
+        finally:
+            connection.close()
+
+    def delete_topic(self, topic_id: str) -> None:
+        """Delete a topic and its runs; refused while its run holds the lock."""
+        connection = connect(self._database)
+        try:
+            with run_lock(self._settings.data_directory, topic_id):
+                SqliteTopicRepository(connection).delete(topic_id)
+        finally:
+            connection.close()
+
+    def run_topic(self, topic_id: str) -> None:
+        """Start a stored topic's run in the background, unless it is disabled or running."""
+        connection = connect(self._database)
+        try:
+            topic = SqliteTopicRepository(connection).get(topic_id)
+            running = any(
+                record.topic_id == topic_id
+                for record in SqliteRunRepository(connection).open_runs()
+            )
+        finally:
+            connection.close()
+        if topic is None:
+            raise TopicNotFoundError(f"unknown topic: {topic_id}")
+        if not topic.enabled:
+            raise TopicStoreError(f"{topic.name} is disabled; enable it to run it.")
+        if running:
+            raise RunLocked(f"{topic.name} is already running.")
+        self._start_run(topic)
+
+    def _start_run(self, topic: TopicSettings) -> None:
+        """Run the pipeline on a daemon thread; a run takes minutes and must not block a request."""
 
         def _run() -> None:
             run_connection = connect(self._database)
@@ -221,8 +272,42 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._suggest_topic()
             elif path == "/api/topics":
                 self._create_topic()
+            elif (topic_id := _topic_route(path, "run")) is not None:
+                self._discard_body()
+                self._topic_action(lambda: backend.run_topic(topic_id), 202, "started")
             else:
                 self._json(404, {"error": "Not found."})
+
+        def do_PUT(self) -> None:
+            if self._foreign():
+                return
+            topic_id = _topic_route(urlparse(self.path).path)
+            if topic_id is None:
+                self._json(404, {"error": "Not found."})
+                return
+            try:
+                payload = _read_json(self)
+                if not isinstance(payload, dict):
+                    raise ValueError("body")
+                topic = TopicSettings.model_validate({**payload, "id": topic_id})
+            except ValidationError as error:
+                self._json(400, {"error": _first_problem(error)})
+                return
+            except ValueError:
+                self._json(400, {"error": "The topic could not be read."})
+                return
+            self._topic_action(lambda: backend.update_topic(topic), 200, "updated")
+
+        def _topic_action(self, action: Callable[[], None], status: int, done: str) -> None:
+            """Run a topic change, mapping a missing topic to 404 and a conflict to 409."""
+            try:
+                action()
+            except TopicNotFoundError as error:
+                self._json(404, {"error": str(error)})
+            except (TopicStoreError, RunLocked) as error:
+                self._json(409, {"error": str(error)})
+            else:
+                self._json(status, {"status": done})
 
         def _ask(self) -> None:
             try:
@@ -280,6 +365,7 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
         def do_DELETE(self) -> None:
             if self._foreign():
                 return
+            self._discard_body()
             path = urlparse(self.path).path
             segments = [segment for segment in path.split("/") if segment]
             if len(segments) == 3 and segments[:2] == ["api", "runs"]:
@@ -293,8 +379,21 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             ):
                 cleared = backend.clear_topic(unquote(segments[2]))
                 self._json(200, {"status": "cleared", "runs": cleared})
+            elif (topic_id := _topic_route(path)) is not None:
+                self._topic_action(lambda: backend.delete_topic(topic_id), 200, "deleted")
             else:
                 self._json(404, {"error": "Not found."})
+
+        def _discard_body(self) -> None:
+            """Consume a body no route reads; left unread, it would corrupt the next request."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = _MAX_BODY + 1
+            if length > _MAX_BODY:
+                self.close_connection = True
+            elif length > 0:
+                self.rfile.read(length)
 
         def _foreign(self) -> bool:
             """Refuse DNS rebinding (a foreign Host) and cross-site requests (a foreign Origin)."""
@@ -337,15 +436,37 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            if self.close_connection:
+                self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(body)
 
     return DeskHandler
 
 
+def _topic_route(path: str, action: str | None = None) -> str | None:
+    """The topic id in /api/topics/<id>, or /api/topics/<id>/<action> when an action is given."""
+    segments = [unquote(segment) for segment in path.split("/") if segment]
+    if segments[:2] != ["api", "topics"] or len(segments) != (4 if action else 3):
+        return None
+    if action and segments[3] != action:
+        return None
+    return segments[2]
+
+
+def _first_problem(error: ValidationError) -> str:
+    """One readable line from a validation error, for the page to show beside the form."""
+    problem = error.errors()[0]
+    field = ".".join(str(part) for part in problem["loc"])
+    message = str(problem["msg"]).removeprefix("Value error, ")
+    return f"{field}: {message}" if field else message
+
+
 def _read_json(handler: BaseHTTPRequestHandler) -> object:
     length = int(handler.headers.get("Content-Length", "0"))
     if length <= 0 or length > _MAX_BODY:
+        # An oversized body stays unread, so this connection cannot carry another request.
+        handler.close_connection = True
         raise ValueError("body length")
     raw = handler.rfile.read(length)
     try:

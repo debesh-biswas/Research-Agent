@@ -896,6 +896,8 @@ h2 {
 }
 
 .field input[type="text"],
+.field input[type="number"],
+.field select,
 .field textarea {
   font: 1rem/1.4 var(--sans);
   color: var(--ink);
@@ -909,6 +911,8 @@ h2 {
 }
 
 .field input[type="text"]:focus-visible,
+.field input[type="number"]:focus-visible,
+.field select:focus-visible,
 .field textarea:focus-visible {
   outline: none;
   border-color: var(--tide);
@@ -918,6 +922,74 @@ h2 {
 .field textarea {
   resize: vertical;
   min-height: 76px;
+}
+
+fieldset.field {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.field legend {
+  font: 600 0.85rem var(--sans);
+  color: var(--muted);
+  padding: 0;
+  margin-bottom: 10px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 0.92rem var(--sans);
+  color: var(--ink);
+}
+
+.check input {
+  accent-color: var(--tide);
+  width: 16px;
+  height: 16px;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.topic-row:hover {
+  transform: none;
+}
+
+.topic-row .run-meta {
+  display: block;
+  margin-top: 4px;
+  font-variant-numeric: normal;
+}
+
+.topic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .form-actions {

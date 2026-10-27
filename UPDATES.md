@@ -2,6 +2,52 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Desk topics page: edit, pause, delete, run now (complete)
+
+- **Feature/branch:** `F28-desk-topics-page`, off `main` at `677c68f`.
+- **Status:** Complete; merged into `main`. Roadmap M1, second item.
+- **Summary:** The desk could create topics but not manage them. New Topics page (`#/topics`,
+  in the nav) lists every topic with its lookback, sources, run count and keywords, and offers
+  Run now, Pause/Enable, Edit and Delete. `#/topics/<id>` is an edit form for every setting but
+  the id (name, enabled, keywords one per line, lookback, run day, sources, the four limits).
+  Server routes, all behind FIX15's Host/Origin check:
+  - `PUT /api/topics/<id>` — body validated as a whole `TopicSettings` (unknown fields refused,
+    limit ordering enforced); 400 carries one readable line such as
+    `limits: max_deep_reads cannot exceed max_downloads`; 404 for an unknown topic.
+  - `DELETE /api/topics/<id>` — deletes the topic and its runs; 409 while its run holds the lock.
+  - `POST /api/topics/<id>/run` — starts the run on the existing background thread
+    (`LocalDesk._start_run`, extracted from `create_and_run`); 409 when the topic is disabled or
+    already has an open run, 404 when unknown.
+  - The shelf now carries each topic's `settings` (the same shape `PUT` accepts).
+- **Bug fixed on the way:** the server speaks HTTP/1.1 keep-alive, and a route that did not read
+  its request body left those bytes in the socket, so the browser's next request on that
+  connection was parsed as `{}GET /api/shelf` and failed with 501 — the page then kept a stale
+  shelf. Routes that take no body now discard it (`_discard_body`, used by the run route and
+  every DELETE), an oversized body that `_read_json` refuses now closes the connection, and the
+  server sends `Connection: close` whenever it closes.
+- **Files affected:** `src/research_agent/desk/server.py`, `src/research_agent/desk/shelf.py`,
+  `web/js/desk.js`, `web/css/desk.css`, `tests/unit/test_desk_server.py`,
+  `tests/unit/test_reading_desk.py`, `README.md`.
+- **Decisions:** Keywords are edited one per line in a textarea (accessible, no new widget);
+  editable chips stay with F29's new-topic flow. Delete still uses the native `confirm()`, which
+  roadmap F51 replaces for every destructive action. Run now's button is disabled with a reason
+  in its tooltip when the topic is paused or running. Native form validation catches empty and
+  below-minimum numbers before the server does.
+- **Verification:** HTTP tests for every new route and status code against the fake backend;
+  `LocalDesk` tests against a real temporary database (update visible on the shelf, run refused
+  when disabled, unknown or already open, delete refused under a held lock); a keep-alive test on
+  one `http.client` connection that fails without the body-draining fix. Browser (Chromium, real
+  `LocalDesk`, server and page; only the pipeline thread replaced by recording a running run):
+  edit and save, server-side validation error shown on the form, pause disables Run now, Run now
+  shows the run as Running and disables itself, delete with confirmation empties the list, no
+  page errors; screenshots at 1280 px and 390 px with no horizontal overflow. `ruff format
+  --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 547 passed, 3 deselected, coverage
+  91.60%.
+- **Known issues:** After Run now, the new run's row appears once the background thread opens it
+  (about a second); the page does not poll yet — roadmap F30/F31 (live run progress).
+- **Next step:** `F29` — new-topic flow with editable keyword chips and the advanced settings
+  (lookback, sources, limits, run day) before creation.
+
 ## 2026-10-27 — Edit and delete topics from the CLI (complete)
 
 - **Feature/branch:** `F27-topic-edit-delete`, off `main` at `fbfd81e`.

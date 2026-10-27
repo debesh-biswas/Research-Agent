@@ -45,6 +45,7 @@ def build_shelf(
             {
                 "id": topic.id,
                 "name": topic.name,
+                "settings": topic.model_dump(mode="json"),
                 "runs": [
                     _run(topic, record, runs, results, papers, selections, store)
                     for record in runs.recent(topic.id, run_limit)
