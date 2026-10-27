@@ -2,6 +2,32 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Reject duplicate YAML keys; NIM output budget back to 24000 (complete)
+
+- **Feature/branch:** `FIX14-reject-duplicate-yaml-keys`, off `main` at `55df732`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** `config/settings.yaml` set `models.nim.max_output_tokens` twice (24000, then 8192).
+  YAML silently keeps the last value, so since F26 the NIM budget was 8192, not the 24000 F26
+  chose as headroom for a thinking-mode reasoning trace plus a full answer — the truncation risk
+  F26 meant to remove. Configuration loading now rejects any repeated key with an actionable
+  error naming the key, file and line; the stray `8192` line is removed.
+- **Files affected:** `src/research_agent/config.py` (`_UniqueKeyLoader`, a `yaml.SafeLoader`
+  subclass used by `_load_yaml_mapping`, the only YAML loader), `config/settings.yaml`,
+  `tests/unit/test_config.py`.
+- **Decisions:** Kept 24000, the value F26 recorded choosing on purpose. The loader is still a
+  `SafeLoader`, so no arbitrary object construction is enabled. The error is raised as a YAML
+  `ConstructorError`, so the existing handler turns it into `ConfigurationError("invalid YAML in
+  <path>: duplicate key ... line N")` with no new error path.
+- **Verification:** New `test_a_repeated_key_is_rejected_not_silently_overwritten` fails without
+  the loader change; `test_the_committed_configuration_loads` failed on the committed file until
+  the duplicate was removed and now pins NIM at 24000. `research-agent config validate` passes.
+  `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 534 passed,
+  3 deselected, coverage 91.49%.
+- **Known issues:** A larger NIM budget lengthens worst-case calls; this is F26's chosen
+  trade-off, still untimed live. A local `config/settings.yaml` on another machine with its own
+  repeated key will now fail fast at startup — intended.
+- **Next step:** `FIX15` — desk request hardening (require JSON, check Origin and Host).
+
 ## 2026-10-27 — Close runs a dead process left "running" (complete)
 
 - **Feature/branch:** `FIX13-close-orphaned-runs`, off `main` at `ca26d31`.

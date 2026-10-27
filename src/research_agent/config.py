@@ -298,10 +298,25 @@ class ProjectConfiguration(StrictModel):
     topics: TopicsConfiguration
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe loading that rejects a repeated key, which plain YAML silently resolves to the last."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        seen: list[Any] = []
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"duplicate key {key!r}", key_node.start_mark
+                )
+            seen.append(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def _load_yaml_mapping(path: Path) -> Mapping[str, Any]:
     try:
         with path.open(encoding="utf-8") as config_file:
-            content = yaml.safe_load(config_file)
+            content = yaml.load(config_file, Loader=_UniqueKeyLoader)
     except FileNotFoundError as error:
         raise ConfigurationError(f"configuration file not found: {path}") from error
     except OSError as error:
