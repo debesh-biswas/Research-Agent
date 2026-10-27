@@ -2,6 +2,46 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — New topic: editable keywords and advanced settings (complete)
+
+- **Feature/branch:** `F29-new-topic-chips-and-settings`, off `main` at `b88e737`.
+- **Status:** Complete; merged into `main`. Roadmap M1, third and last item.
+- **Summary:** The new-topic "review" step showed the model's keywords as read-only chips and
+  created every topic with default lookback, sources, limits and run day. Now the review step
+  has removable keyword chips (×), an input that adds a keyword on Enter or "Add"
+  (case-insensitive duplicates ignored), and a collapsible "Advanced settings" section with
+  lookback, run day, sources and the four limits. `POST /api/topics` validates the body as a
+  whole `TopicSettings`, exactly like F28's `PUT`, and answers a bad value with the same readable
+  400 line. The shelf carries `defaults` (a `TopicSettings` dump without id/name) so the page
+  never keeps its own copy of the defaults.
+- **Files affected:** `src/research_agent/desk/server.py` (`TopicCreateRequest` removed;
+  `DeskBackend.create_and_run(topic: TopicSettings)`), `src/research_agent/desk/shelf.py`,
+  `web/js/desk.js` (`settingsFields()` shared by the edit and new-topic forms;
+  `scheduleFromData()`; `keywordChips()`/`refreshChips()`/`addKeyword()`), `web/css/desk.css`,
+  `tests/unit/test_desk_server.py`, `tests/unit/test_reading_desk.py`.
+- **Decisions:** Adding or removing a chip re-renders only the chip list, so values typed under
+  Advanced settings survive; on a failed create the entered settings are kept in state and the
+  section stays open. Field ids are now generic (`topic-lookback`, `topic-day`, `limit-*`)
+  because both forms share them; only one form is ever on the page. The success message now
+  points to Runs: on a cold start the run row takes over a minute to appear (see the cloud-run
+  finding below).
+- **Verification:** Server tests: create with advanced settings stores them; invalid limits give
+  `limits: max_deep_reads cannot exceed max_downloads`. Browser (real `LocalDesk`, server and
+  page; only keyword suggestion and the pipeline thread stubbed): suggested chips shown, one
+  removed, one added via Enter with focus kept, a duplicate ignored, advanced lookback 5 /
+  Semantic Scholar off / deep reads 99 refused with the readable error while chips, lookback,
+  checkbox and the open section all survived, then created with deep reads 5 and stored exactly
+  as entered; the edit page shows the same values; no page errors. `ruff format --check`,
+  `ruff check`, `mypy` clean; `uv run pytest -q` → 548 passed, 3 deselected, coverage 91.62%.
+- **Finding from the in-progress cloud run (to fix next, separately):** `build_services`
+  constructs `DoclingParser()` eagerly, which imports Docling's torch stack before the
+  workflow's first node opens the run row. Measured in the cloud container: Run now at 20:26:38,
+  run row visible at 20:28:02 (84 s of nothing on the page). It also costs every run the Docling
+  start-up even when no PDF is parsed. Fix: construct the parser lazily on first parse.
+- **Next step:** Finish and record the cloud pipeline run (OpenRouter, free
+  `nvidia/nemotron-3.5-super-vl:free`, isolated data directory in the session scratchpad); then
+  the lazy-Docling fix as the next `FIX` item; then roadmap M2 (F30 run progress).
+
 ## 2026-10-27 — Desk topics page: edit, pause, delete, run now (complete)
 
 - **Feature/branch:** `F28-desk-topics-page`, off `main` at `677c68f`.

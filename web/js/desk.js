@@ -542,14 +542,7 @@ function viewTopics() {
     ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}`;
 }
 
-function viewTopicEdit(topicId) {
-  const topic = topics().find((item) => item.id === topicId);
-  if (!topic) {
-    return `<a class="back" href="#/topics">Topics</a>
-      <h1>Not found</h1>
-      <p class="empty">There is no topic called ${esc(topicId)}.</p>`;
-  }
-  const settings = topic.settings;
+function settingsFields(settings) {
   const sources = SOURCES.map(
     ([key, label]) =>
       `<label class="check"><input type="checkbox" name="${key}"${settings.discovery[key] ? " checked" : ""} /> ${esc(label)}</label>`,
@@ -563,6 +556,34 @@ function viewTopicEdit(topicId) {
   const days = DAYS.map(
     (day) => `<option value="${day}"${settings.scheduling.day === day ? " selected" : ""}>${day[0].toUpperCase()}${day.slice(1)}</option>`,
   ).join("");
+  return `<div class="field-row">
+      <div class="field">
+        <label for="topic-lookback">Lookback (days)</label>
+        <input type="number" id="topic-lookback" name="lookback_days" min="1" required value="${esc(settings.lookback_days)}" />
+      </div>
+      <div class="field">
+        <label for="topic-day">Run day</label>
+        <select id="topic-day" name="day">${days}</select>
+      </div>
+    </div>
+    <fieldset class="field">
+      <legend>Sources</legend>
+      <div class="checks">${sources}</div>
+    </fieldset>
+    <fieldset class="field">
+      <legend>Limits per run</legend>
+      <div class="field-row">${limits}</div>
+    </fieldset>`;
+}
+
+function viewTopicEdit(topicId) {
+  const topic = topics().find((item) => item.id === topicId);
+  if (!topic) {
+    return `<a class="back" href="#/topics">Topics</a>
+      <h1>Not found</h1>
+      <p class="empty">There is no topic called ${esc(topicId)}.</p>`;
+  }
+  const settings = topic.settings;
   const status = state.topicsStatus || {};
   return `<a class="back" href="#/topics">Topics</a>
     <h1>${esc(topic.name)}</h1>
@@ -578,24 +599,7 @@ function viewTopicEdit(topicId) {
           <label for="edit-keywords">Keywords <span class="quiet">(one per line)</span></label>
           <textarea id="edit-keywords" name="keywords" rows="4">${esc(settings.keywords.join("\n"))}</textarea>
         </div>
-        <div class="field-row">
-          <div class="field">
-            <label for="edit-lookback">Lookback (days)</label>
-            <input type="number" id="edit-lookback" name="lookback_days" min="1" required value="${esc(settings.lookback_days)}" />
-          </div>
-          <div class="field">
-            <label for="edit-day">Run day</label>
-            <select id="edit-day" name="day">${days}</select>
-          </div>
-        </div>
-        <fieldset class="field">
-          <legend>Sources</legend>
-          <div class="checks">${sources}</div>
-        </fieldset>
-        <fieldset class="field">
-          <legend>Limits per run</legend>
-          <div class="field-row">${limits}</div>
-        </fieldset>
+        ${settingsFields(settings)}
         <div class="form-actions">
           <button class="primary" type="submit"${state.topicsPending ? " disabled" : ""}>${state.topicsPending ? "Saving…" : "Save"}</button>
           <a class="button" href="#/topics">Cancel</a>
@@ -605,25 +609,62 @@ function viewTopicEdit(topicId) {
     </div>`;
 }
 
+function keywordChips(keywords) {
+  if (!keywords.length) {
+    return `<li class="keyword-chip" data-empty="true">No keywords yet; add some, or the topic name alone is searched.</li>`;
+  }
+  return keywords
+    .map(
+      (keyword, index) =>
+        `<li class="keyword-chip">${esc(keyword)}<button type="button" class="chip-remove" data-remove-keyword="${index}" aria-label="Remove ${esc(keyword)}">×</button></li>`,
+    )
+    .join("");
+}
+
+function refreshChips() {
+  const list = document.getElementById("keyword-chips");
+  if (list) list.innerHTML = keywordChips(state.newTopic.keywords);
+}
+
+function addKeyword() {
+  const input = document.getElementById("new-keyword");
+  const keyword = input ? input.value.trim() : "";
+  if (!keyword) return;
+  const known = state.newTopic.keywords.some((item) => item.toLowerCase() === keyword.toLowerCase());
+  if (!known) state.newTopic.keywords = [...state.newTopic.keywords, keyword];
+  input.value = "";
+  refreshChips();
+  input.focus();
+}
+
 function viewNewTopic() {
   const nt = state.newTopic;
   const statusLine = statusMessage(nt.status, nt.tone);
 
   if (nt.step === "review") {
-    const chips = nt.keywords.length
-      ? nt.keywords.map((keyword) => `<li class="keyword-chip">${esc(keyword)}</li>`).join("")
-      : `<li class="keyword-chip" data-empty="true">No keywords suggested; the topic will start with none.</li>`;
+    const settings = nt.settings || (window.DESK && window.DESK.defaults);
     return `<p class="kicker">New topic</p>
-      <h1>New topic</h1>
+      <h1>${esc(nt.name)}</h1>
+      <p class="quiet">Topic id: ${esc(nt.id)}</p>
       <div class="panel">
-        <div class="keyword-review">
-          <h2>Suggested keywords</h2>
-          <ul class="keyword-chips">${chips}</ul>
+        <form id="new-topic-review" class="topic-form">
+          <div class="field">
+            <label for="new-keyword">Keywords</label>
+            <ul class="keyword-chips" id="keyword-chips">${keywordChips(nt.keywords)}</ul>
+            <div class="keyword-add">
+              <input type="text" id="new-keyword" autocomplete="off" placeholder="Add a keyword and press Enter" />
+              <button class="button" type="button" id="add-keyword-button">Add</button>
+            </div>
+          </div>
+          <details class="advanced"${nt.settings ? " open" : ""}>
+            <summary>Advanced settings</summary>
+            <div class="topic-form">${settingsFields(settings)}</div>
+          </details>
           <div class="form-actions">
-            <button class="primary" id="confirm-topic-button" type="button"${nt.pending ? " disabled" : ""}>Create topic and start pipeline</button>
+            <button class="primary" type="submit"${nt.pending ? " disabled" : ""}>${nt.pending ? "Creating…" : "Create topic and start pipeline"}</button>
             <button class="button" id="cancel-topic-button" type="button"${nt.pending ? " disabled" : ""}>Back</button>
           </div>
-        </div>
+        </form>
         ${statusLine}
       </div>`;
   }
@@ -927,31 +968,37 @@ async function topicAction(method, path, body, success) {
   return !problem;
 }
 
-function settingsFromForm(form) {
-  const data = new FormData(form);
+function scheduleFromData(data) {
   return {
-    name: String(data.get("name") || "").trim(),
-    enabled: data.has("enabled"),
     lookback_days: Number(data.get("lookback_days")),
-    keywords: String(data.get("keywords") || "")
-      .split("\n")
-      .map((keyword) => keyword.trim())
-      .filter(Boolean),
     discovery: Object.fromEntries(SOURCES.map(([key]) => [key, data.has(key)])),
     limits: Object.fromEntries(LIMITS.map(([key]) => [key, Number(data.get(key))])),
     scheduling: { frequency: "weekly", day: String(data.get("day")) },
   };
 }
 
-async function createTopic() {
-  const nt = state.newTopic;
+function settingsFromForm(form) {
+  const data = new FormData(form);
+  return {
+    name: String(data.get("name") || "").trim(),
+    enabled: data.has("enabled"),
+    keywords: String(data.get("keywords") || "")
+      .split("\n")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean),
+    ...scheduleFromData(data),
+  };
+}
+
+async function createTopic(form) {
+  const nt = { ...state.newTopic, settings: scheduleFromData(new FormData(form)) };
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
   render();
   try {
     const response = await fetch("/api/topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: nt.id, name: nt.name, keywords: nt.keywords }),
+      body: JSON.stringify({ id: nt.id, name: nt.name, keywords: nt.keywords, ...nt.settings }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not create the topic.");
@@ -961,7 +1008,7 @@ async function createTopic() {
     state.newTopic = {
       ...nt,
       pending: false,
-      status: `Started. "${nt.name}" is running in the background; check "This week" shortly.`,
+      status: `Created "${nt.name}" and started its first run. It appears under Runs shortly.`,
       tone: "success",
     };
   } catch (error) {
@@ -1012,8 +1059,16 @@ function onClick(event) {
     );
     return;
   }
-  if (event.target.id === "confirm-topic-button") {
-    void createTopic();
+  const removeKeyword = event.target.closest("[data-remove-keyword]");
+  if (removeKeyword) {
+    const index = Number(removeKeyword.dataset.removeKeyword);
+    state.newTopic.keywords = state.newTopic.keywords.filter((_, position) => position !== index);
+    refreshChips();
+    document.getElementById("new-keyword")?.focus();
+    return;
+  }
+  if (event.target.id === "add-keyword-button") {
+    addKeyword();
     return;
   }
   if (event.target.id === "cancel-topic-button") {
@@ -1023,6 +1078,7 @@ function onClick(event) {
       name: state.newTopic.name,
       description: state.newTopic.description,
       keywords: [],
+      settings: null,
       pending: false,
       status: "",
       tone: null,
@@ -1065,6 +1121,11 @@ function onClick(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === "new-topic-review") {
+    event.preventDefault();
+    void createTopic(form);
+    return;
+  }
   if (form.id === "topic-edit-form") {
     event.preventDefault();
     const topicId = form.dataset.topic;
@@ -1155,6 +1216,12 @@ document.addEventListener("click", onClick);
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
+document.addEventListener("keydown", (event) => {
+  if (event.target.id === "new-keyword" && event.key === "Enter") {
+    event.preventDefault();
+    addKeyword();
+  }
+});
 
 async function boot() {
   await loadShelf();

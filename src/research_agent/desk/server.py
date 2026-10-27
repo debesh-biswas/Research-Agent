@@ -70,17 +70,6 @@ class TopicSuggestRequest(StrictModel):
     description: str = Field(default="", max_length=2000)
 
 
-class TopicCreateRequest(StrictModel):
-    """A confirmed new topic, with the keywords the user reviewed."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
-
-    topic_id: str = Field(min_length=1, alias="id")
-    name: str = Field(min_length=1, max_length=200)
-    keywords: list[str] = Field(default_factory=list)
-    lookback_days: int = Field(default=10, gt=0, alias="lookbackDays")
-
-
 class DeskBackend(Protocol):
     """What the HTTP handler needs from the library. Tests substitute this."""
 
@@ -90,7 +79,7 @@ class DeskBackend(Protocol):
 
     async def suggest(self, request: TopicSuggestRequest) -> list[str]: ...
 
-    def create_and_run(self, request: TopicCreateRequest) -> None: ...
+    def create_and_run(self, topic: TopicSettings) -> None: ...
 
     def delete_run(self, run_id: str) -> None: ...
 
@@ -147,20 +136,8 @@ class LocalDesk:
             router = build_router(client, self._settings)
             return await suggest_keywords(router, request.name, request.description)
 
-    def create_and_run(self, request: TopicCreateRequest) -> None:
-        """Create the topic, then run its pipeline on a background thread.
-
-        The HTTP response returns as soon as the topic is stored; the run itself can take
-        minutes (downloads, model calls), so it must not block the request thread.
-        """
-        topic = TopicSettings.model_validate(
-            {
-                "id": request.topic_id,
-                "name": request.name,
-                "lookback_days": request.lookback_days,
-                "keywords": request.keywords,
-            }
-        )
+    def create_and_run(self, topic: TopicSettings) -> None:
+        """Store the topic, then start its first run in the background."""
         connection = connect(self._database)
         try:
             apply_migrations(connection)
@@ -351,16 +328,19 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
         def _create_topic(self) -> None:
             try:
                 payload = _read_json(self)
-                request = TopicCreateRequest.model_validate(payload)
-            except (ValueError, ValidationError):
+                topic = TopicSettings.model_validate(payload)
+            except ValidationError as error:
+                self._json(400, {"error": _first_problem(error)})
+                return
+            except ValueError:
                 self._json(400, {"error": "The topic could not be read."})
                 return
             try:
-                backend.create_and_run(request)
+                backend.create_and_run(topic)
             except TopicStoreError as error:
                 self._json(409, {"error": str(error)})
                 return
-            self._json(202, {"status": "started", "topicId": request.topic_id})
+            self._json(202, {"status": "started", "topicId": topic.id})
 
         def do_DELETE(self) -> None:
             if self._foreign():

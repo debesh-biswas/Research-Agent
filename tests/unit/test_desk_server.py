@@ -15,7 +15,6 @@ from research_agent.desk.ask import DeskReply
 from research_agent.desk.server import (
     AskRequest,
     LocalDesk,
-    TopicCreateRequest,
     TopicSuggestRequest,
     _handler,
 )
@@ -34,7 +33,7 @@ class FakeDesk:
     """A desk with no database and no model."""
 
     def __init__(self) -> None:
-        self.created: list[TopicCreateRequest] = []
+        self.created: list[TopicSettings] = []
         self.deleted_runs: list[str] = []
         self.cleared_topics: list[str] = []
         self.updated: list[TopicSettings] = []
@@ -60,10 +59,10 @@ class FakeDesk:
             raise ModelProviderError("down")
         return [f"{request.name} keyword"]
 
-    def create_and_run(self, request: TopicCreateRequest) -> None:
-        if request.topic_id == "duplicate":
+    def create_and_run(self, topic: TopicSettings) -> None:
+        if topic.id == "duplicate":
             raise TopicStoreError("topic already exists")
-        self.created.append(request)
+        self.created.append(topic)
 
     def delete_run(self, run_id: str) -> None:
         self.deleted_runs.append(run_id)
@@ -170,7 +169,7 @@ def test_the_server_suggests_keywords_and_creates_a_topic(tmp_path: Path) -> Non
         with urllib.request.urlopen(create) as response:
             assert response.status == 202
             assert json.load(response) == {"status": "started", "topicId": "robotics"}
-        assert backend.created[0].topic_id == "robotics"
+        assert (backend.created[0].id, backend.created[0].keywords) == ("robotics", ["arms"])
 
         duplicate = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/topics",
@@ -179,6 +178,29 @@ def test_the_server_suggests_keywords_and_creates_a_topic(tmp_path: Path) -> Non
         )
         with pytest_http_error(duplicate) as error:
             assert error.code == 409
+
+        advanced = {
+            "id": "vision",
+            "name": "Vision",
+            "lookback_days": 7,
+            "discovery": {"openalex": True, "semantic_scholar": False, "arxiv": True},
+            "limits": {
+                "max_candidates": 100,
+                "max_classified": 50,
+                "max_downloads": 10,
+                "max_deep_reads": 5,
+            },
+            "scheduling": {"frequency": "weekly", "day": "monday"},
+        }
+        assert _call(f"http://127.0.0.1:{port}", "POST", "/api/topics", advanced)[0] == 202
+        created = backend.created[-1]
+        assert (created.lookback_days, created.discovery.semantic_scholar) == (7, False)
+        assert (created.limits.max_downloads, created.scheduling.day) == (10, "monday")
+        invalid = {**advanced, "id": "bad", "limits": {"max_downloads": 5, "max_deep_reads": 9}}
+        assert _call(f"http://127.0.0.1:{port}", "POST", "/api/topics", invalid) == (
+            400,
+            {"error": "limits: max_deep_reads cannot exceed max_downloads"},
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -291,7 +313,7 @@ def test_the_server_refuses_foreign_hosts_and_origins(tmp_path: Path) -> None:
         own_page.add_unredirected_header("Host", f"localhost:{port}")
         with urllib.request.urlopen(own_page) as response:
             assert response.status == 202
-        assert [request.topic_id for request in backend.created] == ["robotics"]
+        assert [topic.id for topic in backend.created] == ["robotics"]
     finally:
         server.shutdown()
         server.server_close()
