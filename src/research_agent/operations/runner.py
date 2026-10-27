@@ -8,6 +8,7 @@ import asyncio
 import logging
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 from pydantic import Field
 
@@ -15,7 +16,7 @@ from research_agent.config import ApplicationSettings, StrictModel, TopicSetting
 from research_agent.domain.runs import RunSummary
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.wiring import ClientFactory, default_client, services_for
-from research_agent.storage.runs import SqliteRunRepository
+from research_agent.storage.runs import RunRepository, SqliteRunRepository
 from research_agent.workflow.graph import run_workflow
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ async def execute_run(
     start, end = reporting_period(topic, today)
     try:
         with run_lock(application.data_directory, topic.id):
+            _close_open_runs(SqliteRunRepository(connection), topic.id)
             async with services_for(connection, application, topic, client_factory, parser) as (
                 services
             ):
@@ -81,6 +83,36 @@ async def execute_run(
         papers_analyzed=len(state.analyzed_ids),
         errors=len(state.errors),
     )
+
+
+def close_orphaned_runs(connection: sqlite3.Connection, data_directory: Path) -> list[str]:
+    """Fail runs left running by a process that died. A topic whose run is live is skipped."""
+    runs = SqliteRunRepository(connection)
+    closed: list[str] = []
+    for topic_id in sorted({record.topic_id for record in runs.open_runs()}):
+        try:
+            with run_lock(data_directory, topic_id):
+                closed += _close_open_runs(runs, topic_id)
+        except RunLocked:
+            continue
+    return closed
+
+
+def _close_open_runs(runs: RunRepository, topic_id: str) -> list[str]:
+    """Fail every open run of a topic. Call only while holding its lock: then none is live."""
+    closed = [record for record in runs.open_runs() if record.topic_id == topic_id]
+    for record in closed:
+        runs.complete(record.id, record.summary or RunSummary(), status="failed")
+        _LOGGER.warning(
+            "closed a run its process left open",
+            extra={
+                "topic_id": topic_id,
+                "run_id": record.id,
+                "node_name": "run",
+                "status": "orphaned",
+            },
+        )
+    return [record.id for record in closed]
 
 
 def _interrupted(
