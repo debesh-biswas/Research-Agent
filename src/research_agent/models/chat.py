@@ -36,6 +36,10 @@ class ChatCompletionsProvider:
         return self._settings.model
 
     @property
+    def base_url(self) -> str:
+        return self._settings.base_url
+
+    @property
     def configured(self) -> bool:
         """Whether this provider can be used; an endpoint needing a key is unusable without one."""
         return True

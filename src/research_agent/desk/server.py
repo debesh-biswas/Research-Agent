@@ -22,6 +22,7 @@ from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
 from research_agent.desk.shelf import build_shelf
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
+from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
@@ -39,6 +40,7 @@ from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
+_HEALTH_TIMEOUT_SECONDS = 30.0
 _TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -90,6 +92,8 @@ class DeskBackend(Protocol):
     def delete_topic(self, topic_id: str) -> None: ...
 
     def run_topic(self, topic_id: str) -> None: ...
+
+    async def health(self) -> list[HealthCheck]: ...
 
 
 class LocalDesk:
@@ -181,6 +185,10 @@ class LocalDesk:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
 
+    async def health(self) -> list[HealthCheck]:
+        async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_SECONDS) as client:
+            return await run_checks(self._settings, client)
+
     def _start_run(self, topic: TopicSettings) -> None:
         """Run the pipeline on a daemon thread; a run takes minutes and must not block a request."""
 
@@ -236,6 +244,10 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             path = urlparse(self.path).path
             if path == "/api/shelf":
                 self._json(200, backend.shelf())
+                return
+            if path == "/api/health":
+                checks = asyncio.run(backend.health())
+                self._json(200, {"checks": [check.model_dump() for check in checks]})
                 return
             self._file(path)
 
