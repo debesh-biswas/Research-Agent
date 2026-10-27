@@ -2,6 +2,36 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Commit the missing `reports` package and track AGENTS.md/CLAUDE.md (complete)
+
+- **Feature/branch:** `FIX10-commit-missing-reports-package`, off `main`.
+- **Status:** Complete on branch, ready to merge.
+- **Summary:** A fresh clone was broken. `.gitignore`'s unanchored `reports/` line (added for the
+  runtime `reports/` output directory) also matched `src/research_agent/reports/`, so that package
+  was never tracked despite `cli.py`, `desk/shelf.py`, `operations/wiring.py`,
+  `workflow/services.py`, and three test files importing from it — any fresh clone (including a
+  cloud agent's) would fail with `ImportError` as soon as the CLI loaded. Separately, an earlier
+  commit (`6b278c3`, "keep agent instructions local and untracked") had deliberately gitignored
+  `AGENTS.md`/`CLAUDE.md`, which meant a cloud agent cloning this repo would have neither the
+  governance doc nor the missing package — it could not have known the rules it was supposed to
+  follow. The user asked to commit both so a cloud agent clone is self-contained.
+- **Files affected:** `.gitignore` (anchored the runtime output dir as `/reports/` so it no longer
+  shadows the package path; removed the `AGENTS.md`/`CLAUDE.md` ignore lines); added
+  `src/research_agent/reports/{__init__,builder,naming,prompts,service}.py` (pre-existing,
+  previously untracked code — `service.py` needed a `ruff format` pass before it would pass
+  verification, no logic changed); added `AGENTS.md` and `CLAUDE.md` (the latter is a symlink to
+  the former) as tracked files.
+- **Decisions:** Reversed the earlier "keep agent instructions local" decision per explicit user
+  instruction, since an untracked governance doc defeats the point of a cloud agent reading it.
+  Kept the runtime `reports/` output directory ignored (now anchored to the repo root with a
+  leading slash) rather than removing it from `.gitignore` entirely, since generated weekly reports
+  still should not be committed.
+- **Verification:** `ruff format --check` (failed once on `reports/service.py`'s pre-existing
+  formatting drift, fixed with `ruff format`), `ruff check` clean, `mypy` clean on the new package,
+  full suite `uv run pytest -q --no-cov` → 528 passed, 3 deselected.
+- **Known issues / next step:** None outstanding for this fix. Merge to `main` and push so the
+  cloud agent's next clone has both the package and the governance doc.
+
 ## 2026-09-30 — Capability-scoped thinking mode for deep analysis/synthesis (complete, on branch)
 
 - **Feature/branch:** `F26-capability-scoped-thinking`, off `main` (which already carries FIX9).
