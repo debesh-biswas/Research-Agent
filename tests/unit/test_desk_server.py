@@ -7,15 +7,18 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.desk.ask import DeskReply
 from research_agent.desk.server import (
     AskRequest,
+    LocalDesk,
     TopicCreateRequest,
     TopicSuggestRequest,
     _handler,
 )
 from research_agent.models.base import ModelProviderError
-from research_agent.storage.topics import TopicStoreError
+from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.topics import SqliteTopicRepository, TopicStoreError
 
 
 class FakeDesk:
@@ -207,3 +210,18 @@ class pytest_http_error:
 
     def __exit__(self, *args: object) -> None:
         return None
+
+
+def test_local_desk_shelf_shows_a_topic_added_after_startup(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+    assert desk.shelf()["topics"] == []
+
+    SqliteTopicRepository(connection).add(TopicSettings(id="new_topic", name="New topic"))
+    connection.close()
+
+    topics = desk.shelf()["topics"]
+    assert isinstance(topics, list)
+    assert [topic["id"] for topic in topics] == ["new_topic"]

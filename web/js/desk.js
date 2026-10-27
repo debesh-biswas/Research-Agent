@@ -794,7 +794,7 @@ async function suggestTopicKeywords(name, description) {
   render();
 }
 
-async function refreshShelf() {
+async function loadShelf() {
   try {
     const response = await fetch("/api/shelf");
     if (response.ok) {
@@ -807,6 +807,10 @@ async function refreshShelf() {
   } catch {
     // Keep whatever was loaded before; the footer already reflects reachability.
   }
+}
+
+async function refreshShelf() {
+  await loadShelf();
   state.runId = null;
   location.hash = "#/runs";
   render();
@@ -842,6 +846,9 @@ async function createTopic() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not create the topic.");
+    await loadShelf();
+    state.topicId = nt.id;
+    state.runId = null;
     state.newTopic = {
       ...nt,
       pending: false,
@@ -992,18 +999,7 @@ document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
 
 async function boot() {
-  try {
-    const response = await fetch("/api/shelf");
-    if (response.ok) {
-      const shelf = await response.json();
-      if (shelf.live && Array.isArray(shelf.topics)) {
-        window.DESK = shelf;
-        state.live = true;
-      }
-    }
-  } catch {
-    state.live = false;
-  }
+  await loadShelf();
   if (!location.hash) location.hash = "#/week";
   else render();
 }

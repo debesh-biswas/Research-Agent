@@ -94,22 +94,17 @@ class DeskBackend(Protocol):
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
 
-    def __init__(
-        self,
-        database: Path,
-        settings: ApplicationSettings,
-        topics: list[TopicSettings],
-    ) -> None:
+    def __init__(self, database: Path, settings: ApplicationSettings) -> None:
         self._database = database
         self._settings = settings
-        self._topics = topics
         self._store = LocalArtifactStore(settings.data_directory)
 
     def shelf(self) -> dict[str, object]:
         connection = connect(self._database)
         try:
+            # Read per request: topics created from the desk must appear without a restart.
             return build_shelf(
-                self._topics,
+                SqliteTopicRepository(connection).list(),
                 SqliteRunRepository(connection),
                 SqliteResultRepository(connection),
                 SqlitePaperRepository(connection),

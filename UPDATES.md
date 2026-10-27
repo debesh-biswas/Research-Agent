@@ -2,6 +2,38 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Desk shows topics created after startup (complete)
+
+- **Feature/branch:** `FIX12-desk-reloads-topics`, off `main` at `27c2053`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** A topic created from the desk's New topic flow never appeared in the desk until the
+  server was restarted. Two causes, both fixed:
+  1. `LocalDesk` took the topic list once at startup (`cli.py` passed `stored`) and built every
+     shelf from that snapshot, while `create_and_run` wrote the new topic only to SQLite.
+     `LocalDesk.shelf()` now reads `SqliteTopicRepository.list()` on each call; the constructor
+     lost its `topics` argument.
+  2. `desk.js` never refetched the shelf after `POST /api/topics` succeeded, so even a fixed server
+     left the topic switcher stale until a page reload. `createTopic()` now reloads the shelf and
+     selects the new topic. The three copies of the fetch-the-shelf code (boot, refresh, create)
+     became one `loadShelf()`.
+- **Files affected:** `src/research_agent/desk/server.py`, `src/research_agent/cli.py` (the desk
+  command still migrates and seeds topics before serving, but no longer lists them),
+  `web/js/desk.js`, `tests/unit/test_desk_server.py` (regression test against a real temporary
+  SQLite database).
+- **Decisions:** One extra `SELECT` per shelf request is negligible for a single-user desk and
+  removes the stale-snapshot class of bug entirely, rather than appending to a cached list.
+- **Verification:** New test `test_local_desk_shelf_shows_a_topic_added_after_startup` fails
+  without the server fix and passes with it. Browser check with Playwright against the real
+  `LocalDesk`, server and `desk.js` (only keyword suggestion and the pipeline thread stubbed, as
+  no model is available in the cloud container): without the JS fix the topic switcher stayed
+  `[existing_topic]`; with it, `[existing_topic, quantum_error_correction]` with the new topic
+  selected and no page errors. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 529 passed, 3 deselected, coverage 91.46%.
+- **Known issues:** The running desk process on the development Mac must be restarted to load
+  the server change. The new topic's This week page still reads "No run is stored" until the
+  background run creates its row; live run progress is roadmap item F30/F31.
+- **Next step:** `FIX13` — mark runs left `running` by a dead process as failed at startup.
+
 ## 2026-10-27 — Vendor the ponytail coding skill (complete)
 
 - **Feature/branch:** `CHORE3-vendor-ponytail-skill`, off `main` at `77b0fb5`.

@@ -1155,9 +1155,7 @@ def serve_desk(
         raise typer.Exit(code=1)
     try:
         application = ApplicationSettings(**_load_yaml_mapping(settings))
-        connection = _open_connection(settings, topics)
-        stored = SqliteTopicRepository(connection).list()
-        connection.close()
+        _open_connection(settings, topics).close()  # migrate and seed topics before serving
         if port < 1 or port > 65535:
             raise ConfigurationError(f"port must be between 1 and 65535, got {port}")
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1166,7 +1164,7 @@ def serve_desk(
     typer.echo(f"Desk at http://127.0.0.1:{port}")
     try:
         serve(
-            LocalDesk(application.data_directory / "research_agent.db", application, stored),
+            LocalDesk(application.data_directory / "research_agent.db", application),
             web_root,
             port,
         )
