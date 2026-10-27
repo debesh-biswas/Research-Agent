@@ -50,6 +50,10 @@ class RunRecord(StrictModel):
     shadow_classifier: str | None = None
     duration_seconds: float | None = Field(default=None, ge=0)
     summary: RunSummary | None = None
+    stage: str | None = None
+    """The graph node the run is in, or ended in; kept after completion to show where it failed."""
+
+    stage_started_at: datetime | None = None
 
 
 class ErrorRecord(StrictModel):

@@ -1,8 +1,10 @@
 """The routing predicates, which are pure functions of state."""
 
+import asyncio
 from datetime import date
 
 from research_agent.workflow.graph import (
+    _tracked,
     after_acquisition,
     after_analysis,
     after_discovery,
@@ -54,3 +56,29 @@ def test_without_an_analysis_synthesis_is_skipped() -> None:
 def test_without_a_synthesis_ideation_is_skipped() -> None:
     assert after_synthesis(state()) == "report"
     assert after_synthesis(state(synthesized=True)) == "ideate"
+
+
+def test_a_tracked_node_records_its_stage_once_the_run_exists() -> None:
+    marked: list[tuple[str, str]] = []
+
+    class Runs:
+        def mark_stage(self, run_id: str, stage: str) -> None:
+            marked.append((run_id, stage))
+
+    class Services:
+        runs = Runs()
+
+    async def node(state: ResearchState) -> dict[str, object]:
+        return {"seen": state.run_id}
+
+    tracked = _tracked("classify", node, Services())  # type: ignore[arg-type]
+    opening = ResearchState(
+        topic_id="t", period_start=date(2026, 9, 1), period_end=date(2026, 9, 8)
+    )
+
+    async def call(current: ResearchState) -> object:
+        return await tracked(current)
+
+    assert asyncio.run(call(opening)) == {"seen": None}
+    assert asyncio.run(call(opening.model_copy(update={"run_id": "r1"}))) == {"seen": "r1"}
+    assert marked == [("r1", "classify")]

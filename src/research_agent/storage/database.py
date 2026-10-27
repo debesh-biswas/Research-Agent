@@ -180,6 +180,8 @@ MIGRATIONS: tuple[str, ...] = (
         UNIQUE (run_id, paper_id)
     )
     """,
+    "ALTER TABLE runs ADD COLUMN stage TEXT",
+    "ALTER TABLE runs ADD COLUMN stage_started_at TEXT",
 )
 
 
