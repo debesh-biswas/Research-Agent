@@ -63,6 +63,7 @@ uv run research-agent run-all                # every enabled topic
 uv run research-agent report latest <topic_id>
 uv run research-agent schedule generate --topic <topic_id>
 uv run research-agent model check
+uv run research-agent doctor                 # check folder, models and sources, with fixes
 ```
 
 Each pipeline stage also has its own command (`discover`, `classify`, `acquire`, `parse`,

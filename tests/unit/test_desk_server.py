@@ -19,6 +19,7 @@ from research_agent.desk.server import (
     _handler,
 )
 from research_agent.models.base import ModelProviderError
+from research_agent.operations.health import HealthCheck
 from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.runs import SqliteRunRepository
@@ -85,6 +86,9 @@ class FakeDesk:
         if topic_id == "paused":
             raise TopicStoreError("Paused is disabled; enable it to run it.")
         self.started.append(topic_id)
+
+    async def health(self) -> list[HealthCheck]:
+        return [HealthCheck(name="Local model", status="fail", detail="down", fix="Start it.")]
 
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
@@ -356,6 +360,14 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
         assert _call(base, "DELETE", "/api/topics/busy")[0] == 409
         assert backend.deleted_topics == ["robotics"]
 
+        assert _call(base, "GET", "/api/health") == (
+            200,
+            {
+                "checks": [
+                    {"name": "Local model", "status": "fail", "detail": "down", "fix": "Start it."}
+                ]
+            },
+        )
         assert _call(base, "POST", "/api/topics/robotics/run", {}) == (202, {"status": "started"})
         status, payload = _call(base, "POST", "/api/topics/paused/run", {})
         assert (status, payload) == (409, {"error": "Paused is disabled; enable it to run it."})

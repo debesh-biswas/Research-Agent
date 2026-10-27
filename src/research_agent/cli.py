@@ -44,6 +44,7 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.observability.logging import configure_logging
+from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import RunOutcome, close_orphaned_runs, execute_run
 from research_agent.operations.scheduling import SchedulerBackend, render_schedule
@@ -520,6 +521,33 @@ async def _model_check(
         return await router.generate(
             cast(Capability, capability), [ModelMessage(role="user", content=prompt)]
         )
+
+
+HEALTH_TIMEOUT_SECONDS = 30.0
+"""Long enough for a warm model to answer a one-word prompt; a check must never hang."""
+
+
+@app.command("doctor")
+def doctor(settings: SettingsOption = Path("config/settings.yaml")) -> None:
+    """Check the library folder, models and sources a run needs, with a fix for each problem."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+    except (ConfigurationError, ValidationError) as error:
+        typer.echo(f"fail\tSettings: {error}", err=True)
+        raise typer.Exit(code=1) from error
+
+    checks = asyncio.run(_doctor(application))
+    for check in checks:
+        typer.echo(f"{check.status}\t{check.name}: {check.detail}")
+        if check.fix:
+            typer.echo(f"\t  {check.fix}")
+    if any(check.status == "fail" for check in checks):
+        raise typer.Exit(code=1)
+
+
+async def _doctor(application: ApplicationSettings) -> list[HealthCheck]:
+    async with _http_client(HEALTH_TIMEOUT_SECONDS) as client:
+        return await run_checks(application, client)
 
 
 queries_app = typer.Typer(help="Plan the searches a topic should run.")

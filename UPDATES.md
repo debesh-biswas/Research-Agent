@@ -2,6 +2,39 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Health check: `research-agent doctor` and `/api/health` (complete)
+
+- **Feature/branch:** `F32-health-check`, off `main` at `0fe37ec`.
+- **Status:** Complete; merged into `main`. Roadmap M3, first item.
+- **Summary:** A user learned that the local model server was down, NIM was unconfigured or a
+  source was rate-limited only from a failed or degraded run. `operations/health.py::run_checks`
+  now checks, in the order a run meets them: the library folder (writable via a probe file that
+  is removed; warns below 2 GB free), the local model (one tiny prompt straight to the provider),
+  NVIDIA NIM (warn when no key — optional by design; fail when a configured key does not answer),
+  and each of OpenAlex, Semantic Scholar and arXiv (one search for one result, retries off). Each
+  result is `ok`/`warn`/`fail` with a detail and a concrete fix (start the server at `<url>`, set
+  `RESEARCH_AGENT_SOURCES__SEMANTIC_SCHOLAR_API_KEY`, set `..._OPENALEX_MAILTO`, …). Exposed as
+  `research-agent doctor` (exit 1 on any fail) and `GET /api/health` (the F33 setup page will
+  render it).
+- **Files affected:** `src/research_agent/operations/health.py` (new),
+  `src/research_agent/models/chat.py` (`base_url` property), `src/research_agent/cli.py`
+  (`doctor`), `src/research_agent/desk/server.py` (`DeskBackend.health`, `/api/health`),
+  `tests/unit/test_operations_health.py` (new), `tests/unit/test_desk_server.py`, `README.md`.
+- **Decisions:** A source counts as `warn` when rate-limited (runs continue without it) and `fail`
+  only when unreachable; any unexpected exception from an adapter becomes a finding, never a
+  crash. Checks share one client with a 30 s timeout so a dead endpoint cannot hang them. Docling
+  is not checked: its models download on the first parse (FIX18) and there is no cheap probe.
+- **Verification:** Tests with a mocked network: a healthy setup reports ok/warn exactly as
+  expected and removes its probe file; an unwritable folder and a refused model connection both
+  fail with a fix instead of raising; the desk route returns the checks as JSON. Live in the cloud
+  container: with default settings, `doctor` reported `fail Local model … Start the model server
+  at http://localhost:8080/v1`, NIM `warn`, OpenAlex `warn` (429), Semantic Scholar and arXiv `ok`,
+  exit 1; with the cloud-run settings the OpenRouter model answered in 873 ms, exit 0. `ruff format
+  --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 554 passed, 3 deselected, coverage
+  91.43%.
+- **Next step:** `F33` — a first-run setup page in the desk that shows these checks with their
+  fixes and leads to creating the first topic.
+
 ## 2026-10-27 — Live run progress in the desk (complete)
 
 - **Feature/branch:** `F31-live-run-progress`, off `main` at `1a7b96d`.
