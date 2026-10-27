@@ -2,6 +2,23 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Vendor the ponytail coding skill (complete)
+
+- **Feature/branch:** `CHORE3-vendor-ponytail-skill`, off `main` at `77b0fb5`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** The user asked for all coding to follow the open-source "ponytail" skill (smallest
+  complete change, no speculative abstraction, review before merge), committed to the repo so any
+  agent session on a fresh clone has it.
+- **Files added:** `.claude/skills/ponytail/SKILL.md`, `.claude/skills/ponytail/LICENSE` (MIT,
+  required notice), `.claude/skills/ponytail-review/SKILL.md`. Copied unmodified from
+  `github.com/DietrichGebert/ponytail` at commit `09c434ab73ca43761c5d8b0c5d341926c2fba710`.
+- **Decisions:** Only the core skill and its review checklist were vendored; the audit, debt,
+  gain and help sub-skills, hooks and installers were left out as unused. The skill now names
+  shortcut comments `shortcut: <limit>, <when to upgrade>`; this repo keeps its existing
+  `ponytail:` form, which the review skill accepts as equivalent.
+- **Verification:** Markdown only; no code or tests affected.
+- **Next step:** `FIX12` — the desk reloads topics from SQLite per shelf build.
+
 ## 2026-10-27 — Drop the stale `classifiers` entry from the import-boundary test (complete)
 
 - **Feature/branch:** `FIX11-stale-classifiers-import-test`, off `main` at `b4f6e5c`.
