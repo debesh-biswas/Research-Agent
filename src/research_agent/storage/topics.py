@@ -46,6 +46,10 @@ class TopicRepository(Protocol):
 
     def set_enabled(self, topic_id: str, enabled: bool) -> None: ...
 
+    def update(self, topic: TopicSettings) -> None: ...
+
+    def delete(self, topic_id: str) -> None: ...
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -134,6 +138,25 @@ class SqliteTopicRepository:
                 "UPDATE topics SET enabled = ?, updated_at = ? WHERE id = ?",
                 (int(enabled), _now(), topic_id),
             )
+        if cursor.rowcount == 0:
+            raise TopicNotFoundError(f"unknown topic: {topic_id}")
+
+    def update(self, topic: TopicSettings) -> None:
+        """Replace a stored topic's settings, keeping its id and creation time."""
+        values = _to_row(topic)
+        values["updated_at"] = _now()
+        assignments = ", ".join(f"{column} = :{column}" for column in values if column != "id")
+        with self._connection:
+            cursor = self._connection.execute(
+                f"UPDATE topics SET {assignments} WHERE id = :id", values
+            )
+        if cursor.rowcount == 0:
+            raise TopicNotFoundError(f"unknown topic: {topic.id}")
+
+    def delete(self, topic_id: str) -> None:
+        """Delete a topic; foreign keys cascade to its runs and everything recorded under them."""
+        with self._connection:
+            cursor = self._connection.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
         if cursor.rowcount == 0:
             raise TopicNotFoundError(f"unknown topic: {topic_id}")
 

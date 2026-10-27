@@ -5,6 +5,9 @@ import yaml
 from typer.testing import CliRunner, Result
 
 from research_agent.cli import app
+from research_agent.operations.locks import lock_path
+from research_agent.storage.database import connect
+from research_agent.storage.topics import SqliteTopicRepository
 
 runner = CliRunner()
 
@@ -104,3 +107,72 @@ def test_enable_unknown_topic_fails(settings_path: Path, topics_path: Path) -> N
 
     assert result.exit_code == 1
     assert "unknown topic: missing_topic" in result.stderr
+
+
+def test_edit_changes_only_the_given_options(
+    settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    result = _invoke(
+        settings_path,
+        topics_path,
+        "edit",
+        "seeded_topic",
+        "--lookback-days",
+        "7",
+        "--keyword",
+        "slam",
+        "--no-semantic-scholar",
+    )
+
+    assert result.exit_code == 0, result.stderr
+    connection = connect(tmp_path / "data" / "research_agent.db")
+    stored = SqliteTopicRepository(connection).get("seeded_topic")
+    connection.close()
+    assert stored is not None
+    assert (stored.name, stored.lookback_days, stored.keywords) == ("Seeded Topic", 7, ["slam"])
+    assert (stored.discovery.semantic_scholar, stored.discovery.arxiv) == (False, True)
+
+
+def test_edit_rejects_invalid_limits_and_unknown_topics(
+    settings_path: Path, topics_path: Path
+) -> None:
+    invalid = _invoke(settings_path, topics_path, "edit", "seeded_topic", "--max-deep-reads", "99")
+    missing = _invoke(settings_path, topics_path, "edit", "missing_topic", "--name", "X")
+
+    assert invalid.exit_code == 1 and "max_deep_reads cannot exceed" in invalid.stderr
+    assert missing.exit_code == 1 and "unknown topic: missing_topic" in missing.stderr
+
+
+def test_a_deleted_last_topic_stays_deleted(settings_path: Path, topics_path: Path) -> None:
+    deleted = _invoke(settings_path, topics_path, "delete", "seeded_topic", "--yes")
+
+    assert deleted.exit_code == 0, deleted.stderr
+    assert "No topics stored" in _invoke(settings_path, topics_path, "list").stdout
+
+
+def test_delete_asks_first_and_refuses_during_a_run(
+    settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    declined = runner.invoke(
+        app,
+        [
+            "topic",
+            "delete",
+            "seeded_topic",
+            "--settings",
+            str(settings_path),
+            "--topics",
+            str(topics_path),
+        ],
+        input="n\n",
+    )
+    assert declined.exit_code == 1
+    assert "seeded_topic" in _invoke(settings_path, topics_path, "list").stdout
+
+    lock = lock_path(tmp_path / "data", "seeded_topic")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("not a pid", encoding="utf-8")
+    locked = _invoke(settings_path, topics_path, "delete", "seeded_topic", "--yes")
+
+    assert locked.exit_code == 1 and "in progress" in locked.stderr
+    assert "seeded_topic" in _invoke(settings_path, topics_path, "list").stdout

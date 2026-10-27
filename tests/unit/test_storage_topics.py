@@ -5,6 +5,7 @@ import yaml
 
 from research_agent.config import TopicSettings
 from research_agent.storage.database import MIGRATIONS, apply_migrations, connect
+from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.topics import (
     DuplicateTopicError,
     SqliteTopicRepository,
@@ -129,3 +130,30 @@ def test_a_topic_without_keywords_reads_back_empty(tmp_path: Path) -> None:
 
     assert stored is not None
     assert stored.keywords == []
+
+
+def test_update_replaces_settings_and_rejects_unknown_topic(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "agent.db")
+    repository.add(_topic())
+
+    repository.update(_topic(name="Renamed", lookback_days=7, keywords=["slam"]))
+
+    stored = repository.get("spatial_intelligence")
+    assert stored is not None
+    assert (stored.name, stored.lookback_days, stored.keywords) == ("Renamed", 7, ["slam"])
+    with pytest.raises(TopicNotFoundError):
+        repository.update(_topic("missing"))
+
+
+def test_delete_cascades_to_runs_and_rejects_unknown_topic(tmp_path: Path) -> None:
+    repository = _repository(tmp_path / "agent.db")
+    repository.add(_topic())
+    connection = repository._connection
+    SqliteRunRepository(connection).start("spatial_intelligence")
+
+    repository.delete("spatial_intelligence")
+
+    assert repository.list() == []
+    assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    with pytest.raises(TopicNotFoundError):
+        repository.delete("spatial_intelligence")

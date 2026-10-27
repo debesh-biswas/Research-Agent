@@ -37,8 +37,9 @@ order, from highest to lowest precedence:
 4. model defaults
 
 Nested environment fields use a double underscore, such as
-`RESEARCH_AGENT_CONCURRENCY__DISCOVERY=2`. Topic definitions are loaded from
-`config/topics.yaml` and validated independently.
+`RESEARCH_AGENT_CONCURRENCY__DISCOVERY=2`. `config/topics.yaml` seeds a new library once, on
+the first command; after that, topics live in the library and change through the `topic`
+commands or the desk.
 
 ## Commands
 
@@ -55,6 +56,8 @@ Everyday commands:
 ```bash
 uv run research-agent topic new --id quantum_error_correction --name "Quantum Error Correction"
 uv run research-agent topic list
+uv run research-agent topic edit <topic_id> --lookback-days 7 --keyword "surface codes"
+uv run research-agent topic delete <topic_id>    # asks first; deletes its runs too
 uv run research-agent run <topic_id>         # one topic's full weekly run
 uv run research-agent run-all                # every enabled topic
 uv run research-agent report latest <topic_id>
