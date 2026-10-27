@@ -2,6 +2,33 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Load Docling on the first parse, not when a run is wired (complete)
+
+- **Feature/branch:** `FIX18-load-docling-on-first-parse`, off `main` at `9dc7766`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** Found in the cloud run (see F29's entry): `DoclingParser()` built Docling's
+  `DocumentConverter` in its constructor, and `build_services` constructs the parser before the
+  workflow's first node opens the run row. Run now therefore showed nothing for 84 s in the cloud
+  container while torch loaded, and every run paid that start-up even when no PDF was parsed. The
+  converter is now built by `DoclingParser._ready_converter()` on the first `parse()` and reused.
+- **Files affected:** `src/research_agent/documents/docling_parser.py`,
+  `tests/unit/test_documents_docling_lazy.py` (new).
+- **Decisions:** No lock: `ParsingService.parse_many` parses sequentially. A Docling load failure
+  now happens inside `parse()`, where `ParsingService` already turns it into a recorded failure and
+  the paper continues abstract-only — previously the same failure aborted the run before it
+  opened. Ponytail note: after such a failure each later PDF retries the load; acceptable for a
+  failure that should not happen, revisit only if it is seen.
+- **Verification:** New unit test with a fake `docling.document_converter` (no construction on
+  `DoclingParser()`, exactly one on first use) fails without the fix. With network access in the
+  cloud container, the three `-m slow` Docling integration tests ran for the first time this
+  session and passed against the real Docling stack (model download included): 3 passed in 77 s.
+  `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 549 passed,
+  3 deselected, coverage 91.81%.
+- **Known issues:** Run now still takes as long as the earlier stages (query planning, discovery)
+  before the page shows progress; that is roadmap F30/F31.
+- **Next step:** Record the cloud run's outcome when it finishes; then roadmap M2 — `F30` persist
+  per-stage progress and expose run status.
+
 ## 2026-10-27 — New topic: editable keywords and advanced settings (complete)
 
 - **Feature/branch:** `F29-new-topic-chips-and-settings`, off `main` at `b88e737`.
