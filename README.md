@@ -15,7 +15,7 @@ scheduling, structured logs, and AWS portability seams.
 
 ## Requirements
 
-- Python 3.11 or newer
+- Python 3.12 or newer
 - [`uv`](https://docs.astral.sh/uv/)
 - No Docker, paid service, API key, or local model is required for development
 
@@ -50,8 +50,20 @@ uv run research-agent config validate \
   --topics config/topics.yaml
 ```
 
-The broader CLI described by the TRD will be exposed feature by feature, when each command has a
-real implementation.
+Everyday commands:
+
+```bash
+uv run research-agent topic new --id quantum_error_correction --name "Quantum Error Correction"
+uv run research-agent topic list
+uv run research-agent run <topic_id>         # one topic's full weekly run
+uv run research-agent run-all                # every enabled topic
+uv run research-agent report latest <topic_id>
+uv run research-agent schedule generate --topic <topic_id>
+uv run research-agent model check
+```
+
+Each pipeline stage also has its own command (`discover`, `classify`, `acquire`, `parse`,
+`analyze`, `synthesize`, `ideate`, `report generate`); `uv run research-agent --help` lists them.
 
 ## Reading desk
 
@@ -64,7 +76,7 @@ on the shelf.
 uv run research-agent desk
 ```
 
-Open `http://127.0.0.1:8765`. Opening `web/index.html` by itself shows the sample week instead.
+Open `http://127.0.0.1:8765`. The page needs the desk server; opened as a file it only says so.
 
 ## Quality checks
 

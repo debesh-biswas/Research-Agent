@@ -2,6 +2,30 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Remove stale text and dead code (complete)
+
+- **Feature/branch:** `FIX17-remove-stale-text-and-dead-code`, off `main` at `de09093`.
+- **Status:** Complete; merged into `main`. This closes roadmap module M0 (stabilise).
+- **Summary:**
+  - `web/js/desk.js`: deleted `replyTo()` (about 50 lines of keyword-matched fake answers) and
+    the `!state.live` branch in `ask()` that used it, plus the "can't reach" variant of the Ask
+    page note. All were unreachable: a run only exists after `loadShelf()` sets
+    `state.live = true`, and nothing sets it back. The header comment no longer claims sample
+    data and "does not call NIM".
+  - `README.md`: Python 3.12 (matches `pyproject.toml`; Docling's stubs need it), the real
+    everyday commands instead of "the broader CLI will be exposed feature by feature", and no
+    claim that opening `index.html` shows a sample week (FIX9 removed it).
+- **Files affected:** `web/js/desk.js`, `README.md`.
+- **Verification:** `node --check web/js/desk.js`; every README command checked against its
+  `--help` (two were corrected before commit: `topic new` takes `--id/--name`, `report latest`
+  takes a positional topic id). Browser check against a seeded run: asking from the Ask page
+  goes through `/api/ask` and, with no model in the container, shows "The model did not answer."
+  with no page errors. `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` →
+  537 passed, 3 deselected, coverage 91.57%.
+- **Known issues:** None.
+- **Next step:** Roadmap M1 — `F27`: topic update and delete in the repository and CLI
+  (`topic edit`, `topic delete`), deleting a topic's runs with it.
+
 ## 2026-10-27 — Ask drops whole cards instead of cutting its JSON (complete)
 
 - **Feature/branch:** `FIX16-ask-drops-whole-cards`, off `main` at `1e1272a`.
