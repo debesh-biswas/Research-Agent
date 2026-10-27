@@ -2,6 +2,31 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Ask drops whole cards instead of cutting its JSON (complete)
+
+- **Feature/branch:** `FIX16-ask-drops-whole-cards`, off `main` at `1e1272a`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** `desk/ask.py::_context` serialized the run's cards to JSON and sliced the string at
+  the budget, so an over-budget shelf reached the model as half an object — unparseable context
+  and a card cut mid-sentence. It now drops the lowest-ranked whole cards until the JSON fits,
+  always keeping the top card, so the model always gets valid JSON.
+- **Files affected:** `src/research_agent/desk/ask.py`, `tests/unit/test_desk_ask.py`.
+- **Decisions:** Cards are already in selection-rank order (`decisions_for` orders by rank), so
+  popping from the end drops the least important first. A single card larger than the budget is
+  still sent whole (slightly over a soft budget) rather than leaving "Ask about this paper" with
+  nothing to read.
+- **Verification:** Two new tests (over-budget shelf stays valid JSON, within budget, keeps a
+  rank-ordered prefix; a lone over-budget card is kept) fail without the fix. `ruff format
+  --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 537 passed, 3 deselected, coverage
+  91.57%.
+- **Known issues:** Ask borrows `reports.max_input_chars` (8000 characters). With 15 deep reads, a
+  week-level question now sees only the top few cards — valid, but narrow. Giving Ask its own,
+  larger budget belongs with the Ask roadmap item (F47) and is a user decision. The synthesis,
+  ideation, report and analysis prompts also slice at their budgets, but they append a
+  `[truncated]` marker to prose prompts, which is a different and lesser issue.
+- **Next step:** `FIX17` — remove stale text and dead code (README sample week, `desk.js` header
+  comment, the offline `replyTo` fake answers).
+
 ## 2026-10-27 — Desk refuses cross-site and DNS-rebinding requests (complete)
 
 - **Feature/branch:** `FIX15-desk-reject-foreign-requests`, off `main` at `53a5818`.

@@ -1,11 +1,12 @@
 """Desk answers stay inside the cards that were sent to the model."""
 
 import asyncio
+import json
 
 import pytest
 from pydantic import BaseModel
 
-from research_agent.desk.ask import DeskLookupError, answer_question
+from research_agent.desk.ask import DeskLookupError, _context, answer_question
 from research_agent.models.base import ModelMessage, ModelProviderError, ModelResult
 from research_agent.models.router import ModelRouter
 
@@ -135,3 +136,26 @@ def test_a_missing_paper_is_not_sent_to_the_model() -> None:
         )
 
     assert strong.calls == 0
+
+
+def _run_with_cards(count: int, method_chars: int) -> dict[str, object]:
+    papers = [{"id": f"paper-{index}", "method": "m" * method_chars} for index in range(count)]
+    return {"periodStart": "2026-09-18", "periodEnd": "2026-09-28", "papers": papers}
+
+
+def test_an_over_budget_shelf_drops_whole_cards_and_stays_valid_json() -> None:
+    run = _run_with_cards(10, 500)
+    allowed = {f"paper-{index}" for index in range(10)}
+
+    text = _context(run, allowed, max_chars=2000)
+
+    assert len(text) <= 2000
+    kept = [card["id"] for card in json.loads(text)["papers"]]
+    assert kept == [f"paper-{index}" for index in range(len(kept))], "lowest-ranked go first"
+    assert 0 < len(kept) < 10
+
+
+def test_the_only_card_is_kept_even_over_budget() -> None:
+    text = _context(_run_with_cards(1, 5000), {"paper-0"}, max_chars=2000)
+
+    assert [card["id"] for card in json.loads(text)["papers"]] == ["paper-0"]
