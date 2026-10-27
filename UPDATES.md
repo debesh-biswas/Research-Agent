@@ -2,6 +2,37 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — First-run setup page in the desk (complete)
+
+- **Feature/branch:** `F33-setup-page`, off `main` at `05b3ac2`.
+- **Status:** Complete; merged into `main`. Roadmap M3, second item.
+- **Summary:** A new library opened on a bare "No topic" message, with no hint that a model server
+  must be running or which keys help. Now:
+  - With no topics, the desk opens on a welcome page with two steps: "1. Check setup" and
+    "2. Create a topic".
+  - `#/setup` ("Setup check", linked from the footer on every page) calls F32's `/api/health` and
+    lists each check with an OK / Warning / Problem badge, its detail and its fix, under a summary
+    line ("1 problem to fix before a run." / "Ready to run, with N warnings." / "All set …"). It
+    explains the wait while checking (up to a minute), offers "Check again", and offers "Create
+    your first topic" while the library has none.
+- **Files affected:** `web/js/desk.js` (`viewSetup`, `checkHealth`, `healthSummary`, welcome
+  state, footer link), `web/css/desk.css` (health list and badges; link-styled `.primary` reset),
+  `tests/unit/test_reading_desk.py`, `README.md`.
+- **Decisions:** Setup lives in the footer rather than the main nav, which stays about reading.
+  Results are kept for the session and re-run only on "Check again", since a full check can take
+  up to a minute. The page has no inputs, so redrawing it when results arrive is safe.
+- **Verification:** Browser against the real `LocalDesk.health()` and real network in the cloud
+  container (only keyword suggestion and the pipeline thread stubbed): welcome page with both
+  steps and the footer link; pending message with Check again disabled; then "1 problem to fix
+  before a run." with Library folder OK, Local model Problem (fix names the server URL), NIM /
+  OpenAlex / Semantic Scholar Warning, arXiv OK; "Create your first topic" offered; Check again
+  re-runs; no page errors; no horizontal overflow at 1280 px or 390 px. Fixed before commit: the
+  link-styled primary button rendered underlined. `ruff format --check`, `ruff check`, `mypy`
+  clean; `uv run pytest -q` → 555 passed, 3 deselected, coverage 91.43%.
+- **Next step:** `F34` — settings screen (roadmap M3, third item). Per the ponytail review noted
+  earlier, scope it to a read-only view of the effective settings with where to change each one,
+  unless the user asks for editing.
+
 ## 2026-10-27 — First end-to-end cloud run since FIX11–F31 (recorded)
 
 - **Feature/branch:** `DOC3-record-cloud-run` (records results only; no code).
