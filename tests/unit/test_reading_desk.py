@@ -43,3 +43,11 @@ def test_new_topic_review_edits_keywords_and_settings() -> None:
     for hook in ("data-remove-keyword", "new-keyword", "new-topic-review", "settingsFields"):
         assert hook in script
     assert "window.DESK.defaults" in script
+
+
+def test_running_runs_show_live_progress() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert 'id="run-banner" aria-live="polite"' in script
+    for stage in ("plan_queries", "discover", "classify", "analyze", "report", "persist"):
+        assert f"{stage}:" in script
+    assert "schedulePoll()" in script and "onFormPage()" in script
