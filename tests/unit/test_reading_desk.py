@@ -28,3 +28,11 @@ def test_clearing_data_is_wired_to_the_run_and_topic_endpoints() -> None:
     assert "/api/topics/" in script
     assert "data-clear-run" in script
     assert "clear-topic-runs" in script
+
+
+def test_topics_page_is_wired_to_the_topic_endpoints() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert '["topics", "Topics", "#/topics"]' in script
+    for hook in ("data-run-topic", "data-toggle-topic", "data-delete-topic", "topic-edit-form"):
+        assert hook in script
+    assert '"PUT"' in script and "/run`" in script

@@ -1,11 +1,14 @@
 """The desk server serves the page and the two JSON routes, and refuses paths outside web/."""
 
+import http.client
 import json
 import threading
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+
+import pytest
 
 from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.desk.ask import DeskReply
@@ -17,8 +20,14 @@ from research_agent.desk.server import (
     _handler,
 )
 from research_agent.models.base import ModelProviderError
+from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
-from research_agent.storage.topics import SqliteTopicRepository, TopicStoreError
+from research_agent.storage.runs import SqliteRunRepository
+from research_agent.storage.topics import (
+    SqliteTopicRepository,
+    TopicNotFoundError,
+    TopicStoreError,
+)
 
 
 class FakeDesk:
@@ -28,6 +37,9 @@ class FakeDesk:
         self.created: list[TopicCreateRequest] = []
         self.deleted_runs: list[str] = []
         self.cleared_topics: list[str] = []
+        self.updated: list[TopicSettings] = []
+        self.deleted_topics: list[str] = []
+        self.started: list[str] = []
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -59,6 +71,21 @@ class FakeDesk:
     def clear_topic(self, topic_id: str) -> int:
         self.cleared_topics.append(topic_id)
         return 2
+
+    def update_topic(self, topic: TopicSettings) -> None:
+        if topic.id == "missing":
+            raise TopicNotFoundError("unknown topic: missing")
+        self.updated.append(topic)
+
+    def delete_topic(self, topic_id: str) -> None:
+        if topic_id == "busy":
+            raise RunLocked("another run of busy is in progress")
+        self.deleted_topics.append(topic_id)
+
+    def run_topic(self, topic_id: str) -> None:
+        if topic_id == "paused":
+            raise TopicStoreError("Paused is disabled; enable it to run it.")
+        self.started.append(topic_id)
 
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
@@ -183,7 +210,7 @@ def test_the_server_clears_a_run_and_a_topic_s_runs(tmp_path: Path) -> None:
         assert backend.cleared_topics == ["spatial"]
 
         unknown = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/topics/spatial", method="DELETE"
+            f"http://127.0.0.1:{port}/api/topics/spatial/papers", method="DELETE"
         )
         with pytest_http_error(unknown) as error:
             assert error.code == 404
@@ -266,6 +293,121 @@ def test_the_server_refuses_foreign_hosts_and_origins(tmp_path: Path) -> None:
             assert response.status == 202
         assert [request.topic_id for request in backend.created] == ["robotics"]
     finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _call(base: str, method: str, path: str, body: object | None = None) -> tuple[int, object]:
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        f"{base}{path}", data=data, method=method, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        return error.code, json.load(error)
+
+
+def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    backend = FakeDesk()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(backend, web.resolve()))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        edited = {"name": "Robotics", "lookback_days": 7, "keywords": ["arms"]}
+        assert _call(base, "PUT", "/api/topics/robotics", edited) == (200, {"status": "updated"})
+        assert [(topic.id, topic.lookback_days) for topic in backend.updated] == [("robotics", 7)]
+
+        bad_limits = {"name": "Robotics", "limits": {"max_downloads": 5, "max_deep_reads": 9}}
+        status, payload = _call(base, "PUT", "/api/topics/robotics", bad_limits)
+        assert status == 400
+        assert payload == {"error": "limits: max_deep_reads cannot exceed max_downloads"}
+        assert _call(base, "PUT", "/api/topics/missing", {"name": "X"})[0] == 404
+        assert _call(base, "PUT", "/api/topics/robotics", {"name": "X", "colour": "red"})[0] == 400
+
+        assert _call(base, "DELETE", "/api/topics/robotics") == (200, {"status": "deleted"})
+        assert _call(base, "DELETE", "/api/topics/busy")[0] == 409
+        assert backend.deleted_topics == ["robotics"]
+
+        assert _call(base, "POST", "/api/topics/robotics/run", {}) == (202, {"status": "started"})
+        status, payload = _call(base, "POST", "/api/topics/paused/run", {})
+        assert (status, payload) == (409, {"error": "Paused is disabled; enable it to run it."})
+        assert backend.started == ["robotics"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_local_desk_topic_actions_guard_the_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    topics = SqliteTopicRepository(connection)
+    topics.add(TopicSettings(id="live_topic", name="Live"))
+    topics.add(TopicSettings(id="paused_topic", name="Paused", enabled=False))
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+    started: list[str] = []
+    monkeypatch.setattr(desk, "_start_run", lambda topic: started.append(topic.id))
+
+    desk.update_topic(TopicSettings(id="live_topic", name="Live", lookback_days=3))
+    stored = topics.get("live_topic")
+    assert stored is not None and stored.lookback_days == 3
+    assert desk.shelf()["topics"][0]["settings"]["lookback_days"] == 3  # type: ignore[index]
+
+    desk.run_topic("live_topic")
+    assert started == ["live_topic"]
+    with pytest.raises(TopicStoreError, match="disabled"):
+        desk.run_topic("paused_topic")
+    with pytest.raises(TopicNotFoundError):
+        desk.run_topic("missing")
+    SqliteRunRepository(connection).start("live_topic")
+    with pytest.raises(RunLocked, match="already running"):
+        desk.run_topic("live_topic")
+
+    lock = lock_path(tmp_path, "paused_topic")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("not a pid", encoding="utf-8")
+    with pytest.raises(RunLocked):
+        desk.delete_topic("paused_topic")
+    lock.unlink()
+    desk.delete_topic("paused_topic")
+    assert [topic.id for topic in topics.list()] == ["live_topic"]
+    connection.close()
+
+
+def test_a_kept_alive_connection_survives_routes_that_ignore_or_reject_a_body(
+    tmp_path: Path,
+) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(FakeDesk(), web.resolve()))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    json_headers = {"Content-Type": "application/json"}
+    try:
+        # One connection, as a browser keeps it: bodies no route reads must not leak forward.
+        for method, path in (("POST", "/api/topics/robotics/run"), ("DELETE", "/api/runs/r1")):
+            connection.request(method, path, body="{}", headers=json_headers)
+            connection.getresponse().read()
+        connection.request("GET", "/api/shelf")
+        response = connection.getresponse()
+        assert (response.status, json.load(response)) == (200, {"live": True, "topics": []})
+
+        connection.request("POST", "/api/ask", body="x" * 20_000, headers=json_headers)
+        rejected = connection.getresponse()
+        rejected.read()
+        assert (rejected.status, rejected.getheader("Connection")) == (400, "close")
+    finally:
+        connection.close()
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
