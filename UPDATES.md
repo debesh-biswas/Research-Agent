@@ -2,6 +2,31 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-27 — Runs are manual: drop schedule wording from the desk (complete)
+
+- **Feature/branch:** `FIX19-manual-runs-only`, off `main` at `a5d6253`.
+- **Status:** Complete; merged into `main`.
+- **User decision:** No weekly schedule is installed; a run happens only when the user presses
+  Run now (or creates a topic). Roadmap M4 (F35 schedule install/status, F36 desk next-run
+  display) is dropped. The PRD's "set a weekly run schedule" stays available but unused: topics
+  keep their stored `scheduling` setting and `research-agent schedule generate` still works.
+- **Summary:** The desk no longer suggests runs happen on their own: the "Run day" select is gone
+  from the edit and new-topic forms, and the Topics page note now reads "Runs start only when you
+  press Run now. Paused topics can't be run until enabled." `schedule generate` left the README's
+  everyday commands.
+- **Files affected:** `web/js/desk.js` (`DAYS` and the run-day select removed;
+  `scheduleFromData` → `runSettingsFromData`, which no longer sends `scheduling`), `README.md`.
+- **Decisions:** `PUT /api/topics/<id>` replaces the whole topic, so the edit form now sends the
+  topic's stored `scheduling` back unchanged; dropping the field alone would have silently reset
+  every edited topic's day to Sunday. New topics take the model default. The server still accepts
+  `scheduling` in both routes.
+- **Verification:** Browser with a topic stored on Wednesday: no run-day field on the edit or
+  new-topic form, the new Topics note shown, saving an edit (lookback 6) kept `day: wednesday`,
+  topic creation still succeeds, no page errors. `ruff format --check`, `ruff check`, `mypy`
+  clean; `uv run pytest -q` → 555 passed, 3 deselected, coverage 91.43%.
+- **Next step:** `F34` settings screen — scope (read-only vs editable) awaiting the user's
+  choice; otherwise continue with roadmap M5 (`F37`, why papers were kept or dropped).
+
 ## 2026-10-27 — First-run setup page in the desk (complete)
 
 - **Feature/branch:** `F33-setup-page`, off `main` at `05b3ac2`.

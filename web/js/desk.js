@@ -39,7 +39,6 @@ const LIMITS = [
   ["max_deep_reads", "Deep reads", 0],
 ];
 
-const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 const ACTION_LABEL = {
   deep_read: "Deep read",
@@ -645,7 +644,7 @@ function viewTopics() {
     .join("");
   const status = state.topicsStatus || {};
   return `<div class="page-head"><h1>Topics</h1><a class="button" href="#/new">New topic</a></div>
-    <p class="quiet">Paused topics are skipped by scheduled and all-topic runs.</p>
+    <p class="quiet">Runs start only when you press Run now. Paused topics can't be run until enabled.</p>
     ${statusMessage(status.text, status.tone)}
     ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}`;
 }
@@ -661,18 +660,9 @@ function settingsFields(settings) {
         <input type="number" id="limit-${key}" name="${key}" min="${min}" required value="${esc(settings.limits[key])}" />
       </div>`,
   ).join("");
-  const days = DAYS.map(
-    (day) => `<option value="${day}"${settings.scheduling.day === day ? " selected" : ""}>${day[0].toUpperCase()}${day.slice(1)}</option>`,
-  ).join("");
-  return `<div class="field-row">
-      <div class="field">
-        <label for="topic-lookback">Lookback (days)</label>
-        <input type="number" id="topic-lookback" name="lookback_days" min="1" required value="${esc(settings.lookback_days)}" />
-      </div>
-      <div class="field">
-        <label for="topic-day">Run day</label>
-        <select id="topic-day" name="day">${days}</select>
-      </div>
+  return `<div class="field">
+      <label for="topic-lookback">Lookback (days)</label>
+      <input type="number" id="topic-lookback" name="lookback_days" min="1" required value="${esc(settings.lookback_days)}" />
     </div>
     <fieldset class="field">
       <legend>Sources</legend>
@@ -1143,12 +1133,11 @@ async function topicAction(method, path, body, success) {
   return !problem;
 }
 
-function scheduleFromData(data) {
+function runSettingsFromData(data) {
   return {
     lookback_days: Number(data.get("lookback_days")),
     discovery: Object.fromEntries(SOURCES.map(([key]) => [key, data.has(key)])),
     limits: Object.fromEntries(LIMITS.map(([key]) => [key, Number(data.get(key))])),
-    scheduling: { frequency: "weekly", day: String(data.get("day")) },
   };
 }
 
@@ -1161,12 +1150,12 @@ function settingsFromForm(form) {
       .split("\n")
       .map((keyword) => keyword.trim())
       .filter(Boolean),
-    ...scheduleFromData(data),
+    ...runSettingsFromData(data),
   };
 }
 
 async function createTopic(form) {
-  const nt = { ...state.newTopic, settings: scheduleFromData(new FormData(form)) };
+  const nt = { ...state.newTopic, settings: runSettingsFromData(new FormData(form)) };
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
   render();
   try {
@@ -1317,7 +1306,8 @@ function onSubmit(event) {
   if (form.id === "topic-edit-form") {
     event.preventDefault();
     const topicId = form.dataset.topic;
-    const settings = settingsFromForm(form);
+    // Runs are manual, so the form has no run day; keep the stored one rather than reset it.
+    const settings = { ...settingsFromForm(form), scheduling: topicById(topicId).settings.scheduling };
     void topicAction("PUT", `/api/topics/${encodeURIComponent(topicId)}`, settings, `Saved ${settings.name}.`).then(
       (saved) => {
         if (saved) location.hash = "#/topics";

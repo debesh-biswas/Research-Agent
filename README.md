@@ -61,7 +61,6 @@ uv run research-agent topic delete <topic_id>    # asks first; deletes its runs 
 uv run research-agent run <topic_id>         # one topic's full weekly run
 uv run research-agent run-all                # every enabled topic
 uv run research-agent report latest <topic_id>
-uv run research-agent schedule generate --topic <topic_id>
 uv run research-agent model check
 uv run research-agent doctor                 # check folder, models and sources, with fixes
 ```
