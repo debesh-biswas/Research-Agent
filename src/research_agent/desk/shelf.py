@@ -41,6 +41,10 @@ def build_shelf(
     """One JSON document for every configured topic and its recent runs."""
     return {
         "live": True,
+        # What a new topic starts from, so the page never keeps its own copy of the defaults.
+        "defaults": TopicSettings(id="new", name="New").model_dump(
+            mode="json", exclude={"id", "name"}
+        ),
         "topics": [
             {
                 "id": topic.id,

@@ -1020,6 +1020,47 @@ a.button {
   padding: 6px 14px;
 }
 
+.keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-remove {
+  font: 600 0.95rem/1 var(--sans);
+  color: var(--tide-deep);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.chip-remove:hover,
+.chip-remove:focus-visible {
+  color: var(--carmine);
+}
+
+.keyword-add {
+  display: flex;
+  gap: 8px;
+}
+
+.keyword-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.advanced summary {
+  font: 600 0.85rem var(--sans);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.advanced[open] summary {
+  margin-bottom: 16px;
+}
+
 .keyword-chip[data-empty="true"] {
   color: var(--faint);
   background: transparent;

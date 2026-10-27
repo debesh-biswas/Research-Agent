@@ -36,3 +36,10 @@ def test_topics_page_is_wired_to_the_topic_endpoints() -> None:
     for hook in ("data-run-topic", "data-toggle-topic", "data-delete-topic", "topic-edit-form"):
         assert hook in script
     assert '"PUT"' in script and "/run`" in script
+
+
+def test_new_topic_review_edits_keywords_and_settings() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    for hook in ("data-remove-keyword", "new-keyword", "new-topic-review", "settingsFields"):
+        assert hook in script
+    assert "window.DESK.defaults" in script
