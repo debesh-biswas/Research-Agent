@@ -1,7 +1,8 @@
 """Docling adapter (TRD section 22).
 
-The only module that imports Docling. Its heavy dependencies load when a parser is constructed,
-not when the package is imported, so the rest of the suite never pays for them.
+The only module that imports Docling. Its heavy dependencies load on the first parse, not when the
+package is imported or a parser is built, so a run opens at once and a week with no PDF to parse
+never pays for them.
 """
 
 from pathlib import Path
@@ -26,17 +27,20 @@ class DoclingParser:
     name = "docling"
 
     def __init__(self, converter: Any = None) -> None:
-        if converter is None:
-            # Imported here so `import research_agent` never drags in torch.
-            from docling.document_converter import DocumentConverter
-
-            converter = DocumentConverter()
         self._converter = converter
         self._version = _installed_version()
 
+    def _ready_converter(self) -> Any:
+        """Build Docling's converter once, on first use; parsing is sequential, so no lock."""
+        if self._converter is None:
+            from docling.document_converter import DocumentConverter
+
+            self._converter = DocumentConverter()
+        return self._converter
+
     def parse(self, pdf_path: Path, paper_id: str) -> ParsedPaper:
         """Parse one PDF. Docling failures propagate; `ParsingService` turns them into outcomes."""
-        document = self._converter.convert(str(pdf_path)).document
+        document = self._ready_converter().convert(str(pdf_path)).document
         sections, references = _sections_and_references(document)
         return ParsedPaper(
             paper_id=paper_id,
