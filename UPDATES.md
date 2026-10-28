@@ -2,6 +2,46 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Ask keeps the conversation (complete)
+
+- **Feature/branch:** `F47-ask-conversation`, off `main` at `8afc4b0`.
+- **Status:** Complete; merged into `main`. Roadmap M8, first item.
+- **Summary:** Ask conversations are stored in SQLite, one thread per run (the week) and one
+  per paper on that run. A follow-up question is sent with the thread's last 4 turns, so "and the
+  second one?" works. Threads come back after a reload, in a new tab, or after a desk restart,
+  and "Start over" deletes one (after a confirm). Clearing a run deletes its threads. When no model
+  answers, the reply says why (rate-limited / unreachable or too slow / the model returned an
+  error) and links to the setup check; failed turns are shown but not stored.
+- **Files affected:** `src/research_agent/storage/database.py` (migration: `ask_turns` table with
+  `run_id` FK `ON DELETE CASCADE`, plus an index), new `src/research_agent/storage/asks.py`
+  (`AskTurn`, `SqliteAskRepository.turns/add/clear`), `src/research_agent/desk/ask.py`
+  (`PROMPT_VERSION = "desk_ask.v2"`, `history=`, `HISTORY_TURNS`, `failure_message`),
+  `src/research_agent/desk/server.py` (`LocalDesk.ask` reads and appends the thread;
+  `thread`/`clear_thread`; `GET`/`DELETE /api/runs/<id>/ask[?paper=<id>]`; the 502 body carries
+  `setup: true`), `web/js/desk.js` (threads load from the server instead of sessionStorage),
+  `README.md`, tests in `tests/unit/test_storage_asks.py`, `test_desk_ask.py`,
+  `test_desk_server.py`.
+- **Decisions:** Earlier turns go in the one user message as a short Q/A transcript (each answer
+  cut at 1,000 characters) rather than as chat-role messages, so the JSON-only reply contract and
+  the card budget are unchanged for every provider. Only the last 4 turns are sent: enough for
+  follow-ups, small next to the cards. A turn is saved only after a validated answer. Threads are
+  per run, not per paper across runs, because the cards being asked about belong to a run. Ask
+  still uses `reports.max_input_chars` for its card budget; a separate setting was not added.
+- **Verification:** Repository: threads per run and per paper, oldest first, cites and notes kept,
+  clearing one thread leaves the others, deleting the run deletes its threads. Prompt: no history
+  block on a first question, only the latest 4 turns on a follow-up, a message per error category.
+  Server: thread routes with and without `?paper=`, the 502 body, and `LocalDesk.ask` passing the
+  earlier turns (with a stubbed model) and not storing a failed turn. Browser against a copy of the
+  cloud-run library with a stubbed model: follow-ups saw 1 and 2 earlier turns, a timeout showed
+  the reachability message with a working setup link and was not counted, a new tab showed the
+  stored thread, the paper thread stayed apart from the week's, and "Start over" emptied the
+  thread across a reload; no page errors. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 605 passed, 3 deselected, coverage 92.43%.
+- **Known issues:** Ask still answers only runs on the shelf (the newest 12 per topic); a run
+  opened from the Library beyond that cannot be asked about yet.
+- **Next step:** Roadmap M8 — `F48`: ask across weeks, answering from the topic's stored
+  syntheses as well as this run's cards.
+
 ## 2026-10-28 — Search the library (complete)
 
 - **Feature/branch:** `F46-library-search`, off `main` at `6ce9ff8`.

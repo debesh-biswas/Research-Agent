@@ -200,6 +200,17 @@ MIGRATIONS: tuple[str, ...] = (
         PRIMARY KEY (topic_id, paper_id)
     )
     """,
+    """
+    CREATE TABLE ask_turns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+        paper_id TEXT NOT NULL,
+        question TEXT NOT NULL,
+        answer_json TEXT NOT NULL,
+        asked_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX ask_turns_thread ON ask_turns (run_id, paper_id, id)",
 )
 
 

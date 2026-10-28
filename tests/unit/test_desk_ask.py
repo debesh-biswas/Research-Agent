@@ -6,7 +6,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from research_agent.desk.ask import DeskLookupError, _context, answer_question
+from research_agent.desk.ask import DeskLookupError, _context, answer_question, failure_message
 from research_agent.models.base import ModelMessage, ModelProviderError, ModelResult
 from research_agent.models.router import ModelRouter
 
@@ -159,3 +159,77 @@ def test_the_only_card_is_kept_even_over_budget() -> None:
     text = _context(_run_with_cards(1, 5000), {"paper-0"}, max_chars=2000)
 
     assert [card["id"] for card in json.loads(text)["papers"]] == ["paper-0"]
+
+
+class CapturingProvider(ScriptProvider):
+    def __init__(self) -> None:
+        super().__init__("nvidia_nim", '{"paragraphs": ["Still the map."], "paper_ids": []}')
+        self.prompts: list[str] = []
+
+    async def generate(
+        self,
+        task: str,
+        messages: list[ModelMessage],
+        response_schema: type[BaseModel] | None = None,
+        *,
+        capability: str | None = None,
+    ) -> ModelResult:
+        self.prompts.append(messages[-1].content)
+        return await super().generate(task, messages, response_schema, capability=capability)
+
+
+def test_a_follow_up_sees_only_the_latest_earlier_turns() -> None:
+    strong = CapturingProvider()
+    router = ModelRouter(ScriptProvider("local", "{}"), strong, retries=0)
+    history = [(f"question {index}", [f"answer {index}"]) for index in range(6)]
+
+    asyncio.run(
+        answer_question(
+            router,
+            _shelf(),
+            topic_id="spatial_intelligence",
+            run_id="run-1",
+            question="And the second one?",
+            paper_id=None,
+            max_chars=4000,
+            history=history,
+        )
+    )
+
+    prompt = strong.prompts[0]
+    assert prompt.startswith("Earlier in this conversation:\nQ: question 2\nA: answer 2\n")
+    assert "question 1" not in prompt
+    assert "Q: question 5\nA: answer 5\n\nQuestion: And the second one?" in prompt
+
+
+def test_a_first_question_carries_no_history_block() -> None:
+    strong = CapturingProvider()
+    router = ModelRouter(ScriptProvider("local", "{}"), strong, retries=0)
+
+    asyncio.run(
+        answer_question(
+            router,
+            _shelf(),
+            topic_id="spatial_intelligence",
+            run_id="run-1",
+            question="What changed?",
+            paper_id=None,
+            max_chars=4000,
+        )
+    )
+
+    assert strong.prompts[0].startswith("Question: What changed?")
+
+
+@pytest.mark.parametrize(
+    ("category", "start"),
+    [
+        ("RATE_LIMIT", "The model is rate-limited"),
+        ("MODEL_TIMEOUT", "The model could not be reached"),
+        ("MODEL_API_ERROR", "The model answered with an error"),
+    ],
+)
+def test_a_failure_says_what_went_wrong(category: str, start: str) -> None:
+    error = ModelProviderError("http://localhost:8080 failed", category)  # type: ignore[arg-type]
+
+    assert failure_message(error).startswith(start)

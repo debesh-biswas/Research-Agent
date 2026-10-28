@@ -771,7 +771,45 @@ function viewRuns(topic, run) {
 }
 
 function threadKey(paperId) {
-  return paperId ? `paper:${paperId}` : `week:${state.runId}`;
+  return `${state.runId}:${paperId || ""}`;
+}
+
+function threadUrl(paperId) {
+  const query = paperId ? `?paper=${encodeURIComponent(paperId)}` : "";
+  return `/api/runs/${encodeURIComponent(state.runId)}/ask${query}`;
+}
+
+/* Stored turns come back as {question, paragraphs, ...}; the page draws you/desk pairs. */
+function turnsFromServer(stored) {
+  return stored.flatMap((turn) => [
+    { role: "you", text: turn.question },
+    { role: "desk", paragraphs: turn.paragraphs, cites: turn.cites || [], note: turn.note || "" },
+  ]);
+}
+
+async function loadThread(key, paperId) {
+  state.threads[key] = null;
+  try {
+    const response = await fetch(threadUrl(paperId));
+    const payload = await response.json();
+    if (!response.ok || !Array.isArray(payload.turns)) throw new Error("bad response");
+    state.threads[key] = turnsFromServer(payload.turns);
+  } catch {
+    state.threads[key] = [{ role: "desk", paragraphs: ["Can't load the earlier questions right now."], cites: [], failed: true }];
+  }
+  if (pageName(parseRoute().parts) === "ask") render();
+}
+
+async function startOver(paperId) {
+  const key = threadKey(paperId);
+  try {
+    const response = await fetch(threadUrl(paperId), { method: "DELETE" });
+    if (!response.ok) throw new Error("bad response");
+    state.threads[key] = [];
+  } catch {
+    state.threads[key] = (state.threads[key] || []).concat({ role: "desk", paragraphs: ["Can't clear this conversation right now."], cites: [], failed: true });
+  }
+  render();
 }
 
 function suggestions(paper) {
@@ -812,7 +850,11 @@ function renderThread(run, turns) {
         return `<li class="turn you"><p class="turn-label">You</p><p>${esc(turn.text)}</p></li>`;
       }
       const paragraphs = turn.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("");
-      const aside = turn.note ? `<p class="quiet">${esc(turn.note)}</p>` : "";
+      const aside = turn.setup
+        ? `<p class="quiet"><a href="#/setup">Open the setup check</a></p>`
+        : turn.note
+          ? `<p class="quiet">${esc(turn.note)}</p>`
+          : "";
       return `<li class="turn"><p class="turn-label">From the cards</p>${paragraphs}${renderCites(run, turn.cites)}${aside}</li>`;
     })
     .join("")}</ol>`;
@@ -822,6 +864,10 @@ function viewAsk(run, paperId) {
   const paper = paperId ? paperById(run, paperId) : null;
   const key = threadKey(paper ? paper.id : null);
   const turns = state.threads[key] || [];
+  const loading = state.threads[key] === null;
+  const restart = turns.length && !state.pending
+    ? `<button class="button" type="button" id="ask-start-over">Start over</button>`
+    : "";
   const context = paper
     ? `<p class="ask-context">Asking about <a href="#/papers/${esc(paper.id)}">${esc(paper.title)}</a>. <a href="#/ask">Ask about the week instead</a>.</p>`
     : `<p class="ask-context">Asking about ${esc(formatPeriod(run))}. Open a paper to narrow the question.</p>`;
@@ -829,15 +875,15 @@ function viewAsk(run, paperId) {
     .map((prompt) => `<button type="button" data-suggest="${esc(prompt)}">${esc(prompt)}</button>`)
     .join("");
   return `<p class="kicker">Ask</p>
-    <h1>${paper ? "This paper" : "This week"}</h1>
+    <div class="page-head"><h1>${paper ? "This paper" : "This week"}</h1>${restart}</div>
     ${context}
     <div class="suggest">${prompts}</div>
-    ${renderThread(run, turns)}
+    ${loading ? `<p class="quiet">Loading the earlier questions…</p>` : renderThread(run, turns)}
     <form class="composer" id="ask-form">
       <textarea id="ask-input" name="question" rows="2" placeholder="Ask a question the card can answer" aria-label="Question">${esc(state.draft)}</textarea>
       <button class="primary" type="submit">Ask</button>
     </form>
-    <p class="note">Answers stay inside the cards on this shelf. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
+    <p class="note">Answers stay inside the cards on this shelf and see the last few questions of this conversation. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
 }
 
 function statusMessage(text, tone) {
@@ -1212,6 +1258,11 @@ function render() {
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
   if (name === "library" && state.live && !state.library.data && !state.library.pending) void loadLibrary();
+  if (name === "ask" && state.live && run) {
+    const paperId = route.params.get("paper");
+    const asked = paperId && paperById(run, paperId) ? paperId : null;
+    if (state.threads[threadKey(asked)] === undefined) void loadThread(threadKey(asked), asked);
+  }
   if (name === "papers" && route.parts[1] && run) markReadOnOpen(paperById(run, route.parts[1]));
   if (name === "screened" && run && (!state.screened || state.screened.runId !== run.id)) {
     void loadScreened(run.id);
@@ -1230,7 +1281,6 @@ function persist() {
   const payload = {
     topicId: state.topicId,
     runId: state.runId,
-    threads: state.threads,
   };
   sessionStorage.setItem("desk-state", JSON.stringify(payload));
 }
@@ -1242,7 +1292,8 @@ async function ask(question, paperId) {
   if (!run) return;
   const paper = paperId ? paperById(run, paperId) : null;
   const key = threadKey(paper ? paper.id : null);
-  const turns = state.threads[key] || [];
+  // Failed turns are not stored; a reload drops them, and so does the next question.
+  const turns = (state.threads[key] || []).filter((turn) => !turn.failed && !turn.asked);
   const you = { role: "you", text };
   state.pending = true;
   state.draft = "";
@@ -1264,18 +1315,28 @@ async function ask(question, paperId) {
       }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "The model did not answer.");
+    if (!response.ok) {
+      state.threads[key] = turns.concat({ ...you, asked: true }, {
+        role: "desk",
+        paragraphs: [payload.error || "The model did not answer."],
+        cites: [],
+        failed: true,
+        setup: Boolean(payload.setup),
+      });
+      return;
+    }
     state.threads[key] = turns.concat(you, {
       role: "desk",
       paragraphs: payload.paragraphs,
       cites: payload.cites || [],
       note: payload.note || "",
     });
-  } catch (error) {
-    state.threads[key] = turns.concat(you, {
+  } catch {
+    state.threads[key] = turns.concat({ ...you, asked: true }, {
       role: "desk",
-      paragraphs: [error instanceof Error ? error.message : "The model did not answer."],
+      paragraphs: ["Can't reach the desk server right now."],
       cites: [],
+      failed: true,
     });
   } finally {
     state.pending = false;
@@ -1671,6 +1732,13 @@ function onClick(event) {
     render();
     return;
   }
+  if (event.target.id === "ask-start-over") {
+    if (!confirm("Start a new conversation? The earlier questions and answers here are deleted.")) return;
+    const paperId = parseRoute().params.get("paper");
+    const { run } = current();
+    void startOver(run && paperId && paperById(run, paperId) ? paperId : null);
+    return;
+  }
   if (event.target.id === "clear-topic-runs") {
     const { topic } = current();
     if (!topic) return;
@@ -1813,9 +1881,8 @@ function restore() {
     const saved = JSON.parse(sessionStorage.getItem("desk-state") || "{}");
     state.topicId = saved.topicId || null;
     state.runId = saved.runId || null;
-    state.threads = saved.threads || {};
   } catch {
-    state.threads = {};
+    // A fresh session; threads load from the server.
   }
 }
 

@@ -6,6 +6,7 @@ retry ceiling. The reply may cite only paper ids that were in the prompt.
 
 import json
 import logging
+from collections.abc import Sequence
 
 from pydantic import Field
 
@@ -16,9 +17,15 @@ from research_agent.models.router import ModelRouter
 
 _LOGGER = logging.getLogger(__name__)
 
-PROMPT_VERSION = "desk_ask.v1"
+PROMPT_VERSION = "desk_ask.v2"
+HISTORY_TURNS = 4
+"""Earlier turns sent with a follow-up: enough for "and the second one?", small beside cards."""
+_HISTORY_ANSWER_CHARS = 1000
+
 _SYSTEM = (
-    "You answer one question about a researcher's weekly reading shelf. Reply with JSON only, "
+    "You answer one question about a researcher's weekly reading shelf. Earlier questions and "
+    "answers, when given, are context for a follow-up; answer only the new question, from the "
+    "cards. Reply with JSON only, "
     'in the form {"paragraphs": ["..."], "paper_ids": ["..."]}. Use only the cards given. '
     "Every paper id must be copied from those cards. If the cards do not cover the question, "
     "say that in one paragraph and return an empty paper_ids list. Do not invent pages, "
@@ -57,8 +64,12 @@ async def answer_question(
     question: str,
     paper_id: str | None,
     max_chars: int,
+    history: Sequence[tuple[str, Sequence[str]]] = (),
 ) -> DeskReply:
-    """Answer from one run, or from one paper on that run when an id is given."""
+    """Answer from one run, or from one paper on that run when an id is given.
+
+    `history` holds earlier (question, answer paragraphs) pairs of this thread, oldest first.
+    """
     run = find_run(shelf, topic_id, run_id)
     if run is None:
         raise DeskLookupError("That run is not on the shelf.")
@@ -71,7 +82,10 @@ async def answer_question(
     context = _context(run, allowed, max_chars)
     messages = [
         ModelMessage(role="system", content=_SYSTEM),
-        ModelMessage(role="user", content=f"Question: {question}\n\nCards:\n{context}"),
+        ModelMessage(
+            role="user",
+            content=f"{_earlier(history)}Question: {question}\n\nCards:\n{context}",
+        ),
     ]
     try:
         result = await router.generate("deep_reasoning", messages, DeskAnswer, task="desk_ask")
@@ -99,6 +113,26 @@ async def answer_question(
         fell_back=local,
         note="Answered by the local model." if local else "",
     )
+
+
+def failure_message(error: ModelProviderError) -> str:
+    """What to tell the reader when no model answered, by what went wrong."""
+    if error.category == "RATE_LIMIT":
+        return "The model is rate-limited right now. Try again in a minute."
+    if error.category == "MODEL_TIMEOUT":
+        return "The model could not be reached or took too long to answer. Is it running?"
+    return "The model answered with an error. The setup check shows which model is failing."
+
+
+def _earlier(history: Sequence[tuple[str, Sequence[str]]]) -> str:
+    turns = list(history)[-HISTORY_TURNS:]
+    if not turns:
+        return ""
+    lines = ["Earlier in this conversation:"]
+    for asked, paragraphs in turns:
+        lines.append(f"Q: {asked}")
+        lines.append(f"A: {' '.join(paragraphs)[:_HISTORY_ANSWER_CHARS]}")
+    return "\n".join(lines) + "\n\n"
 
 
 def _papers(run: dict[str, object]) -> dict[str, str]:
