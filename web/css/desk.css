@@ -1441,3 +1441,20 @@ a.primary {
   outline: 2px solid var(--tide);
   outline-offset: 2px;
 }
+
+.usage {
+  margin: 0 0 18px;
+  font: 0.88rem/1.5 var(--sans);
+  color: var(--faint);
+}
+
+.usage summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.usage ul {
+  margin: 6px 0 0;
+  padding-left: 1.2rem;
+  color: var(--muted);
+}

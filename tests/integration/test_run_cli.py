@@ -3,6 +3,7 @@
 The parser backend is faked through the wiring's injection point, so these never load torch.
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -94,6 +95,9 @@ def test_a_single_run_completes_and_reports(
     assert "_weekly_report.md" in result.output
     statuses = rows(tmp_path, "SELECT status FROM runs")
     assert statuses == [("completed",)]
+    ((usage,),) = rows(tmp_path, "SELECT json_extract(summary_json, '$.model_usage') FROM runs")
+    (local,) = json.loads(str(usage))
+    assert local["provider"] == "local" and local["calls"] > 0
     reports = tmp_path / "data" / "topics" / TOPIC_ID / "reports"
     assert list(reports.iterdir())
 

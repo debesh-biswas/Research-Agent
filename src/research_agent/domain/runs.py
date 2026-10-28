@@ -24,6 +24,18 @@ ErrorCategory = Literal[
 ]
 
 
+class ModelUsage(StrictModel):
+    """What one run asked of one model. Tokens are 0 when a server does not report them."""
+
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    calls: int = Field(default=0, ge=0)
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    latency_ms: int = Field(default=0, ge=0)
+    fallbacks: int = Field(default=0, ge=0)
+
+
 class RunSummary(StrictModel):
     """Per-run counters and model choices, persisted so a run can be reconstructed."""
 
@@ -36,6 +48,7 @@ class RunSummary(StrictModel):
     deep_reads: int = Field(default=0, ge=0)
     models_used: list[str] = Field(default_factory=list)
     errors: int = Field(default=0, ge=0)
+    model_usage: list[ModelUsage] = Field(default_factory=list)
 
 
 class RunRecord(StrictModel):

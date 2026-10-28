@@ -17,6 +17,7 @@ from research_agent.models.base import (
     ModelValidationError,
 )
 from research_agent.models.chat import LocalModelProvider, NvidiaNIMProvider
+from research_agent.models.usage import UsageMeter
 
 _LOGGER = logging.getLogger(__name__)
 _CAPABILITIES: frozenset[str] = frozenset(
@@ -36,10 +37,28 @@ class ModelRouter:
         strong: ModelProvider | None = None,
         *,
         retries: int = 2,
+        meter: UsageMeter | None = None,
     ) -> None:
         self._local = local
         self._strong = strong
         self._retries = retries
+        self._meter = meter
+
+    async def _call(
+        self,
+        provider: ModelProvider,
+        label: str,
+        messages: list[ModelMessage],
+        response_schema: type[BaseModel] | None,
+        capability: Capability,
+        *,
+        fell_back: bool = False,
+    ) -> ModelResult:
+        """One provider call, counted before validation: a malformed reply still cost tokens."""
+        result = await provider.generate(label, messages, response_schema, capability=capability)
+        if self._meter is not None:
+            self._meter.record(result, fell_back=fell_back)
+        return result
 
     def capability_provider(self, capability: Capability) -> ModelProvider:
         """Resolve a capability to the provider that should serve it."""
@@ -61,7 +80,7 @@ class ModelRouter:
         label = task or capability
         if provider is self._local:
             return _validated(
-                await self._local.generate(label, messages, response_schema, capability=capability),
+                await self._call(self._local, label, messages, response_schema, capability),
                 response_schema,
             )
 
@@ -71,9 +90,7 @@ class ModelRouter:
         for attempt in range(self._retries + 1):
             try:
                 return _validated(
-                    await provider.generate(
-                        label, messages, response_schema, capability=capability
-                    ),
+                    await self._call(provider, label, messages, response_schema, capability),
                     response_schema,
                 )
             except ModelValidationError:
@@ -104,7 +121,9 @@ class ModelRouter:
             },
         )
         result = _validated(
-            await self._local.generate(label, messages, response_schema, capability=capability),
+            await self._call(
+                self._local, label, messages, response_schema, capability, fell_back=True
+            ),
             response_schema,
         )
         return result.model_copy(update={"fell_back": True})
@@ -119,7 +138,9 @@ class ModelRouter:
         """Run a validated local fallback after a task-specific repair has been exhausted."""
         label = task or capability
         result = _validated(
-            await self._local.generate(label, messages, response_schema, capability=capability),
+            await self._call(
+                self._local, label, messages, response_schema, capability, fell_back=True
+            ),
             response_schema,
         )
         return result.model_copy(update={"fell_back": True})
@@ -157,7 +178,9 @@ def _json_object(text: str) -> object:
         return value
 
 
-def build_router(client: httpx.AsyncClient, settings: ApplicationSettings) -> ModelRouter:
+def build_router(
+    client: httpx.AsyncClient, settings: ApplicationSettings, meter: UsageMeter | None = None
+) -> ModelRouter:
     """Construct the router a configuration actually enables, warning about an unusable NIM."""
     local = LocalModelProvider(client, settings.models.local)
     strong: ModelProvider | None = None
@@ -170,4 +193,4 @@ def build_router(client: httpx.AsyncClient, settings: ApplicationSettings) -> Mo
                 "nvidia_nim selected without an API key; strong work runs locally",
                 extra={"provider": "nvidia_nim", "status": "unconfigured"},
             )
-    return ModelRouter(local, strong, retries=settings.retries.nim)
+    return ModelRouter(local, strong, retries=settings.retries.nim, meter=meter)

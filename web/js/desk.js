@@ -319,6 +319,27 @@ function funnel(summary) {
     .join("")}</ul>`;
 }
 
+function formatCount(count) {
+  if (count >= 1e6) return `${(count / 1e6).toFixed(1)}M`;
+  if (count >= 1e3) return `${Math.round(count / 1e3)}k`;
+  return String(count);
+}
+
+/* Model calls, tokens and time for the run; tokens are 0 when a server does not report them. */
+function usageBlock(usage) {
+  if (!usage.length) return "";
+  const sum = (key) => usage.reduce((total, item) => total + item[key], 0);
+  const calls = sum("calls");
+  const totals = `${calls} model ${calls === 1 ? "call" : "calls"} · ${formatCount(sum("promptTokens"))} tokens in · ${formatCount(sum("completionTokens"))} out`;
+  const rows = usage
+    .map((item) => {
+      const fallback = item.fallbacks ? ` · ${item.fallbacks} as fallback` : "";
+      return `<li>${esc(item.model)} <span class="quiet">(${esc(item.provider)})</span>: ${esc(item.calls)} calls · ${esc(formatCount(item.promptTokens))} in · ${esc(formatCount(item.completionTokens))} out · ${esc(formatDuration(item.seconds))}${esc(fallback)}</li>`;
+    })
+    .join("");
+  return `<details class="usage"><summary>${esc(totals)}</summary><ul>${rows}</ul></details>`;
+}
+
 function errorBlock(run) {
   if (!run.errors.length) return "";
   const noun = run.errors.length === 1 ? "isolated error" : "isolated errors";
@@ -354,6 +375,7 @@ function viewWeek(run) {
     </div>
     ${funnel(run.summary)}
     <p class="quiet">${esc(runProgress(run) || [formatDuration(run.durationSeconds), ...run.models].join(" · "))}</p>
+    ${usageBlock(run.modelUsage || [])}
     <div class="desk-grid">
       <div>
         <p class="lede">${esc(run.executiveSummary)}</p>
