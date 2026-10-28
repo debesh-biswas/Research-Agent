@@ -23,6 +23,7 @@ from research_agent.models.base import ModelProviderError
 from research_agent.operations.health import HealthCheck
 from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.feedback import SqliteFeedbackRepository
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.reading import ReadingState
 from research_agent.storage.runs import SqliteRunRepository
@@ -45,6 +46,7 @@ class FakeDesk:
         self.deleted_topics: list[str] = []
         self.started: list[str] = []
         self.pdf: Path | None = None
+        self.votes: list[tuple[str, str, int]] = []
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -100,6 +102,11 @@ class FakeDesk:
 
     def pdf_path(self, paper_id: str) -> Path | None:
         return self.pdf if paper_id == "p1" else None
+
+    def set_vote(self, topic_id: str, paper_id: str, vote: int) -> None:
+        if paper_id != "p1":
+            raise DeskLookupError("That paper is not in the library.")
+        self.votes.append((topic_id, paper_id, vote))
 
     def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState:
         if paper_id != "p1":
@@ -395,6 +402,12 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
         )
         assert _call(base, "PUT", reading, {"starred": True})[0] == 400
         assert _call(base, "PUT", "/api/papers/p2/reading", {"read": True})[0] == 404
+        vote = "/api/topics/spatial/feedback/p1"
+        assert _call(base, "PUT", vote, {"vote": 1}) == (200, {"vote": 1})
+        assert _call(base, "PUT", vote, {"vote": 0}) == (200, {"vote": 0})
+        assert _call(base, "PUT", vote, {"vote": 2})[0] == 400
+        assert _call(base, "PUT", "/api/topics/spatial/feedback/p2", {"vote": 1})[0] == 404
+        assert backend.votes == [("spatial", "p1", 1), ("spatial", "p1", 0)]
         assert _call(base, "GET", "/api/health") == (
             200,
             {
@@ -527,3 +540,23 @@ def test_local_desk_merges_reading_changes_and_shows_them_on_the_shelf(tmp_path:
     assert state == ReadingState(read=True, saved=False, note="Compare with last week.")
     with pytest.raises(DeskLookupError):
         desk.update_reading("no_such_paper", ReadingUpdate(saved=True))
+
+
+def test_local_desk_records_votes_that_reach_the_shelf(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    SqliteTopicRepository(connection).add(TopicSettings(id="spatial", name="Spatial"))
+    paper_id = SqlitePaperRepository(connection).upsert(candidate(title="Maps", doi="10.1/m"))
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    desk.set_vote("spatial", paper_id, 1)
+    votes = SqliteFeedbackRepository(connection)
+    assert votes.votes_for("spatial", [paper_id]) == {paper_id: 1}
+    desk.set_vote("spatial", paper_id, 0)
+    assert votes.votes_for("spatial", [paper_id]) == {}
+    with pytest.raises(DeskLookupError):
+        desk.set_vote("no_topic", paper_id, 1)
+    with pytest.raises(DeskLookupError):
+        desk.set_vote("spatial", "no_paper", -1)
+    connection.close()

@@ -5,6 +5,7 @@ this exercises the graph's wiring, its conditional branches and its failure isol
 """
 
 import asyncio
+import dataclasses
 import json
 import sqlite3
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from research_agent.discovery.aggregator import DiscoveryAggregator, build_sourc
 from research_agent.documents.downloader import PdfDownloader
 from research_agent.documents.parser import ParsingService
 from research_agent.domain.documents import ParsedPaper, ParsedSection
+from research_agent.domain.feedback import FeedbackExamples
 from research_agent.ideation.generator import IdeationService
 from research_agent.models.router import build_router
 from research_agent.queries.planner import QueryPlanner
@@ -348,3 +350,27 @@ def test_a_second_run_reuses_the_stored_analyses(
     assert second.selected_ids == [], "papers whose text has not changed are not re-read"
     assert second.empty_week is True
     assert second.report_path is not None
+
+
+def test_relevance_votes_guide_screening_in_a_full_run(
+    connection: sqlite3.Connection, tmp_path: Path
+) -> None:
+    class Votes:
+        def examples(self, topic_id: str, per_side: int) -> FeedbackExamples:
+            assert (topic_id, per_side) == (topic().id, 5)
+            return FeedbackExamples(relevant=["Semantic SLAM in Kitchens"])
+
+    sent: list[str] = []
+    base = handler()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/chat/completions"):
+            sent.append(str(json.loads(request.content)["messages"]))
+        return base(request)
+
+    workflow = dataclasses.replace(services(connection, tmp_path, respond), feedback=Votes())
+    final = execute(workflow)
+
+    screening = [prompt for prompt in sent if "Return relevance, relevance_score" in prompt]
+    assert screening and all("Marked relevant: Semantic SLAM in Kitchens" in p for p in screening)
+    assert final.status == "completed"

@@ -12,6 +12,7 @@ from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.discovery.aggregator import DiscoveryAggregator
 from research_agent.documents.downloader import DocumentAcquirer
 from research_agent.documents.parser import ParsingService
+from research_agent.domain.feedback import FeedbackExamples
 from research_agent.domain.queries import QueryPlan
 from research_agent.ideation.generator import IdeationService
 from research_agent.queries.planner import QueryPlanner
@@ -29,6 +30,12 @@ class QueryPlanWriter(Protocol):
     """Minimal query-plan persistence seam; implementations stay outside workflow modules."""
 
     def save(self, plan: QueryPlan, run_id: str | None = None) -> str: ...
+
+
+class FeedbackReader(Protocol):
+    """The reader's relevance votes for a topic, as screening examples."""
+
+    def examples(self, topic_id: str, per_side: int) -> FeedbackExamples: ...
 
 
 @dataclass(frozen=True)
@@ -57,3 +64,6 @@ class WorkflowServices:
 
     query_plans: QueryPlanWriter | None = None
     """Optional query-plan persistence for reproducible full runs."""
+
+    feedback: FeedbackReader | None = None
+    """Optional: the reader's relevance votes, given to screening as examples."""

@@ -20,6 +20,7 @@ from research_agent.domain.runs import ErrorRecord, RunRecord, RunSummary
 from research_agent.domain.selection import SelectionDecision
 from research_agent.reports.naming import report_filename
 from research_agent.storage.artifacts import ArtifactStore
+from research_agent.storage.feedback import FeedbackRepository
 from research_agent.storage.papers import PaperRepository
 from research_agent.storage.reading import ReadingRepository, ReadingState
 from research_agent.storage.results import ResultRepository
@@ -38,6 +39,7 @@ def build_shelf(
     store: ArtifactStore,
     *,
     reading: ReadingRepository | None = None,
+    feedback: FeedbackRepository | None = None,
     run_limit: int = _RUN_LIMIT,
 ) -> dict[str, object]:
     """One JSON document for every configured topic and its recent runs."""
@@ -53,7 +55,7 @@ def build_shelf(
                 "name": topic.name,
                 "settings": topic.model_dump(mode="json"),
                 "runs": [
-                    _run(topic, record, runs, results, papers, selections, store, reading)
+                    _run(topic, record, runs, results, papers, selections, store, reading, feedback)
                     for record in runs.recent(topic.id, run_limit)
                 ],
             }
@@ -106,6 +108,7 @@ def _run(
     selections: SelectionRepository,
     store: ArtifactStore,
     reading: ReadingRepository | None = None,
+    feedback: FeedbackRepository | None = None,
 ) -> dict[str, object]:
     stored = results.synthesis_for(record.id)
     synthesis = stored[0] if stored else None
@@ -160,7 +163,9 @@ def _run(
         "gaps": [_gap(gap) for gap in results.gaps_for(record.id)],
         "ideas": [_idea(idea) for idea in results.ideas_for(record.id)],
         "readingOrder": _reading_order(cards),
-        "papers": _with_reading([_public_paper(card) for card in cards], reading),
+        "papers": _with_votes(
+            topic.id, _with_reading([_public_paper(card) for card in cards], reading), feedback
+        ),
     }
 
 
@@ -269,6 +274,16 @@ def _with_reading(
     return cards
 
 
+def _with_votes(
+    topic_id: str, rows: list[dict[str, object]], feedback: FeedbackRepository | None
+) -> list[dict[str, object]]:
+    """Attach the reader's relevance vote for this topic (1, -1, or 0 for none)."""
+    votes = feedback.votes_for(topic_id, (str(row["id"]) for row in rows)) if feedback else {}
+    for row in rows:
+        row["vote"] = votes.get(str(row["id"]), 0)
+    return rows
+
+
 def _screening(
     verdict: ClassificationResult | None, decision: SelectionDecision | None
 ) -> dict[str, object]:
@@ -287,6 +302,9 @@ def screened_papers(
     results: ResultRepository,
     papers: PaperRepository,
     selections: SelectionRepository,
+    *,
+    topic_id: str = "",
+    feedback: FeedbackRepository | None = None,
 ) -> list[dict[str, object]]:
     """Every paper a run screened, kept or dropped, in selection-rank order.
 
@@ -311,7 +329,7 @@ def screened_papers(
                 **_screening(verdicts.get(decision.paper_id), decision),
             }
         )
-    return rows
+    return _with_votes(topic_id, rows, feedback)
 
 
 def _text(value: str | None, fallback: str) -> str:

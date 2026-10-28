@@ -999,6 +999,21 @@ a.primary {
   margin-top: 12px;
 }
 
+.vote[aria-pressed="true"] {
+  color: var(--tide-deep);
+  background: var(--wash);
+  border-color: var(--tide);
+}
+
+.screen-row .reading-bar {
+  margin-top: 8px;
+}
+
+.vote-hint {
+  margin-top: 6px;
+  font-size: 0.85rem;
+}
+
 .unread-dot {
   display: inline-block;
   width: 8px;

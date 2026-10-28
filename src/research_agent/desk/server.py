@@ -11,7 +11,7 @@ import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -27,6 +27,7 @@ from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.feedback import SqliteFeedbackRepository
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.results import SqliteResultRepository
@@ -62,6 +63,14 @@ class AskRequest(StrictModel):
     topic_id: str = Field(min_length=1, alias="topicId")
     run_id: str = Field(min_length=1, alias="runId")
     paper_id: str | None = Field(default=None, alias="paperId")
+
+
+class VoteRequest(StrictModel):
+    """A relevance vote for one paper under one topic; 0 clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vote: Literal[-1, 0, 1]
 
 
 class ReadingUpdate(StrictModel):
@@ -112,6 +121,8 @@ class DeskBackend(Protocol):
 
     def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState: ...
 
+    def set_vote(self, topic_id: str, paper_id: str, vote: Literal[-1, 0, 1]) -> None: ...
+
 
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
@@ -133,6 +144,7 @@ class LocalDesk:
                 SqliteSelectionRepository(connection),
                 self._store,
                 reading=SqliteReadingRepository(connection),
+                feedback=SqliteFeedbackRepository(connection),
             )
         finally:
             connection.close()
@@ -203,6 +215,18 @@ class LocalDesk:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
 
+    def set_vote(self, topic_id: str, paper_id: str, vote: Literal[-1, 0, 1]) -> None:
+        """Record or clear the reader's relevance vote; future runs screen with it."""
+        connection = connect(self._database)
+        try:
+            if SqliteTopicRepository(connection).get(topic_id) is None:
+                raise DeskLookupError("That topic is not in the library.")
+            if SqlitePaperRepository(connection).get(paper_id) is None:
+                raise DeskLookupError("That paper is not in the library.")
+            SqliteFeedbackRepository(connection).set_vote(topic_id, paper_id, vote or None)
+        finally:
+            connection.close()
+
     def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState:
         """Merge a change into a paper's reading state; an unknown paper is a lookup error."""
         connection = connect(self._database)
@@ -237,11 +261,14 @@ class LocalDesk:
     def screened(self, run_id: str) -> list[dict[str, object]]:
         connection = connect(self._database)
         try:
+            run = SqliteRunRepository(connection).get(run_id)
             return screened_papers(
                 run_id,
                 SqliteResultRepository(connection),
                 SqlitePaperRepository(connection),
                 SqliteSelectionRepository(connection),
+                topic_id=run.topic_id if run else "",
+                feedback=SqliteFeedbackRepository(connection),
             )
         finally:
             connection.close()
@@ -350,6 +377,13 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             ):
                 self._update_reading(segments[2])
                 return
+            if (
+                len(segments) == 5
+                and segments[:2] == ["api", "topics"]
+                and segments[3] == "feedback"
+            ):
+                self._set_vote(segments[2], segments[4])
+                return
             topic_id = _topic_route(urlparse(self.path).path)
             if topic_id is None:
                 self._json(404, {"error": "Not found."})
@@ -366,6 +400,21 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(400, {"error": "The topic could not be read."})
                 return
             self._topic_action(lambda: backend.update_topic(topic), 200, "updated")
+
+        def _set_vote(self, topic_id: str, paper_id: str) -> None:
+            try:
+                request = VoteRequest.model_validate(_read_json(self))
+                backend.set_vote(topic_id, paper_id, request.vote)
+            except ValidationError as error:
+                self._json(400, {"error": _first_problem(error)})
+                return
+            except ValueError:
+                self._json(400, {"error": "The vote could not be read."})
+                return
+            except DeskLookupError as error:
+                self._json(404, {"error": str(error)})
+                return
+            self._json(200, {"vote": request.vote})
 
         def _update_reading(self, paper_id: str) -> None:
             try:
