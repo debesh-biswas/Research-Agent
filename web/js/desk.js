@@ -23,6 +23,15 @@ const STAGE_LABEL = {
   persist: "Saving",
 };
 
+const DECISION_LABEL = {
+  selected_deep_read: "Kept for a deep read",
+  selected_summarize: "Kept for a summary",
+  action_ignore: "Dropped: the screener judged it off-topic",
+  below_threshold: "Dropped: relevance below the threshold",
+  already_analyzed: "Skipped: already read in an earlier run",
+  limit_reached: "Dropped: over this run's paper limit",
+};
+
 const POLL_MS = 5000;
 const AWAIT_RUN_MS = 5 * 60 * 1000;
 
@@ -59,6 +68,8 @@ const state = {
   topicsStatus: null,
   awaitingRun: null,
   health: null,
+  screened: null,
+  screenedFilter: "all",
   finishedNotice: null,
   newTopic: {
     step: "form",
@@ -327,7 +338,11 @@ function viewPapers(run) {
   const summaries = run.papers.filter((paper) => paper.action === "summarize").length;
   const abstracts = run.papers.filter((paper) => paper.abstractOnly).length;
   return `<div class="page-head"><h1>Papers</h1>${stamp(run.status, false)}</div>
-    <p class="quiet">${esc(formatPeriod(run))} · ${esc(run.papers.length)} kept</p>
+    <p class="quiet">${esc(formatPeriod(run))} · ${esc(run.papers.length)} kept${
+      run.summary.papersClassified > run.papers.length
+        ? ` · <a href="#/screened">See all ${esc(run.summary.papersClassified)} screened, including the dropped ones</a>`
+        : ""
+    }</p>
     <div class="filters">
       ${filterButton("all", `All ${run.papers.length}`)}
       ${filterButton("deep_read", `Deep reads ${deep}`)}
@@ -336,6 +351,78 @@ function viewPapers(run) {
       <input class="search" id="paper-search" type="search" placeholder="Search titles" value="${esc(state.query)}" aria-label="Search titles" />
     </div>
     <div id="paper-list">${renderPaperList(run)}</div>`;
+}
+
+function screeningLine(screening) {
+  const decision = DECISION_LABEL[screening.decision] || "";
+  const score = typeof screening.score === "number" ? `relevance ${screening.score.toFixed(2)}` : "";
+  return [decision, score].filter(Boolean).join(" · ");
+}
+
+function whyKept(screening) {
+  if (!screening || !screening.decision) return "";
+  const reason = screening.reason ? `<p class="quiet">${esc(screening.reason)}</p>` : "";
+  return `<section class="card-block"><h2>Why it's on the shelf</h2><p>${esc(screeningLine(screening))}</p>${reason}</section>`;
+}
+
+function sourceHref(paper) {
+  if (paper.doi) return `https://doi.org/${paper.doi}`;
+  if (paper.arxivId) return `https://arxiv.org/abs/${paper.arxivId}`;
+  return "";
+}
+
+async function loadScreened(runId) {
+  state.screened = { runId, pending: true, papers: [] };
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/screened`);
+    const payload = await response.json();
+    if (!response.ok || !Array.isArray(payload.papers)) throw new Error("bad response");
+    state.screened = { runId, papers: payload.papers };
+  } catch {
+    state.screened = { runId, papers: [], error: "Can't load the screened papers right now." };
+  }
+  if (pageName(parseRoute().parts) === "screened") render();
+}
+
+function viewScreened(run) {
+  const screened = state.screened && state.screened.runId === run.id ? state.screened : { pending: true, papers: [] };
+  const all = screened.papers;
+  const kept = all.filter((paper) => paper.selected);
+  const shown = state.screenedFilter === "kept" ? kept : state.screenedFilter === "dropped" ? all.filter((paper) => !paper.selected) : all;
+  const filter = (id, label) =>
+    `<button type="button" data-screen-filter="${id}" aria-pressed="${state.screenedFilter === id}">${esc(label)}</button>`;
+  const rows = shown
+    .map((paper) => {
+      const href = paper.selected ? `#/papers/${paper.id}` : sourceHref(paper);
+      const external = !paper.selected && href ? ' target="_blank" rel="noopener"' : "";
+      const title = href ? `<a href="${esc(href)}"${external}>${esc(paper.title)}</a>` : esc(paper.title);
+      const score = typeof paper.score === "number" ? paper.score.toFixed(2) : "–";
+      return `<li class="screen-row" data-kept="${paper.selected}">
+        <span class="screen-score" aria-label="Relevance ${esc(score)}">${esc(score)}</span>
+        <div>
+          <p class="screen-title">${title}</p>
+          <p class="paper-row-meta">${esc(DECISION_LABEL[paper.decision] || paper.decision || "")}</p>
+          ${paper.reason ? `<p class="paper-row-dek">${esc(paper.reason)}</p>` : ""}
+        </div>
+      </li>`;
+    })
+    .join("");
+  const body = screened.pending
+    ? `<p class="empty">Loading the screened papers…</p>`
+    : screened.error
+      ? statusMessage(screened.error, "error")
+      : rows
+        ? `<ul class="screen-list">${rows}</ul>`
+        : `<p class="empty">No papers match.</p>`;
+  return `<a class="back" href="#/papers">Papers</a>
+    <h1>Screened papers</h1>
+    <p class="quiet">${esc(formatPeriod(run))} · ${esc(all.length)} screened · ${esc(kept.length)} kept. Highest relevance first.</p>
+    <div class="filters">
+      ${filter("all", `All ${all.length}`)}
+      ${filter("kept", `Kept ${kept.length}`)}
+      ${filter("dropped", `Dropped ${all.length - kept.length}`)}
+    </div>
+    ${body}`;
 }
 
 function linkPair(label, href) {
@@ -382,7 +469,8 @@ function viewPaper(run, paperId) {
     ${block("Key claims", claims)}
     ${block("Strengths", stringList(paper.strengths))}
     ${block("Limitations", stringList(paper.limitations))}
-    ${block("Relevance to the topic", `<p>${esc(paper.relevance)}</p>`)}`;
+    ${block("Relevance to the topic", `<p>${esc(paper.relevance)}</p>`)}
+    ${whyKept(paper.screening)}`;
 }
 
 function viewReport(run) {
@@ -896,6 +984,7 @@ function render() {
     body = `<h1>${esc(topic.name)}</h1><p class="empty">No run is stored for this topic yet.</p>`;
   } else if (name === "papers" && route.parts[1]) body = viewPaper(run, route.parts[1]);
   else if (name === "papers") body = viewPapers(run);
+  else if (name === "screened") body = viewScreened(run);
   else if (name === "report") body = viewReport(run);
   else if (name === "ask") body = viewAsk(run, route.params.get("paper"));
   else body = viewWeek(run);
@@ -942,6 +1031,7 @@ function render() {
     ask: "Ask",
     topics: "Topics",
     setup: "Setup check",
+    screened: "Screened papers",
     new: "New topic",
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
@@ -969,6 +1059,9 @@ function render() {
   persist();
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
+  if (name === "screened" && run && (!state.screened || state.screened.runId !== run.id)) {
+    void loadScreened(run.id);
+  }
   const section = route.params.get("section");
   if (section) document.getElementById(section)?.scrollIntoView();
   const main = document.getElementById("main");
@@ -1188,6 +1281,12 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  const screenFilter = event.target.closest("[data-screen-filter]");
+  if (screenFilter) {
+    state.screenedFilter = screenFilter.dataset.screenFilter;
+    render();
+    return;
+  }
   if (event.target.id === "recheck-health") {
     void checkHealth();
     return;

@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from research_agent.config import TopicSettings
-from research_agent.desk.shelf import build_shelf, executive_summary_text, find_run
+from research_agent.desk.shelf import (
+    build_shelf,
+    executive_summary_text,
+    find_run,
+    screened_papers,
+)
 from research_agent.domain.analysis import (
     Claim,
     ClassificationResult,
@@ -189,3 +194,76 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
     assert isinstance(ideas, list)
     assert ideas[0]["direction"] == "Replay the second visit after a silent move."
     assert find_run(shelf, TOPIC_ID, "missing") is None
+
+
+def test_screened_papers_explain_every_decision(
+    connection: sqlite3.Connection, tmp_path: Path
+) -> None:
+    runs = SqliteRunRepository(connection)
+    record = runs.start(TOPIC_ID)
+    papers = SqlitePaperRepository(connection)
+    kept = papers.upsert(candidate(title="Topological Maps", doi="10.1000/kept"))
+    dropped = papers.upsert(candidate(title="Click-Through Rates", doi="10.1000/dropped"))
+    results = SqliteResultRepository(connection)
+    for paper_id, score, action, reason in (
+        (kept, 0.9, "deep_read", "Central to spatial memory."),
+        (dropped, 0.05, "ignore", "Recommender systems, not embodied agents."),
+    ):
+        results.save_classification(
+            record.id,
+            ClassificationResult(
+                paper_id=paper_id,
+                classifier_name="semantic_screening",
+                relevance="high" if score > 0.5 else "low",
+                relevance_score=score,
+                paper_type="method",
+                action=action,  # type: ignore[arg-type]
+                reason_short=reason,
+            ),
+        )
+    selections = SqliteSelectionRepository(connection)
+    selections.save(
+        record.id,
+        SelectionPlan(
+            decisions=[
+                SelectionDecision(
+                    paper_id=kept,
+                    rank=1,
+                    selected=True,
+                    action="deep_read",
+                    reason="selected_deep_read",
+                ),
+                SelectionDecision(
+                    paper_id=dropped,
+                    rank=2,
+                    selected=False,
+                    action="ignore",
+                    reason="action_ignore",
+                ),
+            ]
+        ),
+    )
+
+    rows = screened_papers(record.id, results, papers, selections)
+
+    assert [(row["title"], row["selected"], row["decision"]) for row in rows] == [
+        ("Topological Maps", True, "selected_deep_read"),
+        ("Click-Through Rates", False, "action_ignore"),
+    ]
+    assert rows[1]["reason"] == "Recommender systems, not embodied agents."
+    shelf = build_shelf(
+        [TopicSettings(id=TOPIC_ID, name="Spatial")],
+        runs,
+        results,
+        papers,
+        selections,
+        LocalArtifactStore(tmp_path),
+    )
+    card = shelf["topics"][0]["runs"][0]["papers"][0]  # type: ignore[index]
+    assert card["screening"] == {  # only the kept paper is a card on the shelf
+        "score": 0.9,
+        "level": "high",
+        "reason": "Central to spatial memory.",
+        "decision": "selected_deep_read",
+        "rank": 1,
+    }

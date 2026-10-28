@@ -58,3 +58,11 @@ def test_setup_page_shows_health_checks_and_first_steps() -> None:
     assert 'fetch("/api/health")' in script
     assert 'href="#/setup"' in script and "Create your first topic" in script
     assert "recheck-health" in script
+
+
+def test_screened_papers_explain_why_each_was_kept_or_dropped() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "/screened`" in script and 'href="#/screened"' in script
+    for reason in ("selected_deep_read", "action_ignore", "below_threshold", "limit_reached"):
+        assert f"{reason}:" in script
+    assert "Why it's on the shelf" in script

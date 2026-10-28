@@ -2,6 +2,42 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Show why each paper was kept or dropped (complete)
+
+- **Feature/branch:** `F37-why-papers-were-kept`, off `main` at `2832c61`.
+- **Status:** Complete; merged into `main`. Roadmap M5, first item. (F34, a settings screen, was
+  deferred by the user to the packaging stage, M12.)
+- **Summary:** The cloud run kept 2 of 87 papers and the desk could not say why. The screener's
+  verdict (relevance score, level, one-line `reason_short`) and the selection decision (rank and
+  reason) were stored but never shown. Now:
+  - Each kept paper's card carries `screening` (`score`, `level`, `reason`, `decision`, `rank`),
+    and the paper page shows "Why it's on the shelf: Kept for a deep read · relevance 0.88" with
+    the screener's reason.
+  - `GET /api/runs/<id>/screened` (`desk/shelf.py::screened_papers`) lists every screened paper,
+    kept or dropped, in selection-rank order. The Papers page links to a new Screened papers page
+    (`#/screened`) with All / Kept / Dropped filters; each row shows the score, a plain-language
+    decision ("Dropped: the screener judged it off-topic", "Skipped: already read in an earlier
+    run", …) and the reason. Kept papers link to their card, dropped ones to DOI/arXiv in a new tab.
+- **Files affected:** `src/research_agent/desk/shelf.py`, `src/research_agent/desk/server.py`
+  (`DeskBackend.screened`, route), `web/js/desk.js`, `web/css/desk.css`,
+  `tests/unit/test_desk_shelf.py`, `tests/unit/test_desk_server.py`,
+  `tests/unit/test_reading_desk.py`.
+- **Decisions:** The full list is fetched on demand rather than carried on the shelf: a run screens
+  up to hundreds of papers, and the shelf is polled every 5 s while a run is in flight (F31).
+  Earlier in this session the cloud run's reasons looked empty; that was a wrong key in an ad-hoc
+  query — all 87 screened papers had a reason.
+- **Verification:** `screened_papers` test with one kept and one dropped paper (order, decisions,
+  reasons) and the shelf card's `screening` block; route test against the fake backend. Browser
+  on the real cloud-run library served by the real `research-agent desk`: Papers shows "See all
+  87 screened, including the dropped ones"; a kept paper shows "Kept for a deep read · relevance
+  0.88" and its reason; the screened page lists 87 by relevance, Dropped shows 85 and Kept 2,
+  dropped titles open arXiv in a new tab; no page errors. `ruff format --check`, `ruff check`,
+  `mypy` clean; `uv run pytest -q` → 557 passed, 3 deselected, coverage 91.62%.
+- **Known issues:** Found while checking: with a long topic name and the run switcher shown, the
+  header nav wraps "Topics" onto a second line at 1280 px (regression from F28's extra nav item).
+  Fixing next as its own item.
+- **Next step:** `FIX20` — keep the header on one line with long topic names.
+
 ## 2026-10-27 — Runs are manual: drop schedule wording from the desk (complete)
 
 - **Feature/branch:** `FIX19-manual-runs-only`, off `main` at `a5d6253`.
