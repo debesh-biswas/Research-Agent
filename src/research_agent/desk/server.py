@@ -19,7 +19,7 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
-from research_agent.desk.shelf import build_shelf, run_report, screened_papers
+from research_agent.desk.shelf import build_run, build_shelf, run_report, screened_papers
 from research_agent.exports.citations import to_bibtex, to_ris
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
@@ -29,6 +29,7 @@ from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.feedback import SqliteFeedbackRepository
+from research_agent.storage.library import SqliteLibraryRepository
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.results import SqliteResultRepository
@@ -43,6 +44,7 @@ from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
+_LIBRARY_PAGE_MAX = 100
 _CITATION_TYPES = {
     "bib": "application/x-bibtex; charset=utf-8",
     "ris": "application/x-research-info-systems; charset=utf-8",
@@ -131,6 +133,19 @@ class DeskBackend(Protocol):
     def report(self, run_id: str) -> tuple[str, str] | None: ...
 
     def citations(self, run_id: str | None, fmt: str) -> tuple[str, str] | None: ...
+
+    def run(self, run_id: str) -> dict[str, object] | None: ...
+
+    def library(self, query: "LibraryQuery") -> dict[str, object]: ...
+
+
+class LibraryQuery(StrictModel):
+    """What the library page asks for: a filter and a page."""
+
+    topic: str | None = None
+    show: Literal["all", "unread", "saved"] = "all"
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=25, ge=1, le=_LIBRARY_PAGE_MAX)
 
 
 class LocalDesk:
@@ -242,6 +257,68 @@ class LocalDesk:
             connection.close()
         text = to_bibtex(found) if fmt == "bib" else to_ris(found)
         return f"{stem}.{fmt}", text
+
+    def run(self, run_id: str) -> dict[str, object] | None:
+        connection = connect(self._database)
+        try:
+            runs = SqliteRunRepository(connection)
+            record = runs.get(run_id)
+            topic = SqliteTopicRepository(connection).get(record.topic_id) if record else None
+            if record is None or topic is None:
+                return None
+            return build_run(
+                topic,
+                record,
+                runs,
+                SqliteResultRepository(connection),
+                SqlitePaperRepository(connection),
+                SqliteSelectionRepository(connection),
+                self._store,
+                reading=SqliteReadingRepository(connection),
+                feedback=SqliteFeedbackRepository(connection),
+            )
+        finally:
+            connection.close()
+
+    def library(self, query: "LibraryQuery") -> dict[str, object]:
+        """A page of every paper ever kept, newest run first, with its reading state."""
+        connection = connect(self._database)
+        try:
+            total, entries = SqliteLibraryRepository(connection).page(
+                topic_id=query.topic,
+                unread_only=query.show == "unread",
+                saved_only=query.show == "saved",
+                offset=query.offset,
+                limit=query.limit,
+            )
+            papers = SqlitePaperRepository(connection)
+            states = SqliteReadingRepository(connection).states_for(e.paper_id for e in entries)
+            rows: list[dict[str, object]] = []
+            for entry in entries:
+                paper = papers.get(entry.paper_id)
+                if paper is None:
+                    continue
+                state = states.get(entry.paper_id, ReadingState())
+                rows.append(
+                    {
+                        "id": entry.paper_id,
+                        "title": paper.title,
+                        "authors": list(paper.authors),
+                        "venue": paper.venue,
+                        "date": paper.publication_date.isoformat()
+                        if paper.publication_date
+                        else None,
+                        "topicId": entry.topic_id,
+                        "topicName": entry.topic_name,
+                        "runId": entry.run_id,
+                        "runDate": entry.run_started_at.date().isoformat(),
+                        "action": entry.action,
+                        "reading": state.model_dump(),
+                    }
+                )
+        finally:
+            connection.close()
+        return {"total": total, "offset": query.offset, "limit": query.limit, "papers": rows}
 
     def report(self, run_id: str) -> tuple[str, str] | None:
         connection = connect(self._database)
@@ -376,6 +453,24 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             segments = [unquote(segment) for segment in path.split("/") if segment]
             if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "screened":
                 self._json(200, {"papers": backend.screened(segments[2])})
+                return
+            if path == "/api/library":
+                raw = {
+                    key: values[0] for key, values in parse_qs(urlparse(self.path).query).items()
+                }
+                try:
+                    query = LibraryQuery.model_validate(raw)
+                except ValidationError as error:
+                    self._json(400, {"error": _first_problem(error)})
+                    return
+                self._json(200, backend.library(query))
+                return
+            if len(segments) == 3 and segments[:2] == ["api", "runs"]:
+                run = backend.run(segments[2])
+                if run is None:
+                    self._json(404, {"error": "That run is not in the library."})
+                else:
+                    self._json(200, run)
                 return
             run_citations = (
                 len(segments) == 4

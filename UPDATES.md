@@ -2,6 +2,43 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Library: every kept paper across topics and runs (complete)
+
+- **Feature/branch:** `F45-library-view`, off `main` at `950ec6b`.
+- **Status:** Complete; merged into `main`. Roadmap M7, first item.
+- **Summary:** The desk only ever showed the 12 most recent runs per topic, one run at a time. A
+  new Library page (`#/library`, in the nav) lists every paper ever kept, across all topics and
+  runs, newest run first — each paper once, under the latest run that kept it — with All / Unread /
+  Saved filters, a topic filter, and 25 per page with Previous/Next. Opening a paper from a run
+  older than the shelf's window fetches that run (`GET /api/runs/<id>`, same shape as the shelf)
+  so its full card works: notes, votes, PDF, Ask.
+- **Files affected:** `src/research_agent/storage/library.py` (new: `SqliteLibraryRepository.page`
+  with a `ROW_NUMBER() OVER (PARTITION BY paper ORDER BY run start DESC)` query, filters and a
+  total), `src/research_agent/desk/shelf.py` (`build_run`), `src/research_agent/desk/server.py`
+  (`LibraryQuery` validation — `show` all/unread/saved, `offset ≥ 0`, `1 ≤ limit ≤ 100`;
+  `GET /api/library`, `GET /api/runs/<id>`), `web/js/desk.js` (`viewLibrary`, `loadLibrary`,
+  `openLibraryPaper`, `keepOlderRuns`), `web/css/desk.css`, tests in
+  `tests/unit/test_storage_library.py` (new), `test_desk_server.py`, `test_reading_desk.py`.
+- **Decisions:**
+  - Runs fetched for the library are kept in `state.olderRuns` and re-attached after every shelf
+    reload; otherwise F31's polling would replace the shelf and the open paper would read "Not in
+    this run".
+  - The library reloads whenever it is opened, so reading changes made elsewhere show at once.
+  - The header's "New topic" link was removed: the seventh nav link pushed the nav onto two rows at
+    every desktop width (measured: the nav box is capped at 457 px, the links need 510 px), and the
+    link duplicated the New topic button on the Topics page, the welcome page and the setup page.
+    The nav now fits on one row from 1080 px up with 34–54 px to spare.
+- **Verification:** Repository: a paper kept in two runs appears once under the newer run, a
+  paper only ever dropped is absent, saved/unread/topic filters, paging totals. `LocalDesk.run`
+  and `.library` against a real database; routes 200/404/400. Browser with a seeded library of 14
+  runs (two beyond the shelf's 12) and 30 kept papers: "Showing 1–25 of 30", Next → "26–30 of 30",
+  opening a week-0 paper (not on the shelf) showed its card, which survived a shelf reload; the
+  Unread filter then counted 29; header one row at 1600/1280/1100/1080/1000 px; no page errors.
+  `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 596 passed,
+  3 deselected, coverage 92.15%.
+- **Next step:** Roadmap M7 — `F46`: search the library by title, author, venue, method or
+  dataset text.
+
 ## 2026-10-28 — Notify when a run finishes (complete)
 
 - **Feature/branch:** `F44-finish-notification`, off `main` at `03dbd1d`.
