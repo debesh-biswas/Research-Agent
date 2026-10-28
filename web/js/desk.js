@@ -33,6 +33,10 @@ const DECISION_LABEL = {
 };
 
 const POLL_MS = 5000;
+/* Desk calls that only read or write the library give up after this, so a stuck request can't
+   stall the progress poll or leave a page loading forever. Model calls (Ask, keyword suggestions,
+   the setup check) are left alone: they are slow on purpose and time out on the server. */
+const REQUEST_MS = 20000;
 const AWAIT_RUN_MS = 5 * 60 * 1000;
 
 const SOURCES = [
@@ -451,7 +455,7 @@ function setReadingLocally(paperId, value) {
 /* Returns null on success, or the message to show. */
 async function updateReading(paperId, change) {
   try {
-    const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/reading`, {
+    const response = await request(`/api/papers/${encodeURIComponent(paperId)}/reading`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(change),
@@ -496,7 +500,7 @@ function sourceHref(paper) {
 async function loadScreened(runId) {
   state.screened = { runId, pending: true, papers: [] };
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/screened`);
+    const response = await request(`/api/runs/${encodeURIComponent(runId)}/screened`);
     const payload = await response.json();
     if (!response.ok || !Array.isArray(payload.papers)) throw new Error("bad response");
     state.screened = { runId, papers: payload.papers };
@@ -794,7 +798,7 @@ function turnsFromServer(stored) {
 async function loadThread(key, paperId) {
   state.threads[key] = null;
   try {
-    const response = await fetch(threadUrl(paperId));
+    const response = await request(threadUrl(paperId));
     const payload = await response.json();
     if (!response.ok || !Array.isArray(payload.turns)) throw new Error("bad response");
     state.threads[key] = turnsFromServer(payload.turns);
@@ -807,7 +811,7 @@ async function loadThread(key, paperId) {
 async function startOver(paperId) {
   const key = threadKey(paperId);
   try {
-    const response = await fetch(threadUrl(paperId), { method: "DELETE" });
+    const response = await request(threadUrl(paperId), { method: "DELETE" });
     if (!response.ok) throw new Error("bad response");
     state.threads[key] = [];
   } catch {
@@ -890,6 +894,35 @@ function viewAsk(run, paperId) {
     <p class="note">Answers stay inside the cards on this shelf and see the last few questions of this conversation. A question about the week also sees the summaries of up to four earlier weeks. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
 }
 
+/* A modal that names the action, unlike the browser's OK/Cancel box. Cancel has focus, so Enter is safe;
+   Escape cancels. The dialog sits outside #app, which render() replaces. */
+function request(path, options = {}) {
+  return fetch(path, { ...options, signal: AbortSignal.timeout(REQUEST_MS) });
+}
+
+function confirmAction(message, action) {
+  let dialog = document.getElementById("confirm-dialog");
+  if (!dialog) {
+    dialog = document.createElement("dialog");
+    dialog.id = "confirm-dialog";
+    dialog.className = "confirm";
+    document.body.append(dialog);
+  }
+  dialog.innerHTML = `<form method="dialog">
+      <p id="confirm-message">${esc(message)}</p>
+      <div class="form-actions">
+        <button class="button" value="cancel" autofocus>Cancel</button>
+        <button class="danger" value="confirm">${esc(action)}</button>
+      </div>
+    </form>`;
+  dialog.setAttribute("aria-describedby", "confirm-message");
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), { once: true });
+  });
+}
+
 function statusMessage(text, tone) {
   return text ? `<p class="status-line" data-tone="${esc(tone || "")}" role="status">${esc(text)}</p>` : "";
 }
@@ -919,7 +952,7 @@ function storageLine() {
 async function loadStorage() {
   state.storage = { pending: true };
   try {
-    const response = await fetch("/api/storage");
+    const response = await request("/api/storage");
     if (!response.ok) throw new Error("bad response");
     state.storage = await response.json();
   } catch {
@@ -1416,7 +1449,7 @@ async function loadLibrary() {
   if (library.topic) params.set("topic", library.topic);
   if (library.q.trim()) params.set("q", library.q.trim());
   try {
-    const response = await fetch(`/api/library?${params}`);
+    const response = await request(`/api/library?${params}`);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "bad response");
     state.library = { ...state.library, pending: false, data: payload };
@@ -1499,7 +1532,7 @@ async function openLibraryPaper(topicId, runId, paperId) {
   if (!topic) return;
   if (!topic.runs.some((run) => run.id === runId)) {
     try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+      const response = await request(`/api/runs/${encodeURIComponent(runId)}`);
       if (!response.ok) throw new Error("missing");
       state.olderRuns.set(runId, { topicId, run: await response.json() });
       keepOlderRuns();
@@ -1516,7 +1549,7 @@ async function openLibraryPaper(topicId, runId, paperId) {
 
 async function loadShelf() {
   try {
-    const response = await fetch("/api/shelf");
+    const response = await request("/api/shelf");
     if (response.ok) {
       const shelf = await response.json();
       if (shelf.live && Array.isArray(shelf.topics)) {
@@ -1559,7 +1592,7 @@ function clearTopicRuns(topicId) {
 /* Returns null on success, or the message to show. */
 async function topicRequest(method, path, body) {
   try {
-    const response = await fetch(path, {
+    const response = await request(path, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -1610,7 +1643,7 @@ async function createTopic(form) {
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
   render();
   try {
-    const response = await fetch("/api/topics", {
+    const response = await request("/api/topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: nt.id, name: nt.name, keywords: nt.keywords, ...nt.settings }),
@@ -1731,12 +1764,13 @@ function onClick(event) {
   const deleteTopic = event.target.closest("[data-delete-topic]");
   if (deleteTopic) {
     const topic = topicById(deleteTopic.dataset.deleteTopic);
-    if (!confirm(`Delete ${topic.name} and all of its runs? Files on disk are kept. This cannot be undone.`)) return;
-    void topicAction("DELETE", `/api/topics/${encodeURIComponent(topic.id)}`, undefined, `Deleted ${topic.name}.`).then(
-      () => {
-        if (state.topicId === topic.id) state.topicId = null;
-        render();
-      },
+    void confirmAction(`Delete ${topic.name} and all of its runs? Files on disk are kept. This cannot be undone.`, "Delete topic").then(
+      (ok) =>
+        ok &&
+        topicAction("DELETE", `/api/topics/${encodeURIComponent(topic.id)}`, undefined, `Deleted ${topic.name}.`).then(() => {
+          if (state.topicId === topic.id) state.topicId = null;
+          render();
+        }),
     );
     return;
   }
@@ -1768,23 +1802,29 @@ function onClick(event) {
     return;
   }
   if (event.target.id === "ask-start-over") {
-    if (!confirm("Start a new conversation? The earlier questions and answers here are deleted.")) return;
     const paperId = parseRoute().params.get("paper");
     const { run } = current();
-    void startOver(run && paperId && paperById(run, paperId) ? paperId : null);
+    const asked = run && paperId && paperById(run, paperId) ? paperId : null;
+    void confirmAction("Start a new conversation? The earlier questions and answers here are deleted.", "Start over").then(
+      (ok) => ok && startOver(asked),
+    );
     return;
   }
   if (event.target.id === "clear-topic-runs") {
     const { topic } = current();
     if (!topic) return;
-    if (!confirm(`Clear all runs for ${topic.name}? Their reports are deleted; papers, PDFs and notes stay in the library. This cannot be undone.`)) return;
-    void clearTopicRuns(topic.id);
+    void confirmAction(
+      `Clear all runs for ${topic.name}? Their reports are deleted; papers, PDFs and notes stay in the library. This cannot be undone.`,
+      "Clear all runs",
+    ).then((ok) => ok && clearTopicRuns(topic.id));
     return;
   }
   const clearRun = event.target.closest("[data-clear-run]");
   if (clearRun) {
-    if (!confirm("Clear this run? Its report is deleted; its papers, PDFs and notes stay in the library. This cannot be undone.")) return;
-    void deleteRun(clearRun.dataset.clearRun);
+    const runId = clearRun.dataset.clearRun;
+    void confirmAction("Clear this run? Its report is deleted; its papers, PDFs and notes stay in the library. This cannot be undone.", "Clear run").then(
+      (ok) => ok && deleteRun(runId),
+    );
     return;
   }
   if (event.target.closest("a[href^='#/']")) state.moveFocus = true;
