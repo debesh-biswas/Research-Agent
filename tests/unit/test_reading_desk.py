@@ -80,3 +80,11 @@ def test_papers_track_read_saved_and_notes() -> None:
     for hook in ("data-toggle-saved", "data-toggle-read", "note-form", "noteDrafts"):
         assert hook in script
     assert 'filterButton("unread"' in script and 'filterButton("saved"' in script
+
+
+def test_relevance_votes_are_offered_on_papers_and_screened_rows() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "/feedback/" in script and "castVote" in script
+    assert script.count("voteButtons(") >= 3, (
+        "defined once, used on the paper page and screened rows"
+    )

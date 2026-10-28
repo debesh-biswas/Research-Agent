@@ -367,12 +367,20 @@ function viewPapers(run) {
     <div id="paper-list">${renderPaperList(run)}</div>`;
 }
 
+function voteButtons(paperId, vote) {
+  const button = (value, label) =>
+    `<button class="button vote" type="button" data-vote="${value}" data-vote-paper="${esc(paperId)}" aria-pressed="${vote === value}">${label}</button>`;
+  return `${button(1, "👍 Relevant")}${button(-1, "👎 Not relevant")}`;
+}
+
 function readingBar(paper) {
   const progress = reading(paper);
   return `<div class="reading-bar">
+      ${voteButtons(paper.id, paper.vote || 0)}
       <button class="button" type="button" data-toggle-saved="${esc(paper.id)}" aria-pressed="${progress.saved}">${progress.saved ? "★ Saved" : "☆ Save"}</button>
       <button class="button" type="button" data-toggle-read="${esc(paper.id)}">${progress.read ? "Mark unread" : "Mark read"}</button>
-    </div>`;
+    </div>
+    <p class="quiet vote-hint">Relevant / Not relevant teach this topic's future screening.</p>`;
 }
 
 function notesBlock(paper) {
@@ -390,6 +398,26 @@ function notesBlock(paper) {
       </form>
       ${statusMessage(status.text, status.tone)}
     </section>`;
+}
+
+/* Record a relevance vote and mirror it on the shelf and the screened list. */
+async function castVote(topicId, paperId, vote) {
+  const problem = await topicRequest(
+    "PUT",
+    `/api/topics/${encodeURIComponent(topicId)}/feedback/${encodeURIComponent(paperId)}`,
+    { vote },
+  );
+  if (problem) {
+    state.noteStatus = { paperId, text: problem, tone: "error" };
+    return;
+  }
+  const topic = topics().find((item) => item.id === topicId);
+  for (const run of topic ? topic.runs : []) {
+    for (const paper of run.papers) if (paper.id === paperId) paper.vote = vote;
+  }
+  for (const paper of (state.screened && state.screened.papers) || []) {
+    if (paper.id === paperId) paper.vote = vote;
+  }
 }
 
 /* Apply a stored reading state to every copy of the paper on the shelf; one paper can sit in several runs. */
@@ -478,6 +506,7 @@ function viewScreened(run) {
           <p class="screen-title">${title}</p>
           <p class="paper-row-meta">${esc(DECISION_LABEL[paper.decision] || paper.decision || "")}</p>
           ${paper.reason ? `<p class="paper-row-dek">${esc(paper.reason)}</p>` : ""}
+          <div class="reading-bar">${voteButtons(paper.id, paper.vote || 0)}</div>
         </div>
       </li>`;
     })
@@ -487,7 +516,7 @@ function viewScreened(run) {
     : screened.error
       ? statusMessage(screened.error, "error")
       : rows
-        ? `<ul class="screen-list">${rows}</ul>`
+        ? `<p class="quiet vote-hint">Mark papers Relevant or Not relevant to teach this topic's future screening, including ones it dropped.</p><ul class="screen-list">${rows}</ul>`
         : `<p class="empty">No papers match.</p>`;
   return `<a class="back" href="#/papers">Papers</a>
     <h1>Screened papers</h1>
@@ -1364,6 +1393,15 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  const voteButton = event.target.closest("[data-vote]");
+  if (voteButton) {
+    const { topic } = current();
+    const paperId = voteButton.dataset.votePaper;
+    const pressed = voteButton.getAttribute("aria-pressed") === "true";
+    const vote = pressed ? 0 : Number(voteButton.dataset.vote);
+    void castVote(topic.id, paperId, vote).then(render);
+    return;
+  }
   const toggleSaved = event.target.closest("[data-toggle-saved]");
   const toggleRead = event.target.closest("[data-toggle-read]");
   if (toggleSaved || toggleRead) {

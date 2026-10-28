@@ -4,6 +4,7 @@ import pytest
 
 from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.domain.analysis import ClassifierVerdict
+from research_agent.domain.feedback import FeedbackExamples
 from research_agent.domain.papers import PaperCandidate, SourceReference
 from research_agent.models.base import ModelProviderError, ModelResult
 from research_agent.screening.service import PaperScreener
@@ -70,3 +71,43 @@ async def test_a_dead_provider_is_reported_as_a_screening_failure() -> None:
     assert len(failures) == 1
     assert failures[0].category == "MODEL_API_ERROR"
     assert failures[0].paper_id
+
+
+class RecordingRouter(Router):
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def generate(self, *args: object, **kwargs: object) -> ModelResult:
+        messages = args[1]
+        assert isinstance(messages, list)
+        self.prompts.append(messages[-1].content)
+        return await super().generate(*args, **kwargs)
+
+
+def _paper() -> PaperCandidate:
+    return PaperCandidate(
+        title="Topological Maps for Home Robots",
+        abstract="A named map.",
+        authors=[],
+        discovered_at=datetime.now(UTC),
+        sources=[SourceReference(source="arxiv", source_id="1")],
+    )
+
+
+@pytest.mark.anyio
+async def test_feedback_votes_reach_the_screening_prompt_only_when_present() -> None:
+    topic = TopicSettings(id="spatial", name="Spatial Intelligence")
+    router = RecordingRouter()
+    screener = PaperScreener(router, ApplicationSettings())  # type: ignore[arg-type]
+    examples = FeedbackExamples(relevant=["Semantic SLAM in Kitchens"], not_relevant=["CTR " * 80])
+
+    plain, _ = await screener.screen_many([_paper()], topic)
+    guided, _ = await screener.screen_many([_paper()], topic, examples)
+    await screener.screen_many([_paper()], topic, FeedbackExamples())
+
+    without, with_votes, with_none = router.prompts
+    assert "Marked relevant" not in without and without == with_none
+    assert "- Marked relevant: Semantic SLAM in Kitchens" in with_votes
+    assert "- Marked not relevant: " + ("CTR " * 80)[:200] + "\n" in with_votes
+    assert (plain[0][1]["feedback_examples"], guided[0][1]["feedback_examples"]) == (0, 2)
+    assert guided[0][1]["version"] == "screening.v2"

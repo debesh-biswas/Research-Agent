@@ -8,6 +8,7 @@ from pydantic import Field
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.discovery.normalize import canonical_id
 from research_agent.domain.analysis import ClassificationResult, ClassifierVerdict
+from research_agent.domain.feedback import FeedbackExamples
 from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.runs import ErrorCategory
 from research_agent.models.base import ModelMessage, ModelProviderError, ModelValidationError
@@ -48,10 +49,14 @@ class PaperScreener:
         self._semaphore = asyncio.Semaphore(settings.concurrency.analysis)
 
     async def screen_many(
-        self, papers: list[PaperCandidate], topic: TopicSettings
+        self,
+        papers: list[PaperCandidate],
+        topic: TopicSettings,
+        examples: FeedbackExamples | None = None,
     ) -> tuple[list[tuple[ClassificationResult, Provenance]], list[ScreeningFailure]]:
         outcomes = await asyncio.gather(
-            *(self._one_bounded(paper, topic) for paper in papers), return_exceptions=True
+            *(self._one_bounded(paper, topic, examples) for paper in papers),
+            return_exceptions=True,
         )
         accepted: list[tuple[ClassificationResult, Provenance]] = []
         failed: list[ScreeningFailure] = []
@@ -72,12 +77,13 @@ class PaperScreener:
         return accepted, failed
 
     async def _one_bounded(
-        self, paper: PaperCandidate, topic: TopicSettings
+        self, paper: PaperCandidate, topic: TopicSettings, examples: FeedbackExamples | None
     ) -> tuple[ClassificationResult, Provenance]:
         async with self._semaphore:
+            prompt = render(paper, topic, self._settings.screening, examples)
             messages = [
                 ModelMessage(role="system", content=SYSTEM_PROMPT),
-                ModelMessage(role="user", content=render(paper, topic, self._settings.screening)),
+                ModelMessage(role="user", content=prompt),
             ]
             repaired = False
             try:
@@ -120,4 +126,7 @@ class PaperScreener:
                 "model_name": result.model,
                 "fell_back": result.fell_back,
                 "repaired": repaired,
+                "feedback_examples": (
+                    len(examples.relevant) + len(examples.not_relevant) if examples else 0
+                ),
             }

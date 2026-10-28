@@ -24,6 +24,7 @@ from research_agent.domain.runs import RunSummary
 from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.reports.naming import report_filename
 from research_agent.storage.artifacts import LocalArtifactStore
+from research_agent.storage.feedback import SqliteFeedbackRepository
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.results import SqliteResultRepository
@@ -245,7 +246,12 @@ def test_screened_papers_explain_every_decision(
         ),
     )
 
-    rows = screened_papers(record.id, results, papers, selections)
+    feedback = SqliteFeedbackRepository(connection)
+    feedback.set_vote(TOPIC_ID, dropped, 1)
+    rows = screened_papers(
+        record.id, results, papers, selections, topic_id=TOPIC_ID, feedback=feedback
+    )
+    assert [row["vote"] for row in rows] == [0, 1], "a dropped paper the reader wants back"
 
     assert [(row["title"], row["selected"], row["decision"]) for row in rows] == [
         ("Topological Maps", True, "selected_deep_read"),
@@ -262,9 +268,11 @@ def test_screened_papers_explain_every_decision(
         selections,
         LocalArtifactStore(tmp_path),
         reading=reading,
+        feedback=feedback,
     )
     card = shelf["topics"][0]["runs"][0]["papers"][0]  # type: ignore[index]
     assert card["reading"] == {"read": False, "saved": True, "note": "Re-read the ablation."}
+    assert card["vote"] == 0
     assert card["screening"] == {  # only the kept paper is a card on the shelf
         "score": 0.9,
         "level": "high",

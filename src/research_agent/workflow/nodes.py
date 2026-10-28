@@ -22,6 +22,9 @@ from research_agent.workflow.state import ResearchState
 _LOGGER = logging.getLogger(__name__)
 
 Update = dict[str, Any]
+
+FEEDBACK_EXAMPLES_PER_SIDE = 5
+"""Enough votes to show the reader's taste without crowding out the paper being judged."""
 Node = Callable[[ResearchState], Awaitable[Any]]
 
 
@@ -122,7 +125,14 @@ def classify(services: WorkflowServices) -> Node:
 
     async def node(state: ResearchState) -> Update:
         candidates = state.candidates[: services.topic.limits.max_classified]
-        outcome, failures = await services.screener.screen_many(candidates, services.topic)
+        examples = (
+            services.feedback.examples(services.topic.id, per_side=FEEDBACK_EXAMPLES_PER_SIDE)
+            if services.feedback
+            else None
+        )
+        outcome, failures = await services.screener.screen_many(
+            candidates, services.topic, examples
+        )
         run_id = state.run_id or ""
         by_id = {canonical_id(paper): paper for paper in state.candidates}
         for result, provenance in outcome:

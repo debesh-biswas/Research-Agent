@@ -2,6 +2,46 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Relevance feedback steers screening (complete)
+
+- **Feature/branch:** `F40-relevance-feedback`, off `main` at `6480cf3`.
+- **Status:** Complete; merged into `main`. Roadmap M5, fourth item.
+- **Summary:** Screening repeated the same misjudgements every week (the cloud run dropped
+  on-topic humanoid and locomotion papers with nothing the reader could do). The reader can now
+  vote "👍 Relevant" or "👎 Not relevant" on any paper — on its page, and on every row of the
+  Screened papers list, including dropped ones. Votes are per topic. The next run's screening
+  prompt includes the topic's newest 5 relevant and 5 not-relevant titles as guidance. Prompt
+  context only — nothing is trained, per AGENTS.md's guardrails.
+- **Files affected:** `src/research_agent/domain/feedback.py` (new: `Vote`,
+  `FeedbackExamples`), `src/research_agent/storage/feedback.py` (new: `FeedbackRepository`,
+  `SqliteFeedbackRepository`), `src/research_agent/storage/database.py` (migration:
+  `relevance_feedback` keyed by topic and paper, cascading with both),
+  `src/research_agent/screening/prompts.py` (`screening.v2`; `render(..., examples)` adds the
+  guidance block only when there are votes; titles cut at 200 chars),
+  `src/research_agent/screening/service.py` (`screen_many(..., examples)`; provenance records
+  `feedback_examples`), `src/research_agent/workflow/services.py` (`FeedbackReader` protocol,
+  optional `feedback` service), `src/research_agent/workflow/nodes.py` (classify loads examples),
+  `src/research_agent/operations/wiring.py`, `src/research_agent/desk/shelf.py` (cards and
+  screened rows carry `vote`), `src/research_agent/desk/server.py`
+  (`PUT /api/topics/<topic>/feedback/<paper>` with vote 1/-1/0; 404 for an unknown topic or
+  paper), `web/js/desk.js`, `web/css/desk.css`, and tests.
+- **Decisions:** `workflow/services.py` declares its own one-method `FeedbackReader` protocol
+  (the `QueryPlanWriter` precedent) instead of importing a storage module, so the portability
+  boundary test stays as strict as it was. Pressing an active vote again clears it. With no votes
+  the screening prompt is byte-for-byte what it was before (tested).
+- **Verification:** Repository (set, change, clear, per-topic independence; examples newest first
+  and bounded); screener (no votes → prompt unchanged; votes → guidance lines; provenance counts);
+  a full mocked graph run where every screening request sent to the model carried the vote;
+  desk route 200/400/404 and `LocalDesk.set_vote` against a real database; votes on shelf cards
+  and screened rows. Browser on a copy of the real cloud-run library: 👍 on a dropped paper and 👎
+  on a kept one both persisted across reloads, a second press cleared a vote, and the database
+  then held exactly the examples the next run would use. `ruff format --check`, `ruff check`,
+  `mypy` clean; `uv run pytest -q` → 570 passed, 3 deselected, coverage 91.84%.
+- **Not verified:** a live run measuring how much the votes change a real model's decisions.
+- **Known issues:** Found while testing: when the browser drops a connection mid-response (a fast
+  reload), the desk prints a `BrokenPipeError` traceback. Harmless, but alarming; fixing next.
+- **Next step:** `FIX21` — treat client disconnects as normal in the desk server.
+
 ## 2026-10-28 — Reading state: read/unread, saved, notes (complete)
 
 - **Feature/branch:** `F39-reading-state`, off `main` at `491c427`.

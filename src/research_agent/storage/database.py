@@ -191,6 +191,15 @@ MIGRATIONS: tuple[str, ...] = (
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE relevance_feedback (
+        topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+        paper_id TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+        vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (topic_id, paper_id)
+    )
+    """,
 )
 
 
