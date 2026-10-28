@@ -76,7 +76,8 @@ Each pipeline stage also has its own command (`discover`, `classify`, `acquire`,
 and the weekly report from the local library. Ask sends the question to NVIDIA NIM when that
 provider is configured, and to the local model otherwise. The answer is limited to the cards
 on the shelf. Each run and each paper keeps its own conversation in the library, so a follow-up
-question sees the last few turns; "Start over" deletes it.
+question sees the last few turns; "Start over" deletes it. A question about the week also sees
+short summaries of up to four earlier runs of the topic, so it can say what changed.
 
 ```bash
 uv run research-agent desk

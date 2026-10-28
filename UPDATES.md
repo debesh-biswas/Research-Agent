@@ -2,6 +2,47 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Ask across weeks (complete)
+
+- **Feature/branch:** `F48-ask-across-weeks`, off `main` at `da69177`.
+- **Status:** Complete; merged into `main`. Roadmap M8, second and last item.
+- **Summary:** A question about the week now also sends `earlier_weeks`: up to 4 earlier runs of
+  the same topic from the shelf (newest first; runs with no summary and no developments, such as
+  a run still going, are skipped), each with its period, summary (cut at 500 characters) and first
+  3 developments. It also sends this run's `changes_from_history`. A question about one paper does
+  not. The Ask page gains the chip "How does this compare with earlier weeks?". The prompt
+  (`desk_ask.v3`) now also asks the model to name papers by title in the prose, never by id.
+- **Files affected:** `src/research_agent/desk/ask.py` (`_earlier_weeks`, `EARLIER_WEEKS`,
+  `_context(..., weeks=)`), `web/js/desk.js`, `README.md`, `tests/unit/test_desk_ask.py`.
+- **Decisions:** Earlier weeks come from the shelf the desk already builds, not from a new query.
+  They have their own budget, a quarter of `reports.max_input_chars`, and the oldest is dropped
+  first. The first version shared the card budget, and the real check showed why that fails: at
+  the default 8,000 characters, two cards already fill it, so every earlier week was dropped. The
+  model then reported that "the earlier_weeks list is empty". The key is now left out when no
+  week fits. Citations stay limited to this run's cards, because the page can only link papers on
+  the open run. Earlier weeks are named by period.
+- **Verification:** Unit tests cover:
+  - the window: older runs only, newest first, empty runs skipped, at most 4;
+  - none for a paper question or for the oldest run;
+  - their own budget, which never costs this week a card;
+  - no key when nothing fits;
+  - compact entries.
+
+  Real model (OpenRouter `nvidia/nemotron-3.5-super-vl:free`), on a scratch copy of the cloud-run
+  library with one added older week:
+  - "Which paper should I read first?" then "Why that one rather than the other?": the follow-up
+    resolved "that one" from the stored turn.
+  - "How does this compare with earlier weeks?" contrasted 1–10 Oct with this week by period, and
+    named papers by title.
+
+  `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 610 passed,
+  3 deselected, coverage 92.44%.
+- **Known issues:** Earlier weeks come from the shelf, which holds the newest 12 runs per topic. A
+  run opened from the Library beyond that still cannot be asked about (see F47).
+- **Next step:** Roadmap M9. `FIX22`: open SQLite with WAL and a busy timeout, so the desk and a
+  run writing at the same time do not fail with "database is locked". Then `F49`: storage usage,
+  an option to delete a run's files when clearing it, and refusing to clear a running run.
+
 ## 2026-10-28 — Ask keeps the conversation (complete)
 
 - **Feature/branch:** `F47-ask-conversation`, off `main` at `8afc4b0`.
