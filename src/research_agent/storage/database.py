@@ -182,6 +182,15 @@ MIGRATIONS: tuple[str, ...] = (
     """,
     "ALTER TABLE runs ADD COLUMN stage TEXT",
     "ALTER TABLE runs ADD COLUMN stage_started_at TEXT",
+    """
+    CREATE TABLE reading_state (
+        paper_id TEXT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+        read INTEGER NOT NULL DEFAULT 0,
+        saved INTEGER NOT NULL DEFAULT 0,
+        note TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
 )
 
 

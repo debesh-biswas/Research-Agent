@@ -28,6 +28,7 @@ from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
+from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
@@ -61,6 +62,16 @@ class AskRequest(StrictModel):
     topic_id: str = Field(min_length=1, alias="topicId")
     run_id: str = Field(min_length=1, alias="runId")
     paper_id: str | None = Field(default=None, alias="paperId")
+
+
+class ReadingUpdate(StrictModel):
+    """A change to a paper's reading state; fields left out keep their stored value."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    read: bool | None = None
+    saved: bool | None = None
+    note: str | None = None
 
 
 class TopicSuggestRequest(StrictModel):
@@ -99,6 +110,8 @@ class DeskBackend(Protocol):
 
     def pdf_path(self, paper_id: str) -> Path | None: ...
 
+    def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState: ...
+
 
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
@@ -119,6 +132,7 @@ class LocalDesk:
                 SqlitePaperRepository(connection),
                 SqliteSelectionRepository(connection),
                 self._store,
+                reading=SqliteReadingRepository(connection),
             )
         finally:
             connection.close()
@@ -188,6 +202,22 @@ class LocalDesk:
         if running:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
+
+    def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState:
+        """Merge a change into a paper's reading state; an unknown paper is a lookup error."""
+        connection = connect(self._database)
+        try:
+            if SqlitePaperRepository(connection).get(paper_id) is None:
+                raise DeskLookupError("That paper is not in the library.")
+            reading = SqliteReadingRepository(connection)
+            current = reading.states_for([paper_id]).get(paper_id, ReadingState())
+            state = ReadingState.model_validate(
+                {**current.model_dump(), **update.model_dump(exclude_none=True)}
+            )
+            reading.save(paper_id, state)
+            return state
+        finally:
+            connection.close()
 
     def pdf_path(self, paper_id: str) -> Path | None:
         """The stored PDF for a paper, only if it really is a PDF inside the library folder."""
@@ -312,6 +342,14 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
         def do_PUT(self) -> None:
             if self._foreign():
                 return
+            segments = [unquote(part) for part in urlparse(self.path).path.split("/") if part]
+            if (
+                len(segments) == 4
+                and segments[:2] == ["api", "papers"]
+                and segments[3] == "reading"
+            ):
+                self._update_reading(segments[2])
+                return
             topic_id = _topic_route(urlparse(self.path).path)
             if topic_id is None:
                 self._json(404, {"error": "Not found."})
@@ -328,6 +366,21 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(400, {"error": "The topic could not be read."})
                 return
             self._topic_action(lambda: backend.update_topic(topic), 200, "updated")
+
+        def _update_reading(self, paper_id: str) -> None:
+            try:
+                update = ReadingUpdate.model_validate(_read_json(self))
+                state = backend.update_reading(paper_id, update)
+            except ValidationError as error:
+                self._json(400, {"error": _first_problem(error)})
+                return
+            except ValueError:
+                self._json(400, {"error": "The change could not be read."})
+                return
+            except DeskLookupError as error:
+                self._json(404, {"error": str(error)})
+                return
+            self._json(200, state.model_dump())
 
         def _topic_action(self, action: Callable[[], None], status: int, done: str) -> None:
             """Run a topic change, mapping a missing topic to 404 and a conflict to 409."""
