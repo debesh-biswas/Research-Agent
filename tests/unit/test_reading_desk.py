@@ -3,6 +3,10 @@
 import re
 from pathlib import Path
 
+import pytest
+
+from research_agent import cli
+
 WEB = Path(__file__).resolve().parents[2] / "web"
 
 
@@ -148,3 +152,17 @@ def test_fonts_are_self_hosted_with_their_licences() -> None:
 def test_a_single_day_period_is_not_written_as_a_range() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
     assert "run.periodStart === run.periodEnd" in script
+
+
+def test_the_desk_finds_its_page_from_any_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert cli._web_root() == WEB
+
+
+def test_the_wheel_ships_the_desk_page() -> None:
+    pyproject = (WEB.parent / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '"web" = "research_agent/web"' in pyproject

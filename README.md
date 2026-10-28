@@ -36,6 +36,11 @@ order, from highest to lowest precedence:
 3. `config/settings.yaml`
 4. model defaults
 
+Commands read `config/settings.yaml` and `config/topics.yaml` from the current folder unless
+`--settings` and `--topics` say otherwise, and a relative `data_directory` is relative to it too.
+To use the command outside a checkout, install it with `uv tool install .` and run it from a
+folder that holds your `config/`; the desk's page ships inside the package.
+
 Nested environment fields use a double underscore, such as
 `RESEARCH_AGENT_CONCURRENCY__DISCOVERY=2`. `config/topics.yaml` seeds a new library once, on
 the first command; after that, topics live in the library and change through the `topic`
@@ -108,3 +113,12 @@ Runtime code uses the `src/research_agent` package. The initial package boundari
 homes for domain models, workflow orchestration, discovery adapters, screening, model
 providers, documents, storage, observability, and deterministic utilities. Provider-specific
 logic must remain behind interfaces, and LangGraph will be used only for orchestration.
+
+## Licences
+
+The project is MIT-licensed (`LICENSE`). Its direct dependencies are MIT (Docling, LangGraph,
+Pydantic, pydantic-settings, PyYAML, RapidFuzz, Typer) or BSD-3-Clause (HTTPX). Nothing in the
+installed tree is GPL-family; certifi, orjson, pathspec and tqdm are MPL-2.0, used unmodified.
+The desk's fonts (IBM Plex Mono, Literata, Schibsted Grotesk) are under the SIL Open Font License
+1.1, with each licence beside the font files in `web/fonts/`. Docling downloads its layout and
+table models on first use; those carry their own licences from their publishers.
