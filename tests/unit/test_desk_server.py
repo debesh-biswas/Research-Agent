@@ -22,12 +22,14 @@ from research_agent.models.base import ModelProviderError
 from research_agent.operations.health import HealthCheck
 from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
+from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
     TopicNotFoundError,
     TopicStoreError,
 )
+from tests.unit.conftest import candidate
 
 
 class FakeDesk:
@@ -40,6 +42,7 @@ class FakeDesk:
         self.updated: list[TopicSettings] = []
         self.deleted_topics: list[str] = []
         self.started: list[str] = []
+        self.pdf: Path | None = None
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -92,6 +95,9 @@ class FakeDesk:
 
     def screened(self, run_id: str) -> list[dict[str, object]]:
         return [{"id": "p1", "runId": run_id}]
+
+    def pdf_path(self, paper_id: str) -> Path | None:
+        return self.pdf if paper_id == "p1" else None
 
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
@@ -367,6 +373,14 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
             200,
             {"papers": [{"id": "p1", "runId": "run-7"}]},
         )
+        backend.pdf = tmp_path / "p1.pdf"
+        backend.pdf.write_bytes(b"%PDF-1.4 test")
+        with urllib.request.urlopen(f"{base}/api/papers/p1/pdf") as response:
+            assert (response.headers["Content-Type"], response.read()) == (
+                "application/pdf",
+                b"%PDF-1.4 test",
+            )
+        assert _call(base, "GET", "/api/papers/p2/pdf")[0] == 404
         assert _call(base, "GET", "/api/health") == (
             200,
             {
@@ -452,3 +466,34 @@ def test_a_kept_alive_connection_survives_routes_that_ignore_or_reject_a_body(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_local_desk_serves_only_pdfs_inside_the_library(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    papers = SqlitePaperRepository(connection)
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path / "library"))
+    inside = tmp_path / "library" / "topics" / "t" / "pdfs" / "inside.pdf"
+    inside.parent.mkdir(parents=True)
+    inside.write_bytes(b"%PDF")
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"%PDF")
+    not_pdf = inside.with_suffix(".txt")
+    not_pdf.write_text("secret", encoding="utf-8")
+    files = {
+        "inside": inside,
+        "outside": outside,
+        "not_pdf": not_pdf,
+        "gone": inside.with_name("gone.pdf"),
+    }
+    ids = {}
+    for title, path in files.items():
+        ids[title] = papers.upsert(candidate(title=title, doi=f"10.1000/{title}"))
+        papers.record_file(ids[title], "pdf", str(path), 4, "0" * 64)
+    connection.close()
+
+    found = {title: desk.pdf_path(paper_id) for title, paper_id in ids.items()}
+
+    assert found == {"inside": inside.resolve(), "outside": None, "not_pdf": None, "gone": None}
+    assert desk.pdf_path("no_such_paper") is None

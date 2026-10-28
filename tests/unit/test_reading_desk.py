@@ -66,3 +66,9 @@ def test_screened_papers_explain_why_each_was_kept_or_dropped() -> None:
     for reason in ("selected_deep_read", "action_ignore", "below_threshold", "limit_reached"):
         assert f"{reason}:" in script
     assert "Why it's on the shelf" in script
+
+
+def test_paper_card_shows_setup_related_work_and_the_stored_pdf() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert '"Experimental setup"' in script and '"Related work"' in script
+    assert '/pdf" target="_blank"' in script and "Open PDF" in script

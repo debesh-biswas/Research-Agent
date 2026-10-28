@@ -451,6 +451,9 @@ function viewPaper(run, paperId) {
   const sourceLinks = [
     linkPair("DOI", paper.doi ? `https://doi.org/${paper.doi}` : ""),
     linkPair("arXiv", paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : ""),
+    paper.hasPdf
+      ? `<a href="/api/papers/${encodeURIComponent(paper.id)}/pdf" target="_blank" rel="noopener">Open PDF</a>`
+      : "",
   ]
     .filter(Boolean)
     .join("");
@@ -463,12 +466,14 @@ function viewPaper(run, paperId) {
     ${block("Research problem", `<p>${esc(paper.problem)}</p>`)}
     ${block("Main contribution", `<p>${esc(paper.contribution)}</p>`)}
     ${block("Method", `<p>${esc(paper.method)}</p>`)}
+    ${block("Experimental setup", paper.setup ? `<p>${esc(paper.setup)}</p>` : "")}
     ${block("Datasets", stringList(paper.datasets))}
     ${block("Benchmarks", stringList(paper.benchmarks))}
     ${block("Main results", stringList(paper.results))}
     ${block("Key claims", claims)}
     ${block("Strengths", stringList(paper.strengths))}
     ${block("Limitations", stringList(paper.limitations))}
+    ${block("Related work", stringList(paper.relatedWork || []))}
     ${block("Relevance to the topic", `<p>${esc(paper.relevance)}</p>`)}
     ${whyKept(paper.screening)}`;
 }
