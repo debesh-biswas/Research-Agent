@@ -157,3 +157,22 @@ def test_delete_cascades_to_runs_and_rejects_unknown_topic(tmp_path: Path) -> No
     assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
     with pytest.raises(TopicNotFoundError):
         repository.delete("spatial_intelligence")
+
+
+def test_description_and_breadth_round_trip_and_old_topics_default_to_balanced(
+    tmp_path: Path,
+) -> None:
+    repository = _repository(tmp_path / "agent.db")
+    repository.add(_topic(description="Maps from language.", breadth="exploratory"))
+    repository.add(_topic("plain"))
+
+    stored = repository.get("spatial_intelligence")
+    assert stored is not None and (stored.description, stored.breadth) == (
+        "Maps from language.",
+        "exploratory",
+    )
+    plain = repository.get("plain")
+    assert plain is not None and (plain.description, plain.breadth) == ("", "balanced")
+    repository.update(_topic(description="Narrower.", breadth="focused"))
+    updated = repository.get("spatial_intelligence")
+    assert updated is not None and updated.breadth == "focused"

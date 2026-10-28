@@ -57,6 +57,8 @@ class QueryPlanner:
                     history or [],
                     self._settings.min_queries,
                     self._settings.max_queries,
+                    topic.description,
+                    topic.breadth,
                 ),
             ),
         ]

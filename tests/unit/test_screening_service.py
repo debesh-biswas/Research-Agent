@@ -116,7 +116,7 @@ async def test_feedback_votes_reach_the_screening_prompt_only_when_present() -> 
     assert "- Marked relevant: Semantic SLAM in Kitchens" in with_votes
     assert "- Marked not relevant: " + ("CTR " * 80)[:200] + "\n" in with_votes
     assert (plain[0][1]["feedback_examples"], guided[0][1]["feedback_examples"]) == (0, 2)
-    assert guided[0][1]["version"] == "screening.v2"
+    assert guided[0][1]["version"] == "screening.v3"
 
 
 class CountingRouter(Router):

@@ -2,6 +2,87 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Topic breadth instead of keywords (complete)
+
+- **Feature/branch:** `F57-topic-breadth`, off `main` at `15e9787`.
+- **Status:** Complete; merged into `main`. The user asked for it: topics are named, not
+  keyworded, and the model decides the terms at a chosen breadth.
+- **Summary:**
+  - **New topic fields.** A topic now has a `description` (optional, up to 1,000 characters) and
+    a `breadth`: `focused`, `balanced` (the default) or `exploratory`.
+    - Focused: only papers squarely on the topic, found with its core terms.
+    - Balanced: the topic and its close sub-areas, methods and datasets.
+    - Exploratory: also neighbouring fields whose ideas could carry over.
+  - **Queries.** The query planner's prompt (`query_expansion.v2`) gets the description and the
+    breadth's search guidance, so the model chooses the searches each run.
+  - **Screening.** The screening prompt (`screening.v3`) gets the description and the breadth's
+    acceptance rule. Exploratory accepts adjacent work but scores it medium.
+  - **Re-screening.** Changing a topic's breadth or description changes the screening prompt, so
+    F53 screens the papers again rather than reusing old verdicts.
+  - **Desk forms.** New topic is now one form: name, "What it covers", "How widely to search"
+    (three options), then advanced settings. There is no keyword step. The edit page swaps the
+    keyword box for the same two fields.
+  - **Topics page.** Shows "Exploratory search · <description>" in place of the keywords.
+  - **Week page.** Lists the queries the run sent ("Searched for N queries"), from the new
+    `RunSummary.queries`, so the model's choices are visible.
+  - **Old keywords.** Keywords set through the CLI or `topics.yaml` still work as extra terms,
+    and a desk edit keeps them.
+- **Files affected:**
+  - `src/research_agent/config.py`: `Breadth`, plus `TopicSettings.description` and
+    `TopicSettings.breadth`.
+  - `src/research_agent/storage/database.py` and `storage/topics.py`: two topic columns.
+  - New `src/research_agent/topics/breadth.py`: the guidance text.
+  - `src/research_agent/queries/prompts.py` and `planner.py`.
+  - `src/research_agent/screening/prompts.py`.
+  - `src/research_agent/domain/runs.py` and `workflow/nodes.py`: `queries`.
+  - `src/research_agent/desk/shelf.py`.
+  - `src/research_agent/desk/server.py`: removed `/api/topics/suggest`, `TopicSuggestRequest`
+    and `suggest`.
+  - `web/js/desk.js`: `breadthField`, `describeField`, the new `viewNewTopic`, `queriesBlock`;
+    chips and the suggestion step removed.
+  - `web/css/desk.css`: breadth options; chip styles removed.
+  - `README.md`.
+  - Tests in `test_topic_breadth.py`, `test_storage_topics.py`, `test_desk_server.py`,
+    `test_desk_shelf.py`, `test_reading_desk.py` and `tests/integration/test_run_cli.py`. Pinned
+    prompt versions were updated.
+- **Decisions:**
+  - Terms are chosen per run by the planner, not stored. The planner already ran the model every
+    run, and this keeps the terms tracking recent developments (history) as well as the breadth.
+  - The desk's keyword-suggestion route was removed rather than left as dead code. The CLI's
+    `topic new` keeps `suggest_keywords`.
+  - Breadth does not change selection's minimum relevance score. It works through the screener's
+    scores, so the Settings page's threshold still means one thing.
+- **Verification:**
+  - Real model (OpenRouter `nvidia/nemotron-3.5-super-vl:free`), topic "Embodied Spatial
+    Intelligence" with a description, on 6 papers from the cloud run:
+    - focused searched the core ("embodied metric semantic mapping", …) and scored the two papers
+      the cloud run kept 0.25 and 0.25;
+    - balanced added SLAM and Matterport benchmarks and scored them 0.8 and 0.25;
+    - exploratory added cognitive mapping and RL navigation and scored them 0.9 and 0.55;
+    - the four off-topic papers stayed at 0.0–0.1 at every breadth.
+
+    These are single samples from a free model, so individual scores vary call to call, but the
+    order held.
+  - Browser on the real desk with a copy of the cloud-run library (run start stubbed):
+    - balanced was the default;
+    - submitting with no name said "Give the topic a name.";
+    - creating "Spatial Memory" as exploratory stored its description and breadth and started its
+      run;
+    - the Topics row read "Exploratory search · …";
+    - editing it to focused saved, and kept keywords `[]`;
+    - the Week page listed the 3 searched queries;
+    - axe found 0 violations on the new and edit pages;
+    - no page errors.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 644 passed,
+    3 deselected, coverage 92.97%.
+- **Known issues:** Existing topics start as balanced with no description. Adding a description
+  is the best way to steer them. The cloud run showed a bare name screens too narrowly.
+- **Next step:** On the user's side:
+  - give each real topic a description and choose a breadth;
+  - run it, and check "Searched for" on the Week page.
+
+  The deferred Mac timing run remains.
+
 ## 2026-10-28 — Settings page in the desk (complete)
 
 - **Feature/branch:** `F34-settings-screen`, off `main` at `7d00904`.

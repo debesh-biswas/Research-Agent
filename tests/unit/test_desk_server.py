@@ -19,7 +19,6 @@ from research_agent.desk.server import (
     LibraryQuery,
     LocalDesk,
     ReadingUpdate,
-    TopicSuggestRequest,
     _handler,
 )
 from research_agent.desk.settings_page import SettingsProblem
@@ -76,11 +75,6 @@ class FakeDesk:
     def clear_thread(self, run_id: str, paper_id: str | None) -> int:
         self.cleared_threads.append((run_id, paper_id))
         return 3
-
-    async def suggest(self, request: TopicSuggestRequest) -> list[str]:
-        if request.name == "fail":
-            raise ModelProviderError("down")
-        return [f"{request.name} keyword"]
 
     def create_and_run(self, topic: TopicSettings) -> None:
         if topic.id == "duplicate":
@@ -220,7 +214,7 @@ def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
         thread.join(timeout=2)
 
 
-def test_the_server_suggests_keywords_and_creates_a_topic(tmp_path: Path) -> None:
+def test_the_server_creates_a_topic_from_its_description_and_breadth(tmp_path: Path) -> None:
     web = tmp_path / "web"
     web.mkdir()
     (web / "index.html").write_text("<p>desk</p>", encoding="utf-8")
@@ -230,31 +224,27 @@ def test_the_server_suggests_keywords_and_creates_a_topic(tmp_path: Path) -> Non
     thread.start()
     port = server.server_address[1]
     try:
-        suggest = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/topics/suggest",
-            data=json.dumps({"name": "Robotics"}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(suggest) as response:
-            assert json.load(response) == {"keywords": ["Robotics keyword"]}
+        base = f"http://127.0.0.1:{port}"
+        assert _call(base, "POST", "/api/topics/suggest", {"name": "Robotics"})[0] == 404
 
-        failed_suggest = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/topics/suggest",
-            data=json.dumps({"name": "fail"}).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with pytest_http_error(failed_suggest) as error:
-            assert error.code == 502
-
+        body = {"id": "robotics", "name": "Robotics", "description": "Arms.", "breadth": "focused"}
         create = urllib.request.Request(
-            f"http://127.0.0.1:{port}/api/topics",
-            data=json.dumps({"id": "robotics", "name": "Robotics", "keywords": ["arms"]}).encode(),
+            f"{base}/api/topics",
+            data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
         with urllib.request.urlopen(create) as response:
             assert response.status == 202
             assert json.load(response) == {"status": "started", "topicId": "robotics"}
-        assert (backend.created[0].id, backend.created[0].keywords) == ("robotics", ["arms"])
+        created = backend.created[0]
+        assert (created.id, created.description, created.breadth) == (
+            "robotics",
+            "Arms.",
+            "focused",
+        )
+        assert created.keywords == []
+        wide = {"id": "wide", "name": "Wide", "breadth": "everything"}
+        assert _call(base, "POST", "/api/topics", wide)[0] == 400
 
         duplicate = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/topics",

@@ -99,7 +99,7 @@ def test_plan_prints_and_persists_the_resolved_queries(
     assert result.exit_code == 0, result.output
     assert "Spatial Intelligence spatial reasoning" in result.output
     assert "embodied navigation" in result.output
-    assert "query_expansion.v1" in result.output
+    assert "query_expansion.v2" in result.output
     assert saved_plans(tmp_path) == 1
 
 

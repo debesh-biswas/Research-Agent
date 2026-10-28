@@ -34,7 +34,7 @@ const DECISION_LABEL = {
 
 const POLL_MS = 5000;
 /* Desk calls that only read or write the library give up after this, so a stuck request can't
-   stall the progress poll or leave a page loading forever. Model calls (Ask, keyword suggestions,
+   stall the progress poll or leave a page loading forever. Model calls (Ask and
    the setup check) are left alone: they are slow on purpose and time out on the server. */
 const REQUEST_MS = 20000;
 const AWAIT_RUN_MS = 5 * 60 * 1000;
@@ -83,16 +83,7 @@ const state = {
   library: { topic: "", show: "all", q: "", offset: 0, pending: false, data: null, error: "" },
   screenedFilter: "all",
   finishedNotice: null,
-  newTopic: {
-    step: "form",
-    id: "",
-    name: "",
-    description: "",
-    keywords: [],
-    pending: false,
-    status: "",
-    tone: null,
-  },
+  newTopic: { name: "", description: "", breadth: "balanced", settings: null, pending: false, status: "", tone: null },
 };
 
 function slugify(name) {
@@ -320,6 +311,15 @@ function funnel(summary) {
     .join("")}</ul>`;
 }
 
+/* What the model chose to search for, so the topic's breadth is visible rather than taken on trust. */
+function queriesBlock(run) {
+  const queries = run.queries || [];
+  if (!queries.length) return "";
+  return `<details class="usage"><summary>Searched for ${queries.length} ${queries.length === 1 ? "query" : "queries"}</summary><ul>${queries
+    .map((query) => `<li>${esc(query)}</li>`)
+    .join("")}</ul></details>`;
+}
+
 function formatCount(count) {
   if (count >= 1e6) return `${(count / 1e6).toFixed(1)}M`;
   if (count >= 1e3) return `${Math.round(count / 1e3)}k`;
@@ -378,6 +378,7 @@ function viewWeek(run) {
     </div>
     ${funnel(run.summary)}
     <p class="quiet">${esc(runProgress(run) || [formatDuration(run.durationSeconds), ...run.models].join(" · "))}</p>
+    ${queriesBlock(run)}
     ${usageBlock(run.modelUsage || [])}
     <div class="desk-grid">
       <div>
@@ -1000,13 +1001,13 @@ function viewTopics() {
       const running = topic.runs.some((run) => run.status === "running");
       const canRun = settings.enabled && !running;
       const why = !settings.enabled ? "Enable the topic to run it" : running ? "A run is already in progress" : "";
-      const keywords = settings.keywords.length ? settings.keywords.join(", ") : "No keywords";
+      const scope = [`${breadthLabel(settings.breadth)} search`, settings.description].filter(Boolean).join(" · ");
       return `<li class="run-item">
         <div class="run-row topic-row">
           <span>
             <span class="run-period">${esc(topic.name)}</span>
             <span class="run-meta">${esc(topicMeta(topic))}</span>
-            <span class="run-meta">${esc(keywords)}</span>
+            <span class="run-meta">${esc(scope)}</span>
           </span>
           <span>${settings.enabled ? "" : stamp("paused", false)}${running ? stamp("running", false) : ""}</span>
           <span class="topic-actions">
@@ -1242,10 +1243,8 @@ function viewTopicEdit(topicId) {
           <input type="text" id="edit-name" name="name" required value="${esc(settings.name)}" />
         </div>
         <label class="check"><input type="checkbox" name="enabled"${settings.enabled ? " checked" : ""} /> Enabled</label>
-        <div class="field">
-          <label for="edit-keywords">Keywords <span class="quiet">(one per line)</span></label>
-          <textarea id="edit-keywords" name="keywords" rows="4">${esc(settings.keywords.join("\n"))}</textarea>
-        </div>
+        ${describeField("edit-description", settings.description)}
+        ${breadthField(settings.breadth)}
         ${settingsFields(settings)}
         <div class="form-actions">
           <button class="primary" type="submit"${state.topicsPending ? " disabled" : ""}>${state.topicsPending ? "Saving…" : "Save"}</button>
@@ -1256,103 +1255,62 @@ function viewTopicEdit(topicId) {
     </div>`;
 }
 
-function keywordChips(keywords) {
-  if (!keywords.length) {
-    return `<li class="keyword-chip" data-empty="true">No keywords yet; add some, or the topic name alone is searched.</li>`;
-  }
-  return keywords
-    .map(
-      (keyword, index) =>
-        `<li class="keyword-chip">${esc(keyword)}<button type="button" class="chip-remove" data-remove-keyword="${index}" aria-label="Remove ${esc(keyword)}">×</button></li>`,
-    )
-    .join("");
+const BREADTHS = [
+  ["focused", "Focused", "Only papers squarely on the topic, found with its core terms."],
+  ["balanced", "Balanced", "The topic and its close sub-areas, methods and datasets."],
+  ["exploratory", "Exploratory", "Also neighbouring fields whose ideas could carry over."],
+];
+
+function describeField(id, value) {
+  return `<div class="field">
+      <label for="${id}">What it covers <span class="quiet">(optional)</span></label>
+      <textarea id="${id}" name="description" rows="3" maxlength="1000" placeholder="e.g. robots that build and use maps of indoor scenes from language and vision">${esc(value || "")}</textarea>
+    </div>`;
 }
 
-function refreshChips() {
-  const list = document.getElementById("keyword-chips");
-  if (list) list.innerHTML = keywordChips(state.newTopic.keywords);
+function breadthField(selected) {
+  const options = BREADTHS.map(
+    ([value, label, help]) => `<label class="breadth-option">
+        <input type="radio" name="breadth" value="${value}"${value === (selected || "balanced") ? " checked" : ""} />
+        <span><strong>${label}</strong> <span class="quiet">${help}</span></span>
+      </label>`,
+  ).join("");
+  return `<fieldset class="field">
+      <legend>How widely to search</legend>
+      <div class="breadth-options">${options}</div>
+      <p class="quiet">The model chooses the search terms from the name and description at this breadth; there are no keywords to type.</p>
+    </fieldset>`;
 }
 
-function addKeyword() {
-  const input = document.getElementById("new-keyword");
-  const keyword = input ? input.value.trim() : "";
-  if (!keyword) return;
-  const known = state.newTopic.keywords.some((item) => item.toLowerCase() === keyword.toLowerCase());
-  if (!known) state.newTopic.keywords = [...state.newTopic.keywords, keyword];
-  input.value = "";
-  refreshChips();
-  input.focus();
+function breadthLabel(value) {
+  const found = BREADTHS.find(([key]) => key === value);
+  return found ? found[1] : "Balanced";
 }
 
 function viewNewTopic() {
   const nt = state.newTopic;
-  const statusLine = statusMessage(nt.status, nt.tone);
-
-  if (nt.step === "review") {
-    const settings = nt.settings || (window.DESK && window.DESK.defaults);
-    return `<p class="kicker">New topic</p>
-      <h1>${esc(nt.name)}</h1>
-      <p class="quiet">Topic id: ${esc(nt.id)}</p>
-      <div class="panel">
-        <form id="new-topic-review" class="topic-form">
-          <div class="field">
-            <label for="new-keyword">Keywords</label>
-            <ul class="keyword-chips" id="keyword-chips">${keywordChips(nt.keywords)}</ul>
-            <div class="keyword-add">
-              <input type="text" id="new-keyword" autocomplete="off" placeholder="Add a keyword and press Enter" />
-              <button class="button" type="button" id="add-keyword-button">Add</button>
-            </div>
-          </div>
-          <details class="advanced"${nt.settings ? " open" : ""}>
-            <summary>Advanced settings</summary>
-            <div class="topic-form">${settingsFields(settings)}</div>
-          </details>
-          <div class="form-actions">
-            <button class="primary" type="submit"${nt.pending ? " disabled" : ""}>${nt.pending ? "Creating…" : "Create topic and start pipeline"}</button>
-            <button class="button" id="cancel-topic-button" type="button"${nt.pending ? " disabled" : ""}>Back</button>
-          </div>
-        </form>
-        ${statusLine}
-      </div>`;
-  }
-
+  const settings = nt.settings || (window.DESK && window.DESK.defaults);
   return `<p class="kicker">New topic</p>
     <h1>New topic</h1>
-    <p class="empty">
-      Name it and, optionally, describe it. The local model will suggest keywords to review
-      before the topic is created and its pipeline starts.
-    </p>
+    <p class="empty">Name the topic, say what it covers, and choose how widely to search. Creating it starts its first run.</p>
     <div class="panel">
       <form id="new-topic-form" class="topic-form" novalidate>
         <div class="field">
           <label for="new-topic-name">Name</label>
-          <input
-            type="text"
-            id="new-topic-name"
-            name="name"
-            required
-            placeholder="e.g. Quantum Error Correction"
-            autocomplete="off"
-            value="${esc(nt.name)}"
-          />
+          <input type="text" id="new-topic-name" name="name" required placeholder="e.g. Embodied Spatial Intelligence" autocomplete="off" value="${esc(nt.name)}" />
           <p class="quiet" id="new-topic-id-preview">${nt.name ? `Topic id: ${esc(slugify(nt.name)) || "—"}` : "The topic id is derived from the name."}</p>
         </div>
-        <div class="field">
-          <label for="new-topic-description">Description <span class="quiet">(optional)</span></label>
-          <textarea
-            id="new-topic-description"
-            name="description"
-            rows="3"
-            placeholder="What this topic covers, to guide the keyword suggestions"
-          >${esc(nt.description || "")}</textarea>
-        </div>
+        ${describeField("new-topic-description", nt.description)}
+        ${breadthField(nt.breadth)}
+        <details class="advanced"${nt.settings ? " open" : ""}>
+          <summary>Advanced settings</summary>
+          <div class="topic-form">${settingsFields(settings)}</div>
+        </details>
         <div class="form-actions">
-          <button class="primary" type="submit" id="suggest-topic-button"${nt.pending ? " disabled" : ""}>${
-            nt.pending ? "Asking the model…" : "Suggest keywords"
-          }</button>
+          <button class="primary" type="submit"${nt.pending ? " disabled" : ""}>${nt.pending ? "Creating…" : "Create topic and start run"}</button>
         </div>
       </form>
-      ${statusLine}
+      ${statusMessage(nt.status, nt.tone)}
     </div>`;
 }
 
@@ -1558,37 +1516,6 @@ async function ask(question, paperId) {
   }
 }
 
-async function suggestTopicKeywords(name, description) {
-  state.newTopic = { ...state.newTopic, name, description, pending: true, status: "", tone: null };
-  render();
-  try {
-    const response = await fetch("/api/topics/suggest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, description }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Keyword suggestion failed.");
-    state.newTopic = {
-      ...state.newTopic,
-      step: "review",
-      id: slugify(name),
-      keywords: payload.keywords || [],
-      pending: false,
-      status: "",
-      tone: null,
-    };
-  } catch (error) {
-    state.newTopic = {
-      ...state.newTopic,
-      pending: false,
-      status: error instanceof Error ? error.message : "Could not reach the desk server.",
-      tone: "error",
-    };
-  }
-  render();
-}
-
 const LIBRARY_PAGE = 25;
 
 async function loadLibrary() {
@@ -1779,23 +1706,35 @@ function settingsFromForm(form) {
   return {
     name: String(data.get("name") || "").trim(),
     enabled: data.has("enabled"),
-    keywords: String(data.get("keywords") || "")
-      .split("\n")
-      .map((keyword) => keyword.trim())
-      .filter(Boolean),
+    description: String(data.get("description") || "").trim(),
+    breadth: String(data.get("breadth") || "balanced"),
     ...runSettingsFromData(data),
   };
 }
 
 async function createTopic(form) {
-  const nt = { ...state.newTopic, settings: runSettingsFromData(new FormData(form)) };
+  const data = new FormData(form);
+  const nt = {
+    ...state.newTopic,
+    name: String(data.get("name") || "").trim(),
+    description: String(data.get("description") || "").trim(),
+    breadth: String(data.get("breadth") || "balanced"),
+    settings: runSettingsFromData(data),
+  };
+  if (!nt.name) {
+    state.newTopic = { ...nt, status: "Give the topic a name.", tone: "error" };
+    render();
+    document.getElementById("new-topic-name")?.focus();
+    return;
+  }
+  nt.id = slugify(nt.name);
   state.newTopic = { ...nt, pending: true, status: "", tone: null };
   render();
   try {
     const response = await request("/api/topics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: nt.id, name: nt.name, keywords: nt.keywords, ...nt.settings }),
+      body: JSON.stringify({ id: nt.id, name: nt.name, description: nt.description, breadth: nt.breadth, ...nt.settings }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Could not create the topic.");
@@ -1923,33 +1862,6 @@ function onClick(event) {
     );
     return;
   }
-  const removeKeyword = event.target.closest("[data-remove-keyword]");
-  if (removeKeyword) {
-    const index = Number(removeKeyword.dataset.removeKeyword);
-    state.newTopic.keywords = state.newTopic.keywords.filter((_, position) => position !== index);
-    refreshChips();
-    document.getElementById("new-keyword")?.focus();
-    return;
-  }
-  if (event.target.id === "add-keyword-button") {
-    addKeyword();
-    return;
-  }
-  if (event.target.id === "cancel-topic-button") {
-    state.newTopic = {
-      step: "form",
-      id: "",
-      name: state.newTopic.name,
-      description: state.newTopic.description,
-      keywords: [],
-      settings: null,
-      pending: false,
-      status: "",
-      tone: null,
-    };
-    render();
-    return;
-  }
   if (event.target.id === "reset-settings") {
     void confirmAction("Reset every setting changed here to the settings file?", "Reset settings").then(
       (ok) => ok && saveSettings(null, "Settings reset to the settings file."),
@@ -2015,12 +1927,6 @@ function onSubmit(event) {
     });
     return;
   }
-  if (form.id === "new-topic-review") {
-    event.preventDefault();
-    askToNotify();
-    void createTopic(form);
-    return;
-  }
   if (form.id === "settings-form") {
     event.preventDefault();
     void saveSettings(settingsValues(form), "Settings saved.");
@@ -2030,7 +1936,9 @@ function onSubmit(event) {
     event.preventDefault();
     const topicId = form.dataset.topic;
     // Runs are manual, so the form has no run day; keep the stored one rather than reset it.
-    const settings = { ...settingsFromForm(form), scheduling: topicById(topicId).settings.scheduling };
+    // Keywords from the CLI or topics.yaml are not edited here, so they are kept as they are.
+    const stored = topicById(topicId).settings;
+    const settings = { ...settingsFromForm(form), scheduling: stored.scheduling, keywords: stored.keywords };
     void topicAction("PUT", `/api/topics/${encodeURIComponent(topicId)}`, settings, `Saved ${settings.name}.`).then(
       (saved) => {
         if (saved) location.hash = "#/topics";
@@ -2041,11 +1949,8 @@ function onSubmit(event) {
   }
   if (form.id === "new-topic-form") {
     event.preventDefault();
-    const data = new FormData(form);
-    const name = String(data.get("name") || "").trim();
-    const description = String(data.get("description") || "").trim();
-    if (!name) return;
-    void suggestTopicKeywords(name, description);
+    askToNotify();
+    void createTopic(form);
     return;
   }
   if (form.id !== "ask-form") return;
@@ -2086,6 +1991,9 @@ function onInput(event) {
     return;
   }
   if (event.target.id === "new-topic-description") state.newTopic.description = event.target.value;
+  if (event.target.name === "breadth" && event.target.form?.id === "new-topic-form") {
+    state.newTopic.breadth = event.target.value;
+  }
 }
 
 function onChange(event) {
@@ -2135,12 +2043,6 @@ document.addEventListener("click", onClick);
 document.addEventListener("submit", onSubmit);
 document.addEventListener("input", onInput);
 document.addEventListener("change", onChange);
-document.addEventListener("keydown", (event) => {
-  if (event.target.id === "new-keyword" && event.key === "Enter") {
-    event.preventDefault();
-    addKeyword();
-  }
-});
 
 async function boot() {
   await loadShelf();

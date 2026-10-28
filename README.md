@@ -97,7 +97,13 @@ uv run research-agent desk
 ```
 
 Open `http://127.0.0.1:8765`. The page needs the desk server; opened as a file it only says so.
-The Topics page edits, pauses, deletes and runs topics; New topic creates one. Setup check (in the
+The Topics page edits, pauses, deletes and runs topics; New topic creates one. A topic is a name,
+an optional description of what it covers, and a breadth: Focused (only papers squarely on the
+topic), Balanced (its close sub-areas too) or Exploratory (neighbouring fields whose ideas could
+carry over). There are no keywords to type: each run the model chooses the searches from the
+name and description at that breadth, and screening accepts papers as widely as it says. The Week
+page lists what the run searched for. Keywords given on the command line or in `topics.yaml`
+still work, as extra terms. Setup check (in the
 footer, and the first page of a new library) runs the same checks as `research-agent doctor`.
 
 ## Quality checks

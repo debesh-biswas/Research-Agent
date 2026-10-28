@@ -19,7 +19,7 @@ _COLUMNS = (
     "id, name, enabled, lookback_days, active_classifier, shadow_classifier, "
     "schedule_frequency, schedule_day, source_openalex, source_semantic_scholar, "
     "source_arxiv, max_candidates, max_classified, max_downloads, max_deep_reads, "
-    "keywords_json"
+    "keywords_json, description, breadth"
 )
 
 
@@ -62,6 +62,8 @@ def _to_row(topic: TopicSettings) -> dict[str, Any]:
         "enabled": int(topic.enabled),
         "lookback_days": topic.lookback_days,
         "keywords_json": json.dumps(topic.keywords),
+        "description": topic.description,
+        "breadth": topic.breadth,
         "active_classifier": "semantic_screening",
         "shadow_classifier": None,
         "schedule_frequency": topic.scheduling.frequency,
@@ -84,6 +86,8 @@ def _from_row(row: sqlite3.Row) -> TopicSettings:
             "enabled": bool(row["enabled"]),
             "lookback_days": row["lookback_days"],
             "keywords": json.loads(row["keywords_json"]),
+            "description": row["description"],
+            "breadth": row["breadth"],
             "discovery": {
                 "openalex": bool(row["source_openalex"]),
                 "semantic_scholar": bool(row["source_semantic_scholar"]),

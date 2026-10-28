@@ -4,9 +4,12 @@ A wording change is a new version string, so a persisted plan always names the p
 it.
 """
 
+from research_agent.config import Breadth
 from research_agent.domain.analysis import WeeklySynthesis
+from research_agent.topics.breadth import QUERY_GUIDANCE
 
-PROMPT_VERSION = "query_expansion.v1"
+PROMPT_VERSION = "query_expansion.v2"
+"""v2 adds the topic's description and breadth; the model chooses the terms itself."""
 
 SYSTEM_PROMPT = (
     "You expand a research topic into academic search queries. "
@@ -16,7 +19,9 @@ SYSTEM_PROMPT = (
 )
 
 _TEMPLATE = """Topic: {name}
-Known keywords: {keywords}
+What it covers: {description}
+{guidance}
+Extra terms the reader asked for: {keywords}
 Recent developments in this topic:
 {history}
 
@@ -30,10 +35,14 @@ def render(
     history: list[WeeklySynthesis],
     min_queries: int,
     max_queries: int,
+    description: str = "",
+    breadth: Breadth = "balanced",
 ) -> str:
     """Render the user prompt; absent keywords or history degrade to an explicit 'none'."""
     return _TEMPLATE.format(
         name=name,
+        description=description.strip() or "not described; infer it from the name",
+        guidance=QUERY_GUIDANCE[breadth],
         keywords=", ".join(keywords) if keywords else "none",
         history=_history(history),
         min_queries=min_queries,
