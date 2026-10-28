@@ -73,3 +73,21 @@ def test_deleting_a_topic_cascades_to_its_runs(connection: sqlite3.Connection) -
     connection.execute("DELETE FROM topics WHERE id = ?", (TOPIC_ID,))
 
     assert connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+
+
+def test_a_reader_is_not_blocked_by_a_writer_s_open_transaction(tmp_path: Path) -> None:
+    path = tmp_path / "agent.db"
+    writer = connect(path)
+    assert writer.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    writer.execute("CREATE TABLE probe (value INTEGER)")
+    writer.commit()
+    writer.execute("BEGIN EXCLUSIVE")
+    writer.execute("INSERT INTO probe VALUES (1)")
+    reader = connect(path)
+    reader.execute("PRAGMA busy_timeout = 100")  # a rollback journal would fail here, not wait
+
+    assert reader.execute("SELECT COUNT(*) FROM probe").fetchone()[0] == 0
+    writer.commit()
+    assert reader.execute("SELECT COUNT(*) FROM probe").fetchone()[0] == 1
+    reader.close()
+    writer.close()

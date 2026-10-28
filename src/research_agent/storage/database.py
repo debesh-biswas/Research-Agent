@@ -214,11 +214,20 @@ MIGRATIONS: tuple[str, ...] = (
 )
 
 
+BUSY_TIMEOUT_SECONDS = 30.0
+"""How long a write waits for another writer (a run and the desk) before "database is locked"."""
+
+
 def connect(path: Path) -> sqlite3.Connection:
-    """Open a SQLite database, creating its parent directory when needed."""
+    """Open a SQLite database, creating its parent directory when needed.
+
+    WAL lets the desk read while a run writes; with the default rollback journal every commit
+    blocked readers, and a reader under a busy run waited up to 14 s or failed outright.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode = WAL")
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
