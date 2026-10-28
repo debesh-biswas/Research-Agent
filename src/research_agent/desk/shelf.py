@@ -209,6 +209,7 @@ def _paper(
         "type": verdict.paper_type if verdict else "other",
         "relevance": verdict.relevance if verdict else "medium",
         "model": analysis.model_name if analysis else None,
+        "screening": _screening(verdict, decision),
     }
 
 
@@ -247,7 +248,53 @@ def _public_paper(card: dict[str, object]) -> dict[str, object]:
             for claim in (analysis.key_claims if analysis else [])
         ],
         "relevance": analysis.topic_relevance if analysis else "",
+        "screening": card["screening"],
     }
+
+
+def _screening(
+    verdict: ClassificationResult | None, decision: SelectionDecision | None
+) -> dict[str, object]:
+    """Why a paper was kept or dropped: the screener's verdict and the selection decision."""
+    return {
+        "score": verdict.relevance_score if verdict else None,
+        "level": verdict.relevance if verdict else None,
+        "reason": verdict.reason_short if verdict else None,
+        "decision": decision.reason if decision else None,
+        "rank": decision.rank if decision else None,
+    }
+
+
+def screened_papers(
+    run_id: str,
+    results: ResultRepository,
+    papers: PaperRepository,
+    selections: SelectionRepository,
+) -> list[dict[str, object]]:
+    """Every paper a run screened, kept or dropped, in selection-rank order.
+
+    Served on request rather than on the shelf: a run screens up to hundreds of papers, and the
+    shelf is fetched every few seconds while a run is in flight.
+    """
+    verdicts = {
+        result.paper_id: result for result in results.classifications_for(run_id, active_only=True)
+    }
+    rows: list[dict[str, object]] = []
+    for decision in selections.decisions_for(run_id):
+        paper = papers.get(decision.paper_id)
+        if paper is None:
+            continue
+        rows.append(
+            {
+                "id": paper.canonical_id,
+                "title": paper.title,
+                "doi": paper.doi,
+                "arxivId": paper.arxiv_id,
+                "selected": decision.selected,
+                **_screening(verdicts.get(decision.paper_id), decision),
+            }
+        )
+    return rows
 
 
 def _text(value: str | None, fallback: str) -> str:

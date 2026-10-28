@@ -19,7 +19,7 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
-from research_agent.desk.shelf import build_shelf
+from research_agent.desk.shelf import build_shelf, screened_papers
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
 from research_agent.operations.health import HealthCheck, run_checks
@@ -94,6 +94,8 @@ class DeskBackend(Protocol):
     def run_topic(self, topic_id: str) -> None: ...
 
     async def health(self) -> list[HealthCheck]: ...
+
+    def screened(self, run_id: str) -> list[dict[str, object]]: ...
 
 
 class LocalDesk:
@@ -185,6 +187,18 @@ class LocalDesk:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
 
+    def screened(self, run_id: str) -> list[dict[str, object]]:
+        connection = connect(self._database)
+        try:
+            return screened_papers(
+                run_id,
+                SqliteResultRepository(connection),
+                SqlitePaperRepository(connection),
+                SqliteSelectionRepository(connection),
+            )
+        finally:
+            connection.close()
+
     async def health(self) -> list[HealthCheck]:
         async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_SECONDS) as client:
             return await run_checks(self._settings, client)
@@ -244,6 +258,10 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             path = urlparse(self.path).path
             if path == "/api/shelf":
                 self._json(200, backend.shelf())
+                return
+            segments = [unquote(segment) for segment in path.split("/") if segment]
+            if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "screened":
+                self._json(200, {"papers": backend.screened(segments[2])})
                 return
             if path == "/api/health":
                 checks = asyncio.run(backend.health())

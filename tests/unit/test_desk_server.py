@@ -90,6 +90,9 @@ class FakeDesk:
     async def health(self) -> list[HealthCheck]:
         return [HealthCheck(name="Local model", status="fail", detail="down", fix="Start it.")]
 
+    def screened(self, run_id: str) -> list[dict[str, object]]:
+        return [{"id": "p1", "runId": run_id}]
+
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
     web = tmp_path / "web"
@@ -360,6 +363,10 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
         assert _call(base, "DELETE", "/api/topics/busy")[0] == 409
         assert backend.deleted_topics == ["robotics"]
 
+        assert _call(base, "GET", "/api/runs/run-7/screened") == (
+            200,
+            {"papers": [{"id": "p1", "runId": "run-7"}]},
+        )
         assert _call(base, "GET", "/api/health") == (
             200,
             {
