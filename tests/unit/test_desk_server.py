@@ -14,6 +14,7 @@ from research_agent.config import ApplicationSettings, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply
 from research_agent.desk.server import (
     AskRequest,
+    LibraryQuery,
     LocalDesk,
     ReadingUpdate,
     TopicSuggestRequest,
@@ -109,6 +110,12 @@ class FakeDesk:
         if run_id not in (None, "r1"):
             return None
         return (f"{run_id or 'saved_papers'}.{fmt}", f"{fmt} for {run_id or 'saved'}\n")
+
+    def run(self, run_id: str) -> dict[str, object] | None:
+        return {"id": run_id, "papers": []} if run_id == "old-run" else None
+
+    def library(self, query: LibraryQuery) -> dict[str, object]:
+        return {"total": 0, "query": query.model_dump()}
 
     def report(self, run_id: str) -> tuple[str, str] | None:
         return ("spatial_2026-09-28_weekly_report.md", "# Report\n") if run_id == "r1" else None
@@ -412,6 +419,15 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
             )
             assert response.read() == b"# Report\n"
         assert _call(base, "GET", "/api/runs/r2/report")[0] == 404
+        assert _call(base, "GET", "/api/runs/old-run") == (200, {"id": "old-run", "papers": []})
+        assert _call(base, "GET", "/api/runs/missing")[0] == 404
+        status, page = _call(base, "GET", "/api/library?show=saved&offset=25&topic=spatial")
+        assert (status, page) == (
+            200,
+            {"total": 0, "query": {"topic": "spatial", "show": "saved", "offset": 25, "limit": 25}},
+        )
+        assert _call(base, "GET", "/api/library?limit=0")[0] == 400
+        assert _call(base, "GET", "/api/library?show=everything")[0] == 400
         with urllib.request.urlopen(f"{base}/api/runs/r1/citations?format=ris") as response:
             assert response.headers["Content-Type"].startswith("application/x-research-info")
             assert response.headers["Content-Disposition"] == 'attachment; filename="r1.ris"'
@@ -650,3 +666,38 @@ def test_local_desk_exports_a_runs_kept_papers_and_all_saved_ones(tmp_path: Path
     assert saved_name == "saved_papers.ris"
     assert "TI  - Click Rates" in ris and "Topological" not in ris
     assert desk.citations("no_such_run", "bib") is None
+
+
+def test_local_desk_serves_an_old_run_and_a_library_page(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    SqliteTopicRepository(connection).add(TopicSettings(id="spatial", name="Spatial"))
+    paper_id = SqlitePaperRepository(connection).upsert(candidate(title="Maps", doi="10.1/m"))
+    run = SqliteRunRepository(connection).start("spatial")
+    SqliteSelectionRepository(connection).save(
+        run.id,
+        SelectionPlan(
+            decisions=[
+                SelectionDecision(
+                    paper_id=paper_id,
+                    rank=1,
+                    selected=True,
+                    action="summarize",
+                    reason="selected_summarize",
+                )
+            ]
+        ),
+    )
+    connection.close()
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    shelf_run = desk.run(run.id)
+    assert shelf_run is not None
+    kept = shelf_run["papers"]
+    assert isinstance(kept, list) and [card["id"] for card in kept] == [paper_id]
+    assert desk.run("missing") is None
+    page = desk.library(LibraryQuery())
+    assert page["total"] == 1
+    row = page["papers"][0]  # type: ignore[index]
+    assert (row["title"], row["topicName"], row["runId"]) == ("Maps", "Spatial", run.id)

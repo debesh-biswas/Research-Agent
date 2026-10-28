@@ -108,3 +108,11 @@ def test_a_finished_run_notifies_a_reader_who_is_away() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
     assert "Notification.requestPermission()" in script and "askToNotify();" in script
     assert "document.hidden" in script and "notifyFinished(state.finishedNotice.text)" in script
+
+
+def test_library_lists_every_kept_paper_and_opens_older_runs() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert '["library", "Library", "#/library"]' in script
+    assert "/api/library?" in script and "/api/runs/${encodeURIComponent(runId)}`" in script
+    assert "keepOlderRuns()" in script and "data-library-page" in script
+    assert "brand-action" not in script, "New topic lives on the Topics and welcome pages"

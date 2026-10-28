@@ -64,6 +64,22 @@ def build_shelf(
     }
 
 
+def build_run(
+    topic: TopicSettings,
+    record: RunRecord,
+    runs: RunRepository,
+    results: ResultRepository,
+    papers: PaperRepository,
+    selections: SelectionRepository,
+    store: ArtifactStore,
+    *,
+    reading: ReadingRepository | None = None,
+    feedback: FeedbackRepository | None = None,
+) -> dict[str, object]:
+    """One run in the shelf's shape, for a run older than the shelf's recent window."""
+    return _run(topic, record, runs, results, papers, selections, store, reading, feedback)
+
+
 def find_run(shelf: dict[str, object], topic_id: str, run_id: str) -> dict[str, object] | None:
     """The run object inside a shelf, or none when the ids are not on it."""
     topics = shelf.get("topics")

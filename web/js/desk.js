@@ -72,6 +72,8 @@ const state = {
   noteDrafts: {},
   noteStatus: null,
   autoRead: new Set(),
+  olderRuns: new Map(),
+  library: { topic: "", show: "all", offset: 0, pending: false, data: null, error: "" },
   screenedFilter: "all",
   finishedNotice: null,
   newTopic: {
@@ -1108,6 +1110,8 @@ function render() {
   let body = "";
   if (name === "new") {
     body = viewNewTopic();
+  } else if (name === "library" && state.live) {
+    body = viewLibrary();
   } else if (name === "setup" && state.live) {
     body = viewSetup();
   } else if (name === "topics" && state.live) {
@@ -1143,6 +1147,7 @@ function render() {
     ["runs", "Runs", "#/runs"],
     ["ask", "Ask", "#/ask"],
     ["topics", "Topics", "#/topics"],
+    ["library", "Library", "#/library"],
   ]
     .map(([id, label, href]) => {
       const currentPage = name === id ? ' aria-current="page"' : "";
@@ -1177,6 +1182,7 @@ function render() {
     runs: "Runs",
     ask: "Ask",
     topics: "Topics",
+    library: "Library",
     setup: "Setup check",
     screened: "Screened papers",
     new: "New topic",
@@ -1186,7 +1192,6 @@ function render() {
   document.getElementById("app").innerHTML = `<header class="topbar">
       <div class="brand-group">
         <a class="brand" href="#/week">Desk</a>
-        <a class="brand-action" href="#/new"${name === "new" ? ' aria-current="page"' : ""}>New topic</a>
       </div>
       <nav class="nav" aria-label="Desk">${nav}</nav>
       <div class="tools">
@@ -1206,6 +1211,7 @@ function render() {
   persist();
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
+  if (name === "library" && state.live && !state.library.data && !state.library.pending) void loadLibrary();
   if (name === "papers" && route.parts[1] && run) markReadOnOpen(paperById(run, route.parts[1]));
   if (name === "screened" && run && (!state.screened || state.screened.runId !== run.id)) {
     void loadScreened(run.id);
@@ -1307,6 +1313,100 @@ async function suggestTopicKeywords(name, description) {
   render();
 }
 
+const LIBRARY_PAGE = 25;
+
+async function loadLibrary() {
+  const library = state.library;
+  state.library = { ...library, pending: true, error: "" };
+  const params = new URLSearchParams({ show: library.show, offset: String(library.offset), limit: String(LIBRARY_PAGE) });
+  if (library.topic) params.set("topic", library.topic);
+  try {
+    const response = await fetch(`/api/library?${params}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "bad response");
+    state.library = { ...state.library, pending: false, data: payload };
+  } catch {
+    state.library = { ...state.library, pending: false, error: "Can't load the library right now." };
+  }
+  if (pageName(parseRoute().parts) === "library") render();
+}
+
+function viewLibrary() {
+  const library = state.library;
+  const data = library.data;
+  const topicOptions = [`<option value="">All topics</option>`]
+    .concat(topics().map((topic) => `<option value="${esc(topic.id)}"${library.topic === topic.id ? " selected" : ""}>${esc(topic.name)}</option>`))
+    .join("");
+  const show = (id, label) =>
+    `<button type="button" data-library-show="${id}" aria-pressed="${library.show === id}">${label}</button>`;
+  const rows = (data ? data.papers : [])
+    .map((paper) => {
+      const progress = reading(paper);
+      const unread = progress.read ? "" : `<span class="unread-dot" title="Unread"></span><span class="visually-hidden">Unread: </span>`;
+      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">★<span class="visually-hidden"> saved</span></span>` : "";
+      const meta = [authors(paper), paper.venue, paper.topicName, `kept ${formatDay(paper.runDate)}`, ACTION_LABEL[paper.action]]
+        .filter(Boolean)
+        .join(" · ");
+      return `<li><a class="paper-row" href="#/papers/${esc(paper.id)}" data-library-open="${esc(paper.id)}" data-topic="${esc(paper.topicId)}" data-run="${esc(paper.runId)}">
+          <span class="paper-row-title">${unread}${esc(paper.title)}${saved}</span>
+          <span class="paper-row-meta">${esc(meta)}</span>
+        </a></li>`;
+    })
+    .join("");
+  const total = data ? data.total : 0;
+  const first = total ? library.offset + 1 : 0;
+  const last = Math.min(library.offset + LIBRARY_PAGE, total);
+  const body = library.error
+    ? statusMessage(library.error, "error")
+    : !data
+      ? `<p class="empty">Loading the library…</p>`
+      : rows
+        ? `<ul class="paper-list library-list">${rows}</ul>`
+        : `<p class="empty">${library.show === "all" ? "No papers have been kept yet. Run a topic to fill the library." : "No papers match."}</p>`;
+  return `<p class="kicker">Library</p>
+    <h1>Every paper you've kept</h1>
+    <p class="quiet">Across all topics and runs, newest first. Each paper appears once, under the latest run that kept it.</p>
+    <div class="filters">
+      ${show("all", "All")}${show("unread", "Unread")}${show("saved", "Saved")}
+      <label class="visually-hidden" for="library-topic">Topic</label>
+      <select class="switcher" id="library-topic">${topicOptions}</select>
+    </div>
+    ${body}
+    <div class="pager">
+      <span class="quiet">${total ? `Showing ${first}–${last} of ${total}` : ""}</span>
+      <button class="button" type="button" data-library-page="-1"${library.offset === 0 || library.pending ? " disabled" : ""}>Previous</button>
+      <button class="button" type="button" data-library-page="1"${last >= total || library.pending ? " disabled" : ""}>Next</button>
+    </div>`;
+}
+
+/* Runs fetched for the library sit beyond the shelf's recent window; keep them across reloads. */
+function keepOlderRuns() {
+  for (const { topicId, run } of state.olderRuns.values()) {
+    const topic = topics().find((item) => item.id === topicId);
+    if (topic && !topic.runs.some((item) => item.id === run.id)) topic.runs.push(run);
+  }
+}
+
+async function openLibraryPaper(topicId, runId, paperId) {
+  const topic = topics().find((item) => item.id === topicId);
+  if (!topic) return;
+  if (!topic.runs.some((run) => run.id === runId)) {
+    try {
+      const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+      if (!response.ok) throw new Error("missing");
+      state.olderRuns.set(runId, { topicId, run: await response.json() });
+      keepOlderRuns();
+    } catch {
+      state.library = { ...state.library, error: "That run could not be loaded." };
+      render();
+      return;
+    }
+  }
+  state.topicId = topicId;
+  state.runId = runId;
+  location.hash = `#/papers/${encodeURIComponent(paperId)}`;
+}
+
 async function loadShelf() {
   try {
     const response = await fetch("/api/shelf");
@@ -1315,6 +1415,7 @@ async function loadShelf() {
       if (shelf.live && Array.isArray(shelf.topics)) {
         window.DESK = shelf;
         state.live = true;
+        keepOlderRuns();
       }
     }
   } catch {
@@ -1429,6 +1530,26 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  const libraryOpen = event.target.closest("[data-library-open]");
+  if (libraryOpen) {
+    event.preventDefault();
+    const { topic, run, libraryOpen: paperId } = libraryOpen.dataset;
+    void openLibraryPaper(topic, run, paperId);
+    return;
+  }
+  const libraryShow = event.target.closest("[data-library-show]");
+  if (libraryShow) {
+    state.library = { ...state.library, show: libraryShow.dataset.libraryShow, offset: 0 };
+    void loadLibrary();
+    return;
+  }
+  const libraryPage = event.target.closest("[data-library-page]");
+  if (libraryPage) {
+    const step = Number(libraryPage.dataset.libraryPage) * LIBRARY_PAGE;
+    state.library = { ...state.library, offset: Math.max(0, state.library.offset + step) };
+    void loadLibrary();
+    return;
+  }
   if (event.target.id === "print-report") {
     window.print();
     return;
@@ -1646,6 +1767,11 @@ function onInput(event) {
 }
 
 function onChange(event) {
+  if (event.target.id === "library-topic") {
+    state.library = { ...state.library, topic: event.target.value, offset: 0 };
+    void loadLibrary();
+    return;
+  }
   if (event.target.id === "topic") {
     state.topicId = event.target.value;
     state.runId = null;
@@ -1678,6 +1804,7 @@ restore();
 window.addEventListener("hashchange", () => {
   state.moveFocus = true;
   if (!location.hash.startsWith("#/topics")) state.topicsStatus = null;
+  if (location.hash.startsWith("#/library")) state.library = { ...state.library, data: null };
   render();
 });
 document.addEventListener("click", onClick);
