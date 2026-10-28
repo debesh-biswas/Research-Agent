@@ -7,8 +7,11 @@ a weekly run stays a separate command, and this process only reads the library a
 import asyncio
 import json
 import logging
+import shutil
+import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Literal, Protocol
@@ -19,14 +22,20 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question, failure_message
-from research_agent.desk.shelf import build_run, build_shelf, run_report, screened_papers
+from research_agent.desk.shelf import (
+    build_run,
+    build_shelf,
+    owned_files,
+    run_report,
+    screened_papers,
+)
 from research_agent.exports.citations import to_bibtex, to_ris
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
 from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
-from research_agent.storage.artifacts import LocalArtifactStore
+from research_agent.storage.artifacts import LocalArtifactStore, safe_name
 from research_agent.storage.asks import AskTurn, SqliteAskRepository
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.feedback import SqliteFeedbackRepository
@@ -46,6 +55,7 @@ from research_agent.topics.suggest import suggest_keywords
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
 _LIBRARY_PAGE_MAX = 100
+_ALL_RUNS = 1_000_000
 _CITATION_TYPES = {
     "bib": "application/x-bibtex; charset=utf-8",
     "ris": "application/x-research-info-systems; charset=utf-8",
@@ -140,6 +150,8 @@ class DeskBackend(Protocol):
     def citations(self, run_id: str | None, fmt: str) -> tuple[str, str] | None: ...
 
     def run(self, run_id: str) -> dict[str, object] | None: ...
+
+    def storage(self) -> dict[str, object]: ...
 
     def library(self, query: "LibraryQuery") -> dict[str, object]: ...
 
@@ -456,10 +468,16 @@ class LocalDesk:
         threading.Thread(target=_run, daemon=True).start()
 
     def delete_run(self, run_id: str) -> None:
-        """Clear one week's run. Deduplicated papers and their files are untouched."""
+        """Clear one run and the files only it owns; refused while its topic is running.
+
+        Its papers stay in the library, with their PDFs, parsed text and analyses.
+        """
         connection = connect(self._database)
         try:
-            SqliteRunRepository(connection).delete(run_id)
+            record = SqliteRunRepository(connection).get(run_id)
+            if record is not None:
+                with self._idle(connection, record.topic_id):
+                    self._clear(connection, record.topic_id, {run_id})
         finally:
             connection.close()
 
@@ -467,9 +485,51 @@ class LocalDesk:
         """Clear every run a topic has, keeping the topic definition. Returns the count cleared."""
         connection = connect(self._database)
         try:
-            return SqliteRunRepository(connection).delete_for_topic(topic_id)
+            with self._idle(connection, topic_id):
+                return self._clear(connection, topic_id, None)
         finally:
             connection.close()
+
+    @contextmanager
+    def _idle(self, connection: sqlite3.Connection, topic_id: str) -> Iterator[None]:
+        """Hold the topic's run lock, so nothing is cleared out from under a running run."""
+        try:
+            with run_lock(self._settings.data_directory, topic_id):
+                yield
+        except RunLocked as error:
+            topic = SqliteTopicRepository(connection).get(topic_id)
+            name = topic.name if topic else topic_id
+            raise RunLocked(f"{name} is running; clear runs after it finishes.") from error
+
+    def _clear(self, connection: sqlite3.Connection, topic_id: str, ids: set[str] | None) -> int:
+        """Delete runs (all of the topic's when `ids` is None), then the files they alone own."""
+        runs = SqliteRunRepository(connection)
+        every = runs.recent(topic_id, _ALL_RUNS)
+        cleared = [record for record in every if ids is None or record.id in ids]
+        staying = [record for record in every if record not in cleared]
+        files = owned_files(cleared, staying, SqliteResultRepository(connection), self._store)
+        for record in cleared:
+            runs.delete(record.id)
+        for owner, kind, name in files:
+            self._store.delete(owner, kind, name)
+        return len(cleared)
+
+    def storage(self) -> dict[str, object]:
+        """Bytes on disk per topic folder and for the database, and what the disk has free."""
+        root = self._settings.data_directory
+        connection = connect(self._database)
+        try:
+            topic_ids = [topic.id for topic in SqliteTopicRepository(connection).list()]
+        finally:
+            connection.close()
+        return {
+            "topics": {
+                topic_id: _folder_bytes(root / "topics" / safe_name(topic_id))
+                for topic_id in topic_ids
+            },
+            "database": sum(path.stat().st_size for path in root.glob(f"{self._database.name}*")),
+            "free": shutil.disk_usage(root).free,
+        }
 
 
 def serve(backend: DeskBackend, web_root: Path, port: int) -> None:
@@ -561,6 +621,9 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 return
             if (thread_route := _ask_route(self.path)) is not None:
                 self._json(200, {"turns": backend.thread(*thread_route)})
+                return
+            if path == "/api/storage":
+                self._json(200, backend.storage())
                 return
             if path == "/api/health":
                 checks = asyncio.run(backend.health())
@@ -731,16 +794,20 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 cleared = backend.clear_thread(*thread_route)
                 self._json(200, {"status": "cleared", "turns": cleared})
             elif len(segments) == 3 and segments[:2] == ["api", "runs"]:
-                backend.delete_run(unquote(segments[2]))
-                self._json(200, {"status": "cleared"})
+                run_id = unquote(segments[2])
+                self._topic_action(lambda: backend.delete_run(run_id), 200, "cleared")
             elif (
                 len(segments) == 4
                 and segments[0] == "api"
                 and segments[1] == "topics"
                 and segments[3] == "runs"
             ):
-                cleared = backend.clear_topic(unquote(segments[2]))
-                self._json(200, {"status": "cleared", "runs": cleared})
+                try:
+                    cleared = backend.clear_topic(unquote(segments[2]))
+                except RunLocked as error:
+                    self._json(409, {"error": str(error)})
+                else:
+                    self._json(200, {"status": "cleared", "runs": cleared})
             elif (topic_id := _topic_route(path)) is not None:
                 self._topic_action(lambda: backend.delete_topic(topic_id), 200, "deleted")
             else:
@@ -851,6 +918,10 @@ def _read_json(handler: BaseHTTPRequestHandler) -> object:
         return json.loads(raw)
     except json.JSONDecodeError as error:
         raise ValueError("body") from error
+
+
+def _folder_bytes(folder: Path) -> int:
+    return sum(path.stat().st_size for path in folder.rglob("*") if path.is_file())
 
 
 def _ask_route(raw_path: str) -> tuple[str, str | None] | None:

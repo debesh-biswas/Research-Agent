@@ -73,6 +73,8 @@ const state = {
   noteStatus: null,
   autoRead: new Set(),
   olderRuns: new Map(),
+  runsStatus: null,
+  storage: null,
   library: { topic: "", show: "all", q: "", offset: 0, pending: false, data: null, error: "" },
   screenedFilter: "all",
   finishedNotice: null,
@@ -765,8 +767,10 @@ function viewRuns(topic, run) {
   const clearAll = topic.runs.length
     ? `<button class="button" type="button" id="clear-topic-runs">Clear all runs</button>`
     : "";
+  const status = state.runsStatus || {};
   return `<div class="page-head"><h1>Runs</h1>${clearAll}</div>
     <p class="quiet">${esc(topic.name)}</p>
+    ${statusMessage(status.text, status.tone)}
     ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No runs yet for this topic.</p>`}`;
 }
 
@@ -894,7 +898,34 @@ function topicMeta(topic) {
   const settings = topic.settings;
   const sources = SOURCES.filter(([key]) => settings.discovery[key]).map(([, label]) => label);
   const runs = `${topic.runs.length} ${topic.runs.length === 1 ? "run" : "runs"}`;
-  return [`${settings.lookback_days}-day lookback`, sources.join(", "), runs].join(" · ");
+  const bytes = state.storage && state.storage.topics ? state.storage.topics[topic.id] : 0;
+  const disk = bytes ? `${formatBytes(bytes)} on disk` : "";
+  return [`${settings.lookback_days}-day lookback`, sources.join(", "), runs, disk].filter(Boolean).join(" · ");
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 ** 2) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function storageLine() {
+  const usage = state.storage;
+  if (!usage || !usage.topics) return "";
+  const used = Object.values(usage.topics).reduce((sum, bytes) => sum + bytes, usage.database);
+  return `<p class="quiet">The library uses ${formatBytes(used)} on disk; ${formatBytes(usage.free)} free.</p>`;
+}
+
+async function loadStorage() {
+  state.storage = { pending: true };
+  try {
+    const response = await fetch("/api/storage");
+    if (!response.ok) throw new Error("bad response");
+    state.storage = await response.json();
+  } catch {
+    state.storage = { failed: true };
+  }
+  if (pageName(parseRoute().parts) === "topics") render();
 }
 
 function viewTopics() {
@@ -929,7 +960,8 @@ function viewTopics() {
   return `<div class="page-head"><h1>Topics</h1><a class="button" href="#/new">New topic</a></div>
     <p class="quiet">Runs start only when you press Run now. Paused topics can't be run until enabled.</p>
     ${statusMessage(status.text, status.tone)}
-    ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}`;
+    ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}
+    ${storageLine()}`;
 }
 
 function settingsFields(settings) {
@@ -1257,6 +1289,7 @@ function render() {
   persist();
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
+  if (name === "topics" && state.live && !state.storage) void loadStorage();
   if (name === "library" && state.live && !state.library.data && !state.library.pending) void loadLibrary();
   if (name === "ask" && state.live && run) {
     const paperId = route.params.get("paper");
@@ -1504,22 +1537,23 @@ async function refreshShelf() {
   render();
 }
 
-async function deleteRun(runId) {
-  try {
-    await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
-  } catch {
-    // The shelf refetch below reflects whatever actually happened server-side.
+async function clearRuns(path) {
+  const problem = await topicRequest("DELETE", path);
+  state.runsStatus = problem ? { text: problem, tone: "error" } : null;
+  if (problem) {
+    render();
+    return;
   }
+  state.storage = null;
   await refreshShelf();
 }
 
-async function clearTopicRuns(topicId) {
-  try {
-    await fetch(`/api/topics/${encodeURIComponent(topicId)}/runs`, { method: "DELETE" });
-  } catch {
-    // The shelf refetch below reflects whatever actually happened server-side.
-  }
-  await refreshShelf();
+function deleteRun(runId) {
+  return clearRuns(`/api/runs/${encodeURIComponent(runId)}`);
+}
+
+function clearTopicRuns(topicId) {
+  return clearRuns(`/api/topics/${encodeURIComponent(topicId)}/runs`);
 }
 
 /* Returns null on success, or the message to show. */
@@ -1546,6 +1580,7 @@ async function topicAction(method, path, body, success) {
   await loadShelf();
   state.topicsPending = false;
   state.topicsStatus = problem ? { text: problem, tone: "error" } : { text: success, tone: "success" };
+  if (!problem) state.storage = null;
   return !problem;
 }
 
@@ -1742,13 +1777,13 @@ function onClick(event) {
   if (event.target.id === "clear-topic-runs") {
     const { topic } = current();
     if (!topic) return;
-    if (!confirm(`Clear all runs for ${topic.name}? This cannot be undone.`)) return;
+    if (!confirm(`Clear all runs for ${topic.name}? Their reports are deleted; papers, PDFs and notes stay in the library. This cannot be undone.`)) return;
     void clearTopicRuns(topic.id);
     return;
   }
   const clearRun = event.target.closest("[data-clear-run]");
   if (clearRun) {
-    if (!confirm("Clear this run? This cannot be undone.")) return;
+    if (!confirm("Clear this run? Its report is deleted; its papers, PDFs and notes stay in the library. This cannot be undone.")) return;
     void deleteRun(clearRun.dataset.clearRun);
     return;
   }
@@ -1890,6 +1925,8 @@ restore();
 window.addEventListener("hashchange", () => {
   state.moveFocus = true;
   if (!location.hash.startsWith("#/topics")) state.topicsStatus = null;
+  if (!location.hash.startsWith("#/runs")) state.runsStatus = null;
+  state.storage = null;
   if (location.hash.startsWith("#/library")) state.library = { ...state.library, data: null };
   render();
 });

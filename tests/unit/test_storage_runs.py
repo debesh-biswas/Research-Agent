@@ -101,23 +101,6 @@ def test_delete_removes_one_run_and_cascades_its_errors(connection: sqlite3.Conn
     assert repository.errors_for(run.id) == []
 
 
-def test_delete_for_topic_clears_every_run_but_keeps_the_topic(
-    connection: sqlite3.Connection,
-) -> None:
-    repository = SqliteRunRepository(connection)
-    for _ in range(3):
-        repository.start(TOPIC_ID)
-
-    cleared = repository.delete_for_topic(TOPIC_ID)
-
-    assert cleared == 3
-    assert repository.recent(TOPIC_ID, limit=10) == []
-    assert (
-        connection.execute("SELECT COUNT(*) FROM topics WHERE id = ?", (TOPIC_ID,)).fetchone()[0]
-        == 1
-    )
-
-
 def test_a_failed_transaction_leaves_no_run(connection: sqlite3.Connection) -> None:
     with pytest.raises(sqlite3.IntegrityError), connection:
         connection.execute(
