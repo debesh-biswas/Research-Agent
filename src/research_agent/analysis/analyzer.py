@@ -103,9 +103,13 @@ class PaperAnalyzer:
         run_id: str,
         force: bool = False,
     ) -> AnalysisOutcome:
-        """Analyse one paper, reusing a stored analysis unless forced, and never raising."""
+        """Analyse one paper, reusing a stored analysis unless forced, and never raising.
+
+        An abstract-only analysis is redone once full text is available, rather than reused.
+        """
         paper_id = _identifier(paper)
-        if not force and self._results.analysis_for(paper_id) is not None:
+        stored = None if force else self._results.analysis_for(paper_id)
+        if stored is not None and not (stored.abstract_only and parsed is not None):
             return AnalysisOutcome(paper_id=paper_id, status="cached")
 
         messages = [

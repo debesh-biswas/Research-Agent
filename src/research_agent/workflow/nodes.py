@@ -11,7 +11,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from research_agent.discovery.normalize import canonical_id
+from research_agent.documents.urls import pdf_candidates
 from research_agent.domain.analysis import PaperAnalysis
+from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.runs import ErrorCategory, ErrorRecord, RunStatus, RunSummary
 from research_agent.observability.manifest import run_manifest
 from research_agent.queries.planner import base_query
@@ -172,15 +174,21 @@ def select_papers(services: WorkflowServices) -> Node:
     """Choose a bounded reading set, skipping papers whose text has not changed since analysis."""
 
     async def node(state: ResearchState) -> Update:
+        by_id = {canonical_id(paper): paper for paper in state.candidates}
         analyzed = services.papers.analyzed_unchanged(
             result.paper_id for result in state.classifications
         )
+        analyzed -= {
+            paper_id
+            for paper_id in analyzed
+            if _full_text_worth_retrying(services, paper_id, by_id.get(paper_id))
+        }
         plan = select(
             state.classifications,
             services.topic.limits,
             services.settings.selection,
             analyzed,
-            papers={canonical_id(paper): paper for paper in state.candidates},
+            papers=by_id,
             as_of=state.period_end,
         )
         services.selections.save(state.run_id or "", plan)
@@ -192,6 +200,22 @@ def select_papers(services: WorkflowServices) -> Node:
         return {"selected_ids": plan.selected_ids, "counts": counts}
 
     return node
+
+
+def _full_text_worth_retrying(
+    services: WorkflowServices, paper_id: str, paper: PaperCandidate | None
+) -> bool:
+    """An abstract-only read whose PDF exists but failed to download or parse gets another go.
+
+    Without this, one timeout made a paper abstract-only for good, since it counted as analyzed.
+    A paper with no open-access PDF stays abstract-only: there is nothing to retry.
+    """
+    if paper is None or not pdf_candidates(paper):
+        return False
+    if "parsed" in services.papers.files_for(paper_id):
+        return False
+    stored = services.results.analysis_for(paper_id)
+    return stored is not None and stored.abstract_only
 
 
 def acquire(services: WorkflowServices) -> Node:

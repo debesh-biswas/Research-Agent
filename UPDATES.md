@@ -2,6 +2,62 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Retry failed full-text reads on the next run (complete)
+
+- **Feature/branch:** `F55-retry-failed-full-text`, off `main` at `d6dd8de`.
+- **Status:** Complete; merged into `main`. Roadmap M11, third and last item.
+- **Finding:** Most failures were already retried by running the topic again:
+  - searches run again;
+  - a failed analysis stores nothing, so it is redone;
+  - cached downloads, parses, analyses and (since F53) screenings are reused.
+
+  One gap was real. A transient PDF download or parse failure (timeout, 5xx) still produced an
+  abstract-only analysis, and the paper then counted as analyzed. Selection skipped it
+  (`already_analyzed`) on every later run, so one timeout left a paper abstract-only for good.
+- **Summary of the fix:**
+  - `select_papers` makes a paper eligible again when all of these hold: its stored analysis is
+    abstract-only, it has no parsed text, and it has a legal PDF URL (`pdf_candidates`). It is
+    re-selected, its download or parse is retried, and it is kept on that run.
+  - `PaperAnalyzer.analyze` redoes an abstract-only analysis once parsed text is available,
+    instead of returning the cached one.
+  - Papers with no open-access PDF stay abstract-only: there is nothing to retry.
+  - Papers already read in full are still never redone.
+  - The Week page's error list now says: "Run the topic again to retry what failed. Screening and
+    full-text reads that already worked are reused, not redone."
+- **Files affected:**
+  - `src/research_agent/workflow/nodes.py`: `_full_text_worth_retrying`.
+  - `src/research_agent/analysis/analyzer.py`.
+  - `web/js/desk.js`: `errorBlock`.
+  - Tests in `tests/unit/test_workflow_nodes.py`, `test_analysis_analyzer.py` and
+    `tests/integration/test_run_cli.py`.
+- **Decisions:**
+  - No separate "retry" button or command. "Run now" already does the right thing now that this
+    gap is closed, and a second path would duplicate the workflow.
+  - No retry ceiling is needed. A paper only comes back while discovery finds it again, which is
+    the lookback window or a re-run.
+- **Verification:**
+  - New CLI integration test: run 1 with every PDF failing gave abstract-only reads for both
+    papers. Run 2 with PDFs back read both in full, and both runs kept them. Without the fix, run 2
+    made no new reads and the test fails.
+  - Companion test: two healthy runs leave the analysis count unchanged, and the only unselected
+    reason is `already_analyzed`.
+  - Unit tests cover the predicate (6 cases, including no PDF URL, parsed text present, a full read
+    and no analysis) and the analyzer (cached, then upgraded with full text, then cached again; two
+    model calls).
+  - Browser: the hint shows under the cloud run's 10 errors, with no page errors.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 628 passed,
+    3 deselected, coverage 92.67%.
+- **Known issues:** A paper whose PDF URL is permanently broken (a 404) is retried each time
+  discovery returns it. That costs one failed request per run, and the paper is still read from
+  its abstract.
+- **Next step:** Roadmap M12. `F56`: packaging, installer and licence review.
+  - Check that a built wheel carries `web/` (the desk's page, fonts and favicon) and
+    `config/` defaults.
+  - Check that `research-agent desk` finds `web/` when installed rather than run from the repo.
+  - Check that third-party licences are compatible and listed.
+
+  The F34 settings screen is deferred to here too; ask the user before building it.
+
 ## 2026-10-28 — Model usage per run (complete)
 
 - **Feature/branch:** `F54-model-usage`, off `main` at `58313cb`.
