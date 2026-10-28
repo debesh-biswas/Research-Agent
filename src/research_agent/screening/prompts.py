@@ -3,9 +3,10 @@
 from research_agent.config import ScreeningSettings, TopicSettings
 from research_agent.domain.feedback import FeedbackExamples
 from research_agent.domain.papers import PaperCandidate
+from research_agent.topics.breadth import SCREENING_GUIDANCE
 
-PROMPT_VERSION = "screening.v2"
-"""v2 adds the reader's relevance votes as examples, when the topic has any."""
+PROMPT_VERSION = "screening.v3"
+"""v2 added the reader's relevance votes; v3 adds the topic's description and breadth."""
 
 _EXAMPLE_TITLE_CHARS = 200
 SYSTEM_PROMPT = """You are a careful research-paper screener. Judge whether the paper's central
@@ -28,8 +29,12 @@ def render(
     examples: FeedbackExamples | None = None,
 ) -> str:
     abstract = (paper.abstract or "No abstract available.")[: settings.max_abstract_chars]
+    described = (
+        f"What it covers: {topic.description.strip()}\n" if topic.description.strip() else ""
+    )
+    terms = f"Topic keywords: {', '.join(topic.keywords)}\n" if topic.keywords else ""
     return f"""Topic: {topic.name}
-Topic keywords: {", ".join(topic.keywords) or "none supplied"}
+{described}{terms}{SCREENING_GUIDANCE[topic.breadth]}
 {_examples(examples)}Paper title: {paper.title}
 Paper abstract: {abstract}
 

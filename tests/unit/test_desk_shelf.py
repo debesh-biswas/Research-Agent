@@ -59,6 +59,7 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
             papers_selected=1,
             deep_reads=1,
             models_used=["glm-test"],
+            queries=["topological maps", "scene graphs"],
             model_usage=[
                 ModelUsage(
                     provider="local",
@@ -193,6 +194,7 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
     assert run["status"] == "degraded"
     assert run["executiveSummary"] == "Named maps won the week."
     assert run["models"] == ["glm-test"]
+    assert run["queries"] == ["topological maps", "scene graphs"]
     assert run["modelUsage"] == [
         {
             "provider": "local",

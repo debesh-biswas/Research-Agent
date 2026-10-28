@@ -43,10 +43,13 @@ def test_topics_page_is_wired_to_the_topic_endpoints() -> None:
     assert '"PUT"' in script and "/run`" in script
 
 
-def test_new_topic_review_edits_keywords_and_settings() -> None:
+def test_a_new_topic_takes_a_description_and_breadth_not_keywords() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
-    for hook in ("data-remove-keyword", "new-keyword", "new-topic-review", "settingsFields"):
+    for hook in ("new-topic-form", "breadthField", "describeField", "settingsFields"):
         assert hook in script
+    for breadth in ('"focused"', '"balanced"', '"exploratory"'):
+        assert breadth in script
+    assert "data-remove-keyword" not in script and "/api/topics/suggest" not in script
     assert "window.DESK.defaults" in script
 
 

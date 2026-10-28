@@ -53,7 +53,6 @@ from research_agent.storage.topics import (
     TopicNotFoundError,
     TopicStoreError,
 )
-from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
@@ -111,15 +110,6 @@ class ReadingUpdate(StrictModel):
     note: str | None = None
 
 
-class TopicSuggestRequest(StrictModel):
-    """The name and optional description the desk page posts for keyword suggestions."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=200)
-    description: str = Field(default="", max_length=2000)
-
-
 class DeskBackend(Protocol):
     """What the HTTP handler needs from the library. Tests substitute this."""
 
@@ -130,8 +120,6 @@ class DeskBackend(Protocol):
     def thread(self, run_id: str, paper_id: str | None) -> list[dict[str, object]]: ...
 
     def clear_thread(self, run_id: str, paper_id: str | None) -> int: ...
-
-    async def suggest(self, request: TopicSuggestRequest) -> list[str]: ...
 
     def create_and_run(self, topic: TopicSettings) -> None: ...
 
@@ -283,12 +271,6 @@ class LocalDesk:
             return SqliteAskRepository(connection).clear(run_id, paper_id)
         finally:
             connection.close()
-
-    async def suggest(self, request: TopicSuggestRequest) -> list[str]:
-        timeout = self._settings.models.local.timeout_seconds
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            router = build_router(client, self._settings)
-            return await suggest_keywords(router, request.name, request.description)
 
     def create_and_run(self, topic: TopicSettings) -> None:
         """Store the topic, then start its first run in the background."""
@@ -681,8 +663,6 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             path = urlparse(self.path).path
             if path == "/api/ask":
                 self._ask()
-            elif path == "/api/topics/suggest":
-                self._suggest_topic()
             elif path == "/api/topics":
                 self._create_topic()
             elif (topic_id := _topic_route(path, "run")) is not None:
@@ -800,24 +780,6 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._json(502, {"error": failure_message(error), "setup": True})
                 return
             self._json(200, _reply_body(reply))
-
-        def _suggest_topic(self) -> None:
-            try:
-                payload = _read_json(self)
-                request = TopicSuggestRequest.model_validate(payload)
-            except (ValueError, ValidationError):
-                self._json(400, {"error": "The topic name could not be read."})
-                return
-            try:
-                keywords = asyncio.run(backend.suggest(request))
-            except ModelProviderError:
-                _LOGGER.warning(
-                    "keyword suggestion failed",
-                    extra={"node_name": "topic_keywords", "status": "failed"},
-                )
-                self._json(502, {"error": "The model did not answer."})
-                return
-            self._json(200, {"keywords": keywords})
 
         def _create_topic(self) -> None:
             try:

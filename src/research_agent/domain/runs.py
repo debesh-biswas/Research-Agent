@@ -49,6 +49,8 @@ class RunSummary(StrictModel):
     models_used: list[str] = Field(default_factory=list)
     errors: int = Field(default=0, ge=0)
     model_usage: list[ModelUsage] = Field(default_factory=list)
+    queries: list[str] = Field(default_factory=list)
+    """The searches this run sent, as the model chose them for the topic's breadth."""
 
 
 class RunRecord(StrictModel):

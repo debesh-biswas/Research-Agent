@@ -1169,59 +1169,6 @@ a.primary {
   margin-top: 4px;
 }
 
-.keyword-review {
-  margin-top: 28px;
-  max-width: 520px;
-}
-
-.keyword-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0 24px;
-  padding: 0;
-  list-style: none;
-}
-
-.keyword-chip {
-  font: 500 0.86rem var(--sans);
-  color: var(--tide-deep);
-  background: var(--wash);
-  border-radius: 999px;
-  padding: 6px 14px;
-}
-
-.keyword-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.chip-remove {
-  font: 600 0.95rem/1 var(--sans);
-  color: var(--tide-deep);
-  background: transparent;
-  border: none;
-  border-radius: 999px;
-  padding: 0 2px;
-  cursor: pointer;
-}
-
-.chip-remove:hover,
-.chip-remove:focus-visible {
-  color: var(--carmine);
-}
-
-.keyword-add {
-  display: flex;
-  gap: 8px;
-}
-
-.keyword-add input {
-  flex: 1;
-  min-width: 0;
-}
-
 .advanced summary {
   font: 600 0.85rem var(--sans);
   color: var(--muted);
@@ -1230,12 +1177,6 @@ a.primary {
 
 .advanced[open] summary {
   margin-bottom: 16px;
-}
-
-.keyword-chip[data-empty="true"] {
-  color: var(--faint);
-  background: transparent;
-  border: 1px dashed var(--line-strong);
 }
 
 .status-line {
@@ -1505,4 +1446,32 @@ code {
 .secret-list,
 #settings-form .quiet {
   overflow-wrap: anywhere;
+}
+
+.breadth-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.breadth-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  font: 0.95rem/1.45 var(--sans);
+}
+
+.breadth-option:has(input:checked) {
+  border-color: var(--tide);
+  background: var(--wash);
+}
+
+.breadth-option input {
+  margin-top: 4px;
+  accent-color: var(--tide);
 }

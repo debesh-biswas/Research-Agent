@@ -165,6 +165,7 @@ def _run(
         "startedAt": record.started_at.isoformat(),
         "durationSeconds": record.duration_seconds or 0,
         "models": models,
+        "queries": list(summary.queries),
         "modelUsage": [
             {
                 "provider": usage.provider,

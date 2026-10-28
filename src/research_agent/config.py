@@ -271,12 +271,19 @@ class SchedulingSettings(StrictModel):
     ] = "sunday"
 
 
+Breadth = Literal["focused", "balanced", "exploratory"]
+"""How widely a topic reaches: only its core, its core and close neighbours, or adjacent fields."""
+
+
 class TopicSettings(StrictModel):
     id: str = Field(pattern=r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
     name: str = Field(min_length=1)
+    description: str = Field(default="", max_length=1000)
+    breadth: Breadth = "balanced"
     enabled: bool = True
     lookback_days: int = Field(default=10, gt=0)
     keywords: list[str] = Field(default_factory=list)
+    """Optional extra search terms (CLI and topics.yaml). The desk lets the model choose terms."""
     discovery: DiscoverySettings = Field(default_factory=DiscoverySettings)
     limits: ResourceLimits = Field(default_factory=ResourceLimits)
     scheduling: SchedulingSettings = Field(default_factory=SchedulingSettings)

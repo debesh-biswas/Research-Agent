@@ -220,6 +220,8 @@ MIGRATIONS: tuple[str, ...] = (
         updated_at TEXT NOT NULL
     )
     """,
+    "ALTER TABLE topics ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE topics ADD COLUMN breadth TEXT NOT NULL DEFAULT 'balanced'",
 )
 
 

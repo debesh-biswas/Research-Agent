@@ -14,7 +14,7 @@ def make_plan(**overrides: object) -> QueryPlan:
         "topic_id": TOPIC_ID,
         "queries": ["spatial intelligence", "embodied navigation"],
         "base_query": "spatial intelligence",
-        "prompt_version": "query_expansion.v1",
+        "prompt_version": "query_expansion.v2",
         "model_provider": "local",
         "model_name": "qwen3:8b",
         "created_at": datetime(2026, 9, 22, tzinfo=UTC),

@@ -421,6 +421,7 @@ def persist(services: WorkflowServices) -> Node:
                 models_used=sorted({analysis.model_name for analysis in analyses}),
                 errors=len(state.errors),
                 model_usage=services.usage.totals() if services.usage else [],
+                queries=list(state.queries),
             ),
             status=status,
         )

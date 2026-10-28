@@ -98,6 +98,8 @@ def test_a_single_run_completes_and_reports(
     ((usage,),) = rows(tmp_path, "SELECT json_extract(summary_json, '$.model_usage') FROM runs")
     (local,) = json.loads(str(usage))
     assert local["provider"] == "local" and local["calls"] > 0
+    ((queries,),) = rows(tmp_path, "SELECT json_extract(summary_json, '$.queries') FROM runs")
+    assert json.loads(str(queries)), "the run records what it searched for"
     reports = tmp_path / "data" / "topics" / TOPIC_ID / "reports"
     assert list(reports.iterdir())
 
