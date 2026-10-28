@@ -73,7 +73,7 @@ const state = {
   noteStatus: null,
   autoRead: new Set(),
   olderRuns: new Map(),
-  library: { topic: "", show: "all", offset: 0, pending: false, data: null, error: "" },
+  library: { topic: "", show: "all", q: "", offset: 0, pending: false, data: null, error: "" },
   screenedFilter: "all",
   finishedNotice: null,
   newTopic: {
@@ -1320,6 +1320,7 @@ async function loadLibrary() {
   state.library = { ...library, pending: true, error: "" };
   const params = new URLSearchParams({ show: library.show, offset: String(library.offset), limit: String(LIBRARY_PAGE) });
   if (library.topic) params.set("topic", library.topic);
+  if (library.q.trim()) params.set("q", library.q.trim());
   try {
     const response = await fetch(`/api/library?${params}`);
     const payload = await response.json();
@@ -1328,8 +1329,19 @@ async function loadLibrary() {
   } catch {
     state.library = { ...state.library, pending: false, error: "Can't load the library right now." };
   }
-  if (pageName(parseRoute().parts) === "library") render();
+  if (pageName(parseRoute().parts) !== "library") return;
+  // Redrawing replaces the search box; keep the reader typing where they were.
+  const search = document.getElementById("library-search");
+  const typing = search && document.activeElement === search ? search.selectionStart : null;
+  render();
+  if (typing !== null) {
+    const box = document.getElementById("library-search");
+    box.focus();
+    box.setSelectionRange(typing, typing);
+  }
 }
+
+let librarySearchTimer = null;
 
 function viewLibrary() {
   const library = state.library;
@@ -1362,7 +1374,7 @@ function viewLibrary() {
       ? `<p class="empty">Loading the library…</p>`
       : rows
         ? `<ul class="paper-list library-list">${rows}</ul>`
-        : `<p class="empty">${library.show === "all" ? "No papers have been kept yet. Run a topic to fill the library." : "No papers match."}</p>`;
+        : `<p class="empty">${library.show === "all" && !library.q.trim() ? "No papers have been kept yet. Run a topic to fill the library." : "No papers match."}</p>`;
   return `<p class="kicker">Library</p>
     <h1>Every paper you've kept</h1>
     <p class="quiet">Across all topics and runs, newest first. Each paper appears once, under the latest run that kept it.</p>
@@ -1370,6 +1382,7 @@ function viewLibrary() {
       ${show("all", "All")}${show("unread", "Unread")}${show("saved", "Saved")}
       <label class="visually-hidden" for="library-topic">Topic</label>
       <select class="switcher" id="library-topic">${topicOptions}</select>
+      <input class="search" id="library-search" type="search" placeholder="Search titles, authors, methods, datasets" value="${esc(library.q)}" aria-label="Search the library" />
     </div>
     ${body}
     <div class="pager">
@@ -1747,6 +1760,12 @@ function onInput(event) {
     const { run } = current();
     const list = document.getElementById("paper-list");
     if (list) list.innerHTML = renderPaperList(run);
+    return;
+  }
+  if (event.target.id === "library-search") {
+    state.library = { ...state.library, q: event.target.value, offset: 0 };
+    clearTimeout(librarySearchTimer);
+    librarySearchTimer = setTimeout(() => void loadLibrary(), 300);
     return;
   }
   if (event.target.id === "note-input") {

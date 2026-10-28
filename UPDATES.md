@@ -2,6 +2,36 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Search the library (complete)
+
+- **Feature/branch:** `F46-library-search`, off `main` at `6ce9ff8`.
+- **Status:** Complete; merged into `main`. Roadmap M7, second and last item.
+- **Summary:** The Library page has a search box: "Search titles, authors, methods, datasets".
+  A paper matches when every typed word appears, ignoring case, in its title, venue or abstract,
+  one of its authors, or any stored analysis of it (problem, contribution, method, datasets,
+  benchmarks, results, claims, …). Search combines with the All/Unread/Saved and topic filters and
+  pages like the rest of the library. `GET /api/library` takes `q` (up to 200 characters).
+- **Files affected:** `src/research_agent/storage/library.py` (`page(..., search=...)`,
+  `_MATCHES_WORD`, `_escape_like`), `src/research_agent/desk/server.py` (`LibraryQuery.q`),
+  `web/js/desk.js`, tests in `tests/unit/test_storage_library.py`, `test_desk_server.py`,
+  `test_reading_desk.py`.
+- **Decisions:** Plain `LIKE` scans rather than an FTS5 index: instant at one reader's library size
+  and nothing to keep in sync. Authors are matched through `json_each`, because `authors_json`
+  stores non-ASCII characters escaped (`"Jos\\u00e9"`) and a plain `LIKE` would never find "José".
+  A typed `%` or `_` is escaped, so it is found literally. Typing is debounced by 300 ms, and the
+  redraw restores focus and the caret so no keystroke is lost.
+- **Verification:** Repository: title (any case), accented authors ("josé", "Núñez"), venue,
+  abstract, a dataset that appears only in the analysis, every word required, `%`/`_` literal,
+  a blank search matching everything, and totals. Browser with the seeded 30-paper library:
+  typing "week 13" one character at a time kept every keystroke and focus in the box and showed the
+  3 matching papers; adding the author kept them; a nonsense search said "No papers match.";
+  clearing restored 30; no page errors. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 598 passed, 3 deselected, coverage 92.16%.
+- **Known issues:** SQLite's `LIKE` folds case for ASCII letters only, so "ÉCOLE" does not match
+  "école".
+- **Next step:** Roadmap M8 — `F47`: Ask keeps the conversation (follow-up questions see earlier
+  turns), saves threads, and says what failed when the model does.
+
 ## 2026-10-28 — Library: every kept paper across topics and runs (complete)
 
 - **Feature/branch:** `F45-library-view`, off `main` at `950ec6b`.

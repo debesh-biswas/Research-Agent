@@ -144,6 +144,7 @@ class LibraryQuery(StrictModel):
 
     topic: str | None = None
     show: Literal["all", "unread", "saved"] = "all"
+    q: str = Field(default="", max_length=200)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=25, ge=1, le=_LIBRARY_PAGE_MAX)
 
@@ -288,6 +289,7 @@ class LocalDesk:
                 topic_id=query.topic,
                 unread_only=query.show == "unread",
                 saved_only=query.show == "saved",
+                search=query.q,
                 offset=query.offset,
                 limit=query.limit,
             )

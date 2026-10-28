@@ -424,7 +424,10 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
         status, page = _call(base, "GET", "/api/library?show=saved&offset=25&topic=spatial")
         assert (status, page) == (
             200,
-            {"total": 0, "query": {"topic": "spatial", "show": "saved", "offset": 25, "limit": 25}},
+            {
+                "total": 0,
+                "query": {"topic": "spatial", "show": "saved", "q": "", "offset": 25, "limit": 25},
+            },
         )
         assert _call(base, "GET", "/api/library?limit=0")[0] == 400
         assert _call(base, "GET", "/api/library?show=everything")[0] == 400
