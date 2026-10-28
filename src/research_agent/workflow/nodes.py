@@ -396,6 +396,7 @@ def persist(services: WorkflowServices) -> Node:
                 deep_reads=state.counts.get("deep_reads", 0),
                 models_used=sorted({analysis.model_name for analysis in analyses}),
                 errors=len(state.errors),
+                model_usage=services.usage.totals() if services.usage else [],
             ),
             status=status,
         )

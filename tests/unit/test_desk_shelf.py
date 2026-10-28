@@ -21,7 +21,7 @@ from research_agent.domain.analysis import (
     SupportedFinding,
     WeeklySynthesis,
 )
-from research_agent.domain.runs import RunSummary
+from research_agent.domain.runs import ModelUsage, RunSummary
 from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.reports.naming import report_filename
 from research_agent.storage.artifacts import LocalArtifactStore
@@ -59,6 +59,17 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
             papers_selected=1,
             deep_reads=1,
             models_used=["glm-test"],
+            model_usage=[
+                ModelUsage(
+                    provider="local",
+                    model="glm-test",
+                    calls=3,
+                    prompt_tokens=900,
+                    completion_tokens=120,
+                    latency_ms=2600,
+                    fallbacks=1,
+                )
+            ],
         ),
         status="degraded",
     )
@@ -182,6 +193,17 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
     assert run["status"] == "degraded"
     assert run["executiveSummary"] == "Named maps won the week."
     assert run["models"] == ["glm-test"]
+    assert run["modelUsage"] == [
+        {
+            "provider": "local",
+            "model": "glm-test",
+            "calls": 3,
+            "promptTokens": 900,
+            "completionTokens": 120,
+            "seconds": 3,
+            "fallbacks": 1,
+        }
+    ]
     assert run["readingOrder"] == {"essential": [paper_id], "useful": [], "peripheral": []}
     papers = run["papers"]
     assert isinstance(papers, list)

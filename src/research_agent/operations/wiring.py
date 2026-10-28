@@ -18,6 +18,7 @@ from research_agent.documents.downloader import PdfDownloader
 from research_agent.documents.parser import ParsingService
 from research_agent.ideation.generator import IdeationService
 from research_agent.models.router import build_router
+from research_agent.models.usage import UsageMeter
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
 from research_agent.screening.service import PaperScreener
@@ -59,7 +60,8 @@ def build_services(
     papers = SqlitePaperRepository(connection)
     results = SqliteResultRepository(connection)
     runs = SqliteRunRepository(connection)
-    router = build_router(client, application)
+    usage = UsageMeter()
+    router = build_router(client, application, meter=usage)
     return WorkflowServices(
         settings=application,
         topic=topic,
@@ -97,6 +99,7 @@ def build_services(
         planner=QueryPlanner(router, application.queries),
         query_plans=SqliteQueryPlanRepository(connection),
         feedback=SqliteFeedbackRepository(connection),
+        usage=usage,
     )
 
 

@@ -15,6 +15,7 @@ from research_agent.documents.parser import ParsingService
 from research_agent.domain.feedback import FeedbackExamples
 from research_agent.domain.queries import QueryPlan
 from research_agent.ideation.generator import IdeationService
+from research_agent.models.usage import UsageMeter
 from research_agent.queries.planner import QueryPlanner
 from research_agent.reports.service import ReportService
 from research_agent.screening.service import PaperScreener
@@ -67,3 +68,6 @@ class WorkflowServices:
 
     feedback: FeedbackReader | None = None
     """Optional: the reader's relevance votes, given to screening as examples."""
+
+    usage: UsageMeter | None = None
+    """Optional: the router's call counter, totalled into the run summary."""

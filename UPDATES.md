@@ -2,6 +2,49 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Model usage per run (complete)
+
+- **Feature/branch:** `F54-model-usage`, off `main` at `58313cb`.
+- **Status:** Complete; merged into `main`. Roadmap M11, second item.
+- **Summary:** Each run now records what it asked of the models, per provider and model: calls,
+  prompt tokens, completion tokens, time, and how many calls were fallbacks.
+  - It is stored in the run summary (`RunSummary.model_usage`).
+  - The Week page shows a collapsible line such as "96 model calls · 214k tokens in · 18k out",
+    with one row per model.
+  - Tokens come from the server's `usage` field; a server that does not report them counts 0.
+- **Files affected:**
+  - `src/research_agent/domain/runs.py`: `ModelUsage` and `RunSummary.model_usage`.
+  - New `src/research_agent/models/usage.py`: `UsageMeter`.
+  - `src/research_agent/models/router.py`: `meter=`, and `_call` for every provider call;
+    `build_router(..., meter=)`.
+  - `src/research_agent/operations/wiring.py` and `workflow/services.py` (`usage`).
+  - `src/research_agent/workflow/nodes.py`: persist writes the totals.
+  - `src/research_agent/desk/shelf.py`: `modelUsage`.
+  - `web/js/desk.js` (`usageBlock`, `formatCount`) and `web/css/desk.css`.
+  - Tests in `test_models_router.py`, `test_desk_shelf.py` and `tests/integration/test_run_cli.py`.
+- **Decisions:**
+  - Replies are counted before validation, because a malformed reply still used tokens.
+  - Calls that raised (timeouts, HTTP errors) are not counted: the server reports no usage for
+    them, and the run's error list already records them.
+  - No money figure is shown. NIM's free tier, local models and OpenRouter's free models carry
+    no price in the configuration, and a made-up rate would mislead. Tokens are the honest unit.
+  - Old runs simply have no usage line.
+- **Verification:**
+  - Router test: 2 failed NIM attempts were not counted; the fallback, a plain local call and an
+    invalid-JSON reply were (3 calls, 1 fallback).
+  - Meter test: tokens and time add per model, `None` counts as 0, and the order is stable.
+  - Shelf test: the camelCase fields.
+  - The CLI run test now asserts the persisted `model_usage` (local, with calls > 0).
+  - Browser on a copy of the cloud-run library with injected usage: "96 model calls · 214k tokens
+    in · 18k out", and a row with "28 min · 4 as fallback". No page errors.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 619 passed,
+    3 deselected, coverage 92.65%.
+- **Known issues:** Desk Ask and keyword suggestions are not metered, since they belong to no
+  run.
+- **Next step:** Roadmap M11. `F55`: retry the failed downloads and analyses of a finished run
+  without a full re-run. First check whether a re-run already skips the work that succeeded:
+  F53 covers screening, and `analyzed_unchanged` covers analyses.
+
 ## 2026-10-28 — Reuse screening for unchanged papers (complete)
 
 - **Feature/branch:** `F53-reuse-screening`, off `main` at `1da502e`.

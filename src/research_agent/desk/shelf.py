@@ -165,6 +165,18 @@ def _run(
         "startedAt": record.started_at.isoformat(),
         "durationSeconds": record.duration_seconds or 0,
         "models": models,
+        "modelUsage": [
+            {
+                "provider": usage.provider,
+                "model": usage.model,
+                "calls": usage.calls,
+                "promptTokens": usage.prompt_tokens,
+                "completionTokens": usage.completion_tokens,
+                "seconds": round(usage.latency_ms / 1000),
+                "fallbacks": usage.fallbacks,
+            }
+            for usage in summary.model_usage
+        ],
         "historyPeriods": synthesis.history_periods if synthesis else 0,
         "summary": _summary(summary, len(cards), len(errors), counted=record.summary is not None),
         "errors": [_error(error) for error in errors],

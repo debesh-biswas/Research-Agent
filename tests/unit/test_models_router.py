@@ -16,6 +16,7 @@ from research_agent.models.base import (
     ModelResult,
 )
 from research_agent.models.router import ModelRouter, build_router
+from research_agent.models.usage import UsageMeter
 from tests.unit.conftest import mock_client
 
 MESSAGES = [ModelMessage(role="user", content="hello")]
@@ -183,3 +184,54 @@ def test_build_router_uses_nim_only_when_a_key_is_configured() -> None:
             assert keyed.capability_provider("synthesis").name == "nvidia_nim"
 
     asyncio.run(run())
+
+
+def test_the_meter_counts_every_reply_including_invalid_ones_and_fallbacks() -> None:
+    meter = UsageMeter()
+    local = FakeProvider("local", text='{"relevant": true}')
+    strong = FakeProvider("nvidia_nim", error=ModelProviderError("down"))
+    routed = ModelRouter(local, strong, retries=1, meter=meter)
+
+    asyncio.run(routed.generate("deep_reasoning", MESSAGES, Verdict))  # 2 failures, then local
+    asyncio.run(routed.generate("cheap_text", MESSAGES))
+    broken = ModelRouter(FakeProvider("local", text="not json"), meter=meter)
+    with pytest.raises(ModelProviderError):
+        asyncio.run(broken.generate("classification", MESSAGES, Verdict))
+
+    assert [(u.provider, u.calls, u.fallbacks) for u in meter.totals()] == [("local", 3, 1)]
+
+
+def test_the_meter_adds_tokens_and_time_per_model_in_a_stable_order() -> None:
+    meter = UsageMeter()
+    for provider, model, tokens in [("z", "m", 5), ("a", "m", 7), ("z", "m", None)]:
+        meter.record(
+            ModelResult(
+                provider=provider,
+                model=model,
+                text="",
+                prompt_tokens=tokens,
+                completion_tokens=1,
+                latency_ms=10,
+            )
+        )
+
+    assert [u.model_dump() for u in meter.totals()] == [
+        {
+            "provider": "a",
+            "model": "m",
+            "calls": 1,
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "latency_ms": 10,
+            "fallbacks": 0,
+        },
+        {
+            "provider": "z",
+            "model": "m",
+            "calls": 2,
+            "prompt_tokens": 5,
+            "completion_tokens": 2,
+            "latency_ms": 20,
+            "fallbacks": 0,
+        },
+    ]
