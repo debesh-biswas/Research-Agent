@@ -102,3 +102,9 @@ def test_papers_page_exports_citations() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
     assert "/citations`" in script and '"/api/saved/citations"' in script
     assert "?format=${format}" in script
+
+
+def test_a_finished_run_notifies_a_reader_who_is_away() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "Notification.requestPermission()" in script and "askToNotify();" in script
+    assert "document.hidden" in script and "notifyFinished(state.finishedNotice.text)" in script
