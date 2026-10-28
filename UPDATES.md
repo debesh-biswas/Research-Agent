@@ -2,6 +2,63 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Clearing runs safely, and storage use (complete)
+
+- **Feature/branch:** `F49-run-files-and-storage`, off `main` at `0fbdc94`.
+- **Status:** Complete; merged into `main`. Roadmap M9, second item.
+- **Summary:**
+  - **Refused while running.** Clearing a run, or all of a topic's runs, now holds the topic's run
+    lock. While that topic is running, it is refused with 409: "<Topic> is running; clear runs
+    after it finishes." The Runs page shows that message and keeps the run.
+  - **Run files deleted.** Clearing now also deletes the files only that run owns: its
+    `runs/<run_id>-*` files (manifest, ideation) and its dated report. The report is kept when a
+    run that stays ends on the same day, because they share that report file. Papers, their PDFs,
+    parsed text, analyses and notes stay in the library. The confirm text says so.
+  - **Storage use.** `GET /api/storage` returns the bytes per topic folder, the database (with
+    its `-wal`/`-shm` files) and free disk. The Topics page shows "N MB on disk" for each topic and
+    "The library uses … on disk; … free." It is fetched once per visit to the page.
+- **Files affected:**
+  - `src/research_agent/desk/shelf.py`: `owned_files`.
+  - `src/research_agent/desk/server.py`: `LocalDesk.delete_run/clear_topic/_idle/_clear/storage`,
+    `_folder_bytes`, and the DELETE routes mapping `RunLocked` to 409.
+  - `src/research_agent/storage/runs.py`: removed the now-unused `delete_for_topic` and its test.
+  - `web/js/desk.js`: `clearRuns`, `state.runsStatus`, `storageLine`, `loadStorage`,
+    `formatBytes`.
+  - Tests in `tests/unit/test_desk_server.py`.
+- **Decisions:**
+  - Paper files are never deleted on clear. A paper is a library item (saved, noted, found by
+    search) beyond the run that kept it, and deduplication means a later run would not fetch it
+    again.
+  - No "also delete files" checkbox. The only run-owned files are small and meaningless once their
+    run is gone, so they always go.
+  - The lock blocks clearing any run of a topic while it is running, not only the running run
+    itself, because a running run reads earlier runs' syntheses as history.
+  - F50 (undo after clearing) is not built: `research-agent backup` already covers recovery. Build
+    it only if the user asks.
+- **Verification:**
+  - LocalDesk test with three runs, two of them on the same day:
+    - clearing the old one deleted its manifest, ideation and report, and kept the PDF and the
+      other run's files;
+    - clearing one same-day run kept the shared report;
+    - storage counted the topic's bytes;
+    - a lock held by a live pid refused both kinds of clear and kept the run;
+    - clear-all left only the PDF and kept the topic;
+    - an unknown run is a no-op.
+  - Server: 409 bodies and `/api/storage`.
+  - Browser on the real desk with a copy of the cloud-run library:
+    - Topics showed "15 MB on disk" and "21.8 GB free";
+    - with a live lock, Clear showed the running message and kept both runs;
+    - after the lock went, clearing the real run deleted exactly its report and manifest, and kept
+      its 8 paper files;
+    - no page errors.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 611 passed,
+    3 deselected, coverage 92.59%.
+- **Known issues:** Storage is per topic folder and database only; Docling's model cache lives
+  outside the library and is not counted.
+- **Next step:** Roadmap M10. `F51`: in-app confirm dialogs instead of `confirm()`, a short
+  toast after actions, and request timeouts so a hung server call does not leave a button
+  spinning.
+
 ## 2026-10-28 — SQLite WAL and busy timeout (complete)
 
 - **Feature/branch:** `FIX22-sqlite-wal`, off `main` at `afceca8`.

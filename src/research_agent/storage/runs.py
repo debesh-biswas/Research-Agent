@@ -41,8 +41,6 @@ class RunRepository(Protocol):
 
     def delete(self, run_id: str) -> None: ...
 
-    def delete_for_topic(self, topic_id: str) -> int: ...
-
 
 def _from_row(row: sqlite3.Row) -> RunRecord:
     completed = row["completed_at"]
@@ -194,9 +192,3 @@ class SqliteRunRepository:
         """
         with self._connection:
             self._connection.execute("DELETE FROM runs WHERE id = ?", (run_id,))
-
-    def delete_for_topic(self, topic_id: str) -> int:
-        """Delete every run for a topic, keeping the topic definition itself. Returns the count."""
-        with self._connection:
-            cursor = self._connection.execute("DELETE FROM runs WHERE topic_id = ?", (topic_id,))
-            return cursor.rowcount

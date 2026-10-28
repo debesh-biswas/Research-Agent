@@ -3,6 +3,7 @@
 import asyncio
 import http.client
 import json
+import os
 import threading
 import urllib.error
 import urllib.request
@@ -85,11 +86,18 @@ class FakeDesk:
         self.created.append(topic)
 
     def delete_run(self, run_id: str) -> None:
+        if run_id == "busy-run":
+            raise RunLocked("Spatial is running; clear runs after it finishes.")
         self.deleted_runs.append(run_id)
 
     def clear_topic(self, topic_id: str) -> int:
+        if topic_id == "busy":
+            raise RunLocked("Busy is running; clear runs after it finishes.")
         self.cleared_topics.append(topic_id)
         return 2
+
+    def storage(self) -> dict[str, object]:
+        return {"topics": {"spatial": 1024}, "database": 2048, "free": 10**9}
 
     def update_topic(self, topic: TopicSettings) -> None:
         if topic.id == "missing":
@@ -292,6 +300,17 @@ def test_the_server_clears_a_run_and_a_topic_s_runs(tmp_path: Path) -> None:
         with urllib.request.urlopen(clear_topic) as response:
             assert json.load(response) == {"status": "cleared", "runs": 2}
         assert backend.cleared_topics == ["spatial"]
+        base = f"http://127.0.0.1:{port}"
+        assert _call(base, "DELETE", "/api/runs/busy-run") == (
+            409,
+            {"error": "Spatial is running; clear runs after it finishes."},
+        )
+        assert _call(base, "DELETE", "/api/topics/busy/runs")[0] == 409
+        assert backend.deleted_runs == ["run-123"]
+        assert _call(base, "GET", "/api/storage") == (
+            200,
+            {"topics": {"spatial": 1024}, "database": 2048, "free": 10**9},
+        )
 
         unknown = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/topics/spatial/papers", method="DELETE"
@@ -787,4 +806,59 @@ def test_local_desk_sends_earlier_turns_and_keeps_each_thread_apart(
     assert len(desk.thread(run.id, "p1")) == 1
     desk.delete_run(run.id)
     assert connection.execute("SELECT COUNT(*) FROM ask_turns").fetchone()[0] == 0
+    connection.close()
+
+
+def test_local_desk_clears_a_runs_own_files_but_never_a_running_topic(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    SqliteTopicRepository(connection).add(TopicSettings(id="spatial", name="Spatial"))
+    runs = SqliteRunRepository(connection)
+    old, same_day, newest = (runs.start("spatial") for _ in range(3))
+    days = {old.id: "2026-10-01", same_day.id: "2026-10-20", newest.id: "2026-10-20"}
+    for run_id, day in days.items():
+        connection.execute(
+            "UPDATE runs SET started_at = ? WHERE id = ?", (f"{day}T09:00:00+00:00", run_id)
+        )
+    connection.commit()
+    topic = tmp_path / "topics" / "spatial"
+    for folder, name in [
+        ("runs", f"{old.id}-manifest.json"),
+        ("runs", f"{old.id}-ideation.md"),
+        ("runs", f"{newest.id}-manifest.json"),
+        ("reports", "2026-10-01_weekly_report.md"),
+        ("reports", "2026-10-20_weekly_report.md"),
+        ("papers", "arxiv_1.pdf"),
+    ]:
+        (topic / folder).mkdir(parents=True, exist_ok=True)
+        (topic / folder / name).write_text("x" * 10, encoding="utf-8")
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    def left() -> set[str]:
+        return {path.name for path in topic.rglob("*") if path.is_file()}
+
+    desk.delete_run(old.id)
+    assert left() == {"2026-10-20_weekly_report.md", f"{newest.id}-manifest.json", "arxiv_1.pdf"}
+    desk.delete_run(same_day.id)
+    assert "2026-10-20_weekly_report.md" in left(), "the newest run still shows that report"
+
+    usage = desk.storage()
+    assert usage["topics"] == {"spatial": 30}
+    assert usage["database"] > 0 and usage["free"] > 0  # type: ignore[operator]
+
+    lock = lock_path(tmp_path, "spatial")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    with pytest.raises(RunLocked, match="Spatial is running"):
+        desk.delete_run(newest.id)
+    with pytest.raises(RunLocked):
+        desk.clear_topic("spatial")
+    assert runs.get(newest.id) is not None
+    lock.unlink()
+
+    assert desk.clear_topic("spatial") == 1
+    assert left() == {"arxiv_1.pdf"}
+    assert runs.recent("spatial") == [] and SqliteTopicRepository(connection).get("spatial")
+    desk.delete_run("missing")
     connection.close()

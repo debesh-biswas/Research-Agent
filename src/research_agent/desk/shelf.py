@@ -19,7 +19,7 @@ from research_agent.domain.papers import PaperCandidate
 from research_agent.domain.runs import ErrorRecord, RunRecord, RunSummary
 from research_agent.domain.selection import SelectionDecision
 from research_agent.reports.naming import report_filename
-from research_agent.storage.artifacts import ArtifactStore
+from research_agent.storage.artifacts import ArtifactKind, ArtifactStore
 from research_agent.storage.feedback import FeedbackRepository
 from research_agent.storage.papers import PaperRepository
 from research_agent.storage.reading import ReadingRepository, ReadingState
@@ -198,6 +198,33 @@ def run_report(
     if not store.exists(record.topic_id, "reports", name):
         return None
     return f"{record.topic_id}_{name}", store.read_text(record.topic_id, "reports", name)
+
+
+def owned_files(
+    cleared: list[RunRecord],
+    staying: list[RunRecord],
+    results: ResultRepository,
+    store: ArtifactStore,
+) -> list[tuple[str, ArtifactKind, str]]:
+    """The (topic, kind, name) files only the cleared runs own: their `runs/<id>-*` files, and
+    their report unless a run that stays ends on the same day and so shares that report file.
+    Papers' PDFs, parsed text and analyses are library files and are never listed."""
+
+    def report(record: RunRecord) -> tuple[str, str]:
+        _, end = _period(record, results.synthesis_for(record.id))
+        return record.topic_id, report_filename(end)
+
+    shared = {report(record) for record in staying}
+    files: list[tuple[str, ArtifactKind, str]] = []
+    for record in cleared:
+        files.extend(
+            (record.topic_id, "runs", name)
+            for name in store.names(record.topic_id, "runs")
+            if name.startswith(f"{record.id}-")
+        )
+        if (owned := report(record)) not in shared:
+            files.append((owned[0], "reports", owned[1]))
+    return files
 
 
 def _period(
