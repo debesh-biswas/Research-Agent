@@ -72,3 +72,11 @@ def test_paper_card_shows_setup_related_work_and_the_stored_pdf() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
     assert '"Experimental setup"' in script and '"Related work"' in script
     assert '/pdf" target="_blank"' in script and "Open PDF" in script
+
+
+def test_papers_track_read_saved_and_notes() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "/reading`" in script and "markReadOnOpen" in script
+    for hook in ("data-toggle-saved", "data-toggle-read", "note-form", "noteDrafts"):
+        assert hook in script
+    assert 'filterButton("unread"' in script and 'filterButton("saved"' in script

@@ -11,10 +11,11 @@ from pathlib import Path
 import pytest
 
 from research_agent.config import ApplicationSettings, TopicSettings
-from research_agent.desk.ask import DeskReply
+from research_agent.desk.ask import DeskLookupError, DeskReply
 from research_agent.desk.server import (
     AskRequest,
     LocalDesk,
+    ReadingUpdate,
     TopicSuggestRequest,
     _handler,
 )
@@ -23,6 +24,7 @@ from research_agent.operations.health import HealthCheck
 from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
+from research_agent.storage.reading import ReadingState
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
@@ -98,6 +100,11 @@ class FakeDesk:
 
     def pdf_path(self, paper_id: str) -> Path | None:
         return self.pdf if paper_id == "p1" else None
+
+    def update_reading(self, paper_id: str, update: ReadingUpdate) -> ReadingState:
+        if paper_id != "p1":
+            raise DeskLookupError("That paper is not in the library.")
+        return ReadingState(saved=bool(update.saved), note=update.note or "")
 
 
 def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
@@ -381,6 +388,13 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
                 b"%PDF-1.4 test",
             )
         assert _call(base, "GET", "/api/papers/p2/pdf")[0] == 404
+        reading = "/api/papers/p1/reading"
+        assert _call(base, "PUT", reading, {"saved": True, "note": "Read §4"}) == (
+            200,
+            {"read": False, "saved": True, "note": "Read §4"},
+        )
+        assert _call(base, "PUT", reading, {"starred": True})[0] == 400
+        assert _call(base, "PUT", "/api/papers/p2/reading", {"read": True})[0] == 404
         assert _call(base, "GET", "/api/health") == (
             200,
             {
@@ -497,3 +511,19 @@ def test_local_desk_serves_only_pdfs_inside_the_library(tmp_path: Path) -> None:
 
     assert found == {"inside": inside.resolve(), "outside": None, "not_pdf": None, "gone": None}
     assert desk.pdf_path("no_such_paper") is None
+
+
+def test_local_desk_merges_reading_changes_and_shows_them_on_the_shelf(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    paper_id = SqlitePaperRepository(connection).upsert(candidate(title="Maps", doi="10.1/m"))
+    connection.close()
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    desk.update_reading(paper_id, ReadingUpdate(read=True))
+    state = desk.update_reading(paper_id, ReadingUpdate(note="Compare with last week."))
+
+    assert state == ReadingState(read=True, saved=False, note="Compare with last week.")
+    with pytest.raises(DeskLookupError):
+        desk.update_reading("no_such_paper", ReadingUpdate(saved=True))

@@ -21,6 +21,7 @@ from research_agent.domain.selection import SelectionDecision
 from research_agent.reports.naming import report_filename
 from research_agent.storage.artifacts import ArtifactStore
 from research_agent.storage.papers import PaperRepository
+from research_agent.storage.reading import ReadingRepository, ReadingState
 from research_agent.storage.results import ResultRepository
 from research_agent.storage.runs import RunRepository
 from research_agent.storage.selections import SelectionRepository
@@ -36,6 +37,7 @@ def build_shelf(
     selections: SelectionRepository,
     store: ArtifactStore,
     *,
+    reading: ReadingRepository | None = None,
     run_limit: int = _RUN_LIMIT,
 ) -> dict[str, object]:
     """One JSON document for every configured topic and its recent runs."""
@@ -51,7 +53,7 @@ def build_shelf(
                 "name": topic.name,
                 "settings": topic.model_dump(mode="json"),
                 "runs": [
-                    _run(topic, record, runs, results, papers, selections, store)
+                    _run(topic, record, runs, results, papers, selections, store, reading)
                     for record in runs.recent(topic.id, run_limit)
                 ],
             }
@@ -103,6 +105,7 @@ def _run(
     papers: PaperRepository,
     selections: SelectionRepository,
     store: ArtifactStore,
+    reading: ReadingRepository | None = None,
 ) -> dict[str, object]:
     stored = results.synthesis_for(record.id)
     synthesis = stored[0] if stored else None
@@ -157,7 +160,7 @@ def _run(
         "gaps": [_gap(gap) for gap in results.gaps_for(record.id)],
         "ideas": [_idea(idea) for idea in results.ideas_for(record.id)],
         "readingOrder": _reading_order(cards),
-        "papers": [_public_paper(card) for card in cards],
+        "papers": _with_reading([_public_paper(card) for card in cards], reading),
     }
 
 
@@ -254,6 +257,16 @@ def _public_paper(card: dict[str, object]) -> dict[str, object]:
         "screening": card["screening"],
         "hasPdf": card["hasPdf"],
     }
+
+
+def _with_reading(
+    cards: list[dict[str, object]], reading: ReadingRepository | None
+) -> list[dict[str, object]]:
+    """Attach each card's reading state, in one query for the run."""
+    states = reading.states_for(str(card["id"]) for card in cards) if reading else {}
+    for card in cards:
+        card["reading"] = states.get(str(card["id"]), ReadingState()).model_dump()
+    return cards
 
 
 def _screening(

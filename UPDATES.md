@@ -2,6 +2,40 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Reading state: read/unread, saved, notes (complete)
+
+- **Feature/branch:** `F39-reading-state`, off `main` at `491c427`.
+- **Status:** Complete; merged into `main`. Roadmap M5, third item.
+- **Summary:** The desk had no memory of what the reader had done. Each paper now has a reading
+  state — read, saved, and a free-text note — kept per paper (not per run): a paper read once
+  stays read when it reappears in a later week or another topic, and clearing a run never loses a
+  note. In the desk: opening a paper marks it read (once per session, so "Mark unread" sticks);
+  the paper page has "☆ Save"/"★ Saved" and "Mark read"/"Mark unread" buttons and a "Your notes"
+  box with Save note; the Papers list shows a dot on unread papers and ★ on saved ones, with
+  Unread and Saved filters.
+- **Files affected:** `src/research_agent/storage/database.py` (migration: `reading_state`
+  keyed by `paper_id`, cascading with `papers`), `src/research_agent/storage/reading.py` (new:
+  `ReadingState`, `ReadingRepository`, `SqliteReadingRepository`; notes capped at 20,000 chars),
+  `src/research_agent/desk/shelf.py` (cards carry `reading`, loaded in one query per run;
+  `build_shelf(..., reading=...)` is optional), `src/research_agent/desk/server.py`
+  (`PUT /api/papers/<id>/reading`, partial update merged with the stored state; 400 for unknown
+  fields or an over-long note, 404 for an unknown paper), `web/js/desk.js`, `web/css/desk.css`,
+  tests in `tests/unit/test_storage_reading.py` (new), `test_desk_server.py`,
+  `test_desk_shelf.py`, `test_reading_desk.py`.
+- **Decisions:** An unsaved note is kept as a draft in page state on every keystroke, so F31's
+  progress redraws and navigation never lose it. A change updates every copy of the paper on the
+  shelf (one paper can sit in several runs). No separate "reading list" page yet: the Saved filter
+  covers it within a run; a library-wide view is roadmap F45.
+- **Verification:** Repository round trip and upsert; note bound; `LocalDesk.update_reading`
+  merges partial changes and rejects an unknown paper; route 200/400/404; a shelf card carries the
+  stored state. Browser on a copy of the real cloud-run library: Unread 2 → opening a paper →
+  Unread 1; Save → ★ in the list and Saved 1; a note draft survived navigating away and back;
+  "Note saved."; Mark unread stayed unread across a redraw; after a full reload the note and ★
+  persisted; no page errors. `ruff format --check`, `ruff check`, `mypy` clean;
+  `uv run pytest -q` → 563 passed, 3 deselected, coverage 91.74%.
+- **Next step:** Roadmap M5 — `F40`: relevance feedback (thumbs up/down) stored and fed into the
+  screening prompt as examples.
+
 ## 2026-10-28 — Complete the paper card: setup, related work, open the PDF (complete)
 
 - **Feature/branch:** `F38-complete-paper-card`, off `main` at `3d62708`.

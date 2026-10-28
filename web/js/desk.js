@@ -69,6 +69,9 @@ const state = {
   awaitingRun: null,
   health: null,
   screened: null,
+  noteDrafts: {},
+  noteStatus: null,
+  autoRead: new Set(),
   screenedFilter: "all",
   finishedNotice: null,
   newTopic: {
@@ -204,11 +207,17 @@ function reportSection(title, body, id) {
   return `<section${anchor}><h2>${esc(title)}</h2>${body}</section>`;
 }
 
+function reading(paper) {
+  return paper.reading || { read: false, saved: false, note: "" };
+}
+
 function matchesFilter(paper) {
   if (state.filter === "deep_read" || state.filter === "summarize") {
     return paper.action === state.filter;
   }
   if (state.filter === "abstract") return paper.abstractOnly;
+  if (state.filter === "unread") return !reading(paper).read;
+  if (state.filter === "saved") return reading(paper).saved;
   return true;
 }
 
@@ -228,10 +237,13 @@ function renderPaperList(run) {
   return `<ul class="paper-list">${rows
     .map(({ paper, index }) => {
       const mark = paper.abstractOnly ? ` <span class="mark">Abstract only</span>` : "";
+      const progress = reading(paper);
+      const unread = progress.read ? "" : `<span class="unread-dot" title="Unread"></span><span class="visually-hidden">Unread: </span>`;
+      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">★<span class="visually-hidden"> saved</span></span>` : "";
       return `<li><a class="paper-row" href="#/papers/${esc(paper.id)}">
         <span class="idx">${String(index + 1).padStart(2, "0")}</span>
         <span>
-          <span class="paper-row-title">${esc(paper.title)}</span>
+          <span class="paper-row-title">${unread}${esc(paper.title)}${saved}</span>
           <span class="paper-row-meta">${esc(paperMeta(paper))}${mark}</span>
           <span class="paper-row-dek">${esc(paper.contribution)}</span>
         </span>
@@ -347,10 +359,73 @@ function viewPapers(run) {
       ${filterButton("all", `All ${run.papers.length}`)}
       ${filterButton("deep_read", `Deep reads ${deep}`)}
       ${filterButton("summarize", `Summaries ${summaries}`)}
+      ${filterButton("unread", `Unread ${run.papers.filter((paper) => !reading(paper).read).length}`)}
+      ${filterButton("saved", `Saved ${run.papers.filter((paper) => reading(paper).saved).length}`)}
       ${abstracts ? filterButton("abstract", `Abstract only ${abstracts}`) : ""}
       <input class="search" id="paper-search" type="search" placeholder="Search titles" value="${esc(state.query)}" aria-label="Search titles" />
     </div>
     <div id="paper-list">${renderPaperList(run)}</div>`;
+}
+
+function readingBar(paper) {
+  const progress = reading(paper);
+  return `<div class="reading-bar">
+      <button class="button" type="button" data-toggle-saved="${esc(paper.id)}" aria-pressed="${progress.saved}">${progress.saved ? "★ Saved" : "☆ Save"}</button>
+      <button class="button" type="button" data-toggle-read="${esc(paper.id)}">${progress.read ? "Mark unread" : "Mark read"}</button>
+    </div>`;
+}
+
+function notesBlock(paper) {
+  const draft = state.noteDrafts[paper.id];
+  const note = draft ?? reading(paper).note;
+  const status = state.noteStatus && state.noteStatus.paperId === paper.id ? state.noteStatus : {};
+  return `<section class="card-block">
+      <h2>Your notes</h2>
+      <form id="note-form" class="field" data-paper="${esc(paper.id)}">
+        <label class="visually-hidden" for="note-input">Your notes on this paper</label>
+        <textarea id="note-input" rows="5" maxlength="20000" placeholder="What matters here, what to check, how it relates to your work">${esc(note)}</textarea>
+        <div class="form-actions">
+          <button class="primary" type="submit">Save note</button>
+        </div>
+      </form>
+      ${statusMessage(status.text, status.tone)}
+    </section>`;
+}
+
+/* Apply a stored reading state to every copy of the paper on the shelf; one paper can sit in several runs. */
+function setReadingLocally(paperId, value) {
+  for (const topic of topics()) {
+    for (const run of topic.runs) {
+      for (const paper of run.papers) if (paper.id === paperId) paper.reading = value;
+    }
+  }
+}
+
+/* Returns null on success, or the message to show. */
+async function updateReading(paperId, change) {
+  try {
+    const response = await fetch(`/api/papers/${encodeURIComponent(paperId)}/reading`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(change),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return payload.error || "The change was not saved.";
+    setReadingLocally(paperId, payload);
+    return null;
+  } catch {
+    return "Can't reach the desk server.";
+  }
+}
+
+/* Opening a paper marks it read, once a session, so "Mark unread" sticks. */
+function markReadOnOpen(paper) {
+  if (!paper || reading(paper).read || state.autoRead.has(paper.id)) return;
+  state.autoRead.add(paper.id);
+  void updateReading(paper.id, { read: true }).then((problem) => {
+    const button = document.querySelector(`[data-toggle-read="${CSS.escape(paper.id)}"]`);
+    if (!problem && button) button.textContent = "Mark unread";
+  });
 }
 
 function screeningLine(screening) {
@@ -463,6 +538,7 @@ function viewPaper(run, paperId) {
     <p class="meta">${esc(paperMeta(paper))}${paper.date ? ` · ${esc(formatDay(paper.date))}` : ""}</p>
     ${skim}
     <p class="links">${sourceLinks}<a href="#/ask?paper=${esc(paper.id)}">Ask about this paper</a></p>
+    ${readingBar(paper)}
     ${block("Research problem", `<p>${esc(paper.problem)}</p>`)}
     ${block("Main contribution", `<p>${esc(paper.contribution)}</p>`)}
     ${block("Method", `<p>${esc(paper.method)}</p>`)}
@@ -475,7 +551,8 @@ function viewPaper(run, paperId) {
     ${block("Limitations", stringList(paper.limitations))}
     ${block("Related work", stringList(paper.relatedWork || []))}
     ${block("Relevance to the topic", `<p>${esc(paper.relevance)}</p>`)}
-    ${whyKept(paper.screening)}`;
+    ${whyKept(paper.screening)}
+    ${notesBlock(paper)}`;
 }
 
 function viewReport(run) {
@@ -1064,6 +1141,7 @@ function render() {
   persist();
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
+  if (name === "papers" && route.parts[1] && run) markReadOnOpen(paperById(run, route.parts[1]));
   if (name === "screened" && run && (!state.screened || state.screened.runId !== run.id)) {
     void loadScreened(run.id);
   }
@@ -1286,6 +1364,19 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  const toggleSaved = event.target.closest("[data-toggle-saved]");
+  const toggleRead = event.target.closest("[data-toggle-read]");
+  if (toggleSaved || toggleRead) {
+    const paperId = (toggleSaved || toggleRead).dataset[toggleSaved ? "toggleSaved" : "toggleRead"];
+    const { run } = current();
+    const now = reading(paperById(run, paperId) || {});
+    const change = toggleSaved ? { saved: !now.saved } : { read: !now.read };
+    void updateReading(paperId, change).then((problem) => {
+      state.noteStatus = problem ? { paperId, text: problem, tone: "error" } : null;
+      render();
+    });
+    return;
+  }
   const screenFilter = event.target.closest("[data-screen-filter]");
   if (screenFilter) {
     state.screenedFilter = screenFilter.dataset.screenFilter;
@@ -1402,6 +1493,17 @@ function onClick(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === "note-form") {
+    event.preventDefault();
+    const paperId = form.dataset.paper;
+    const note = document.getElementById("note-input").value;
+    void updateReading(paperId, { note }).then((problem) => {
+      if (!problem) delete state.noteDrafts[paperId];
+      state.noteStatus = { paperId, text: problem || "Note saved.", tone: problem ? "error" : "success" };
+      render();
+    });
+    return;
+  }
   if (form.id === "new-topic-review") {
     event.preventDefault();
     void createTopic(form);
@@ -1444,6 +1546,10 @@ function onInput(event) {
     const { run } = current();
     const list = document.getElementById("paper-list");
     if (list) list.innerHTML = renderPaperList(run);
+    return;
+  }
+  if (event.target.id === "note-input") {
+    state.noteDrafts[event.target.form.dataset.paper] = event.target.value;
     return;
   }
   if (event.target.id === "ask-input") {

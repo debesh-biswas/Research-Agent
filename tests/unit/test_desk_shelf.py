@@ -25,6 +25,7 @@ from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.reports.naming import report_filename
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.papers import SqlitePaperRepository
+from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
@@ -251,6 +252,8 @@ def test_screened_papers_explain_every_decision(
         ("Click-Through Rates", False, "action_ignore"),
     ]
     assert rows[1]["reason"] == "Recommender systems, not embodied agents."
+    reading = SqliteReadingRepository(connection)
+    reading.save(kept, ReadingState(saved=True, note="Re-read the ablation."))
     shelf = build_shelf(
         [TopicSettings(id=TOPIC_ID, name="Spatial")],
         runs,
@@ -258,8 +261,10 @@ def test_screened_papers_explain_every_decision(
         papers,
         selections,
         LocalArtifactStore(tmp_path),
+        reading=reading,
     )
     card = shelf["topics"][0]["runs"][0]["papers"][0]  # type: ignore[index]
+    assert card["reading"] == {"read": False, "saved": True, "note": "Re-read the ablation."}
     assert card["screening"] == {  # only the kept paper is a card on the shelf
         "score": 0.9,
         "level": "high",
