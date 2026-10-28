@@ -560,3 +560,24 @@ def test_local_desk_records_votes_that_reach_the_shelf(tmp_path: Path) -> None:
     with pytest.raises(DeskLookupError):
         desk.set_vote("spatial", "no_paper", -1)
     connection.close()
+
+
+def test_a_client_that_hangs_up_mid_reply_is_not_a_server_error(tmp_path: Path) -> None:
+    class HungUp:
+        def write(self, data: bytes) -> int:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self) -> None:
+            raise BrokenPipeError(32, "Broken pipe")
+
+    handler_class = _handler(FakeDesk(), tmp_path)
+    handler = handler_class.__new__(handler_class)
+    handler.request_version = "HTTP/1.1"
+    handler.requestline = "GET /api/shelf HTTP/1.1"
+    handler.command, handler.path = "GET", "/api/shelf"
+    handler.close_connection = False
+    handler.wfile = HungUp()  # type: ignore[assignment]
+
+    handler._json(200, {"live": True})  # type: ignore[attr-defined]  # must not raise
+
+    assert handler.close_connection is True

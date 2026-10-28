@@ -2,6 +2,25 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Treat browser disconnects as normal in the desk server (complete)
+
+- **Feature/branch:** `FIX21-quiet-client-disconnects`, off `main` at `04a1624`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** Found while testing F40: when the browser drops a connection while the desk is
+  still writing a reply (a fast reload, a closed tab), `BaseHTTPRequestHandler` let a
+  `BrokenPipeError` escape and `socketserver` printed a full traceback in the desk's terminal —
+  harmless, but it reads like a crash. `DeskHandler._bytes` (every response goes through it) now
+  treats `BrokenPipeError`/`ConnectionResetError` while sending as the client leaving: the
+  connection is marked closed and a debug-level line is logged. Any other error still surfaces.
+- **Files affected:** `src/research_agent/desk/server.py`, `tests/unit/test_desk_server.py`.
+- **Verification:** New test writes a reply into a connection that raises `BrokenPipeError`: no
+  exception, connection marked closed; it fails without the fix. Not reproduced live (whether the
+  kernel buffer or the peer reset wins is a race), so the unit test is the regression guard.
+  `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 571 passed,
+  3 deselected, coverage 91.85%.
+- **Next step:** Roadmap M6 — `F41`: download the weekly report from the desk (Markdown, plus a
+  print stylesheet for PDF).
+
 ## 2026-10-28 — Relevance feedback steers screening (complete)
 
 - **Feature/branch:** `F40-relevance-feedback`, off `main` at `6480cf3`.
