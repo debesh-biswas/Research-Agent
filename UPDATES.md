@@ -2,6 +2,30 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Notify when a run finishes (complete)
+
+- **Feature/branch:** `F44-finish-notification`, off `main` at `03dbd1d`.
+- **Status:** Complete; merged into `main`. Roadmap M6, fourth and last item.
+- **Summary:** A run takes tens of minutes and the reader goes elsewhere. The desk now uses the
+  browser's Notification API: pressing Run now or creating a topic asks for permission once (from
+  that click, never unprompted), and when F31's polling sees a run finish while the desk tab is in
+  the background, a system notification says "<topic> finished: <status>." With the tab visible
+  the banner already says so, so nothing extra appears; with permission declined, nothing changes.
+- **Files affected:** `web/js/desk.js` (`askToNotify`, `notifyFinished`), `tests/unit/test_reading_desk.py`.
+- **Decisions:** Browser notifications rather than an OS-specific helper (`osascript`) or email:
+  runs are started from the desk, it works on macOS, Windows and Linux, needs no backend or
+  dependency, and `127.0.0.1` counts as a secure origin. Email was out of scope unless asked
+  (ponytail review). A CLI `run` started from a terminal does not notify; the terminal shows it.
+- **Verification:** Browser with a stand-in `Notification` installed before the page loads and the
+  harness flipping the run's status in SQLite: the first Run now requested permission once; with
+  permission granted and the tab hidden, finishing the run produced one notification ("Existing
+  topic finished: Degraded."); with the tab visible, none. `ruff format --check`, `ruff check`
+  clean; `uv run pytest -q` → 593 passed, 3 deselected, coverage 91.98%.
+- **Not verified:** a real OS notification popping up (headless Chromium has no notification
+  centre); on the development Mac the browser shows its own permission prompt on first Run now.
+- **Next step:** Roadmap M7 — `F45`: a library view across all runs and topics, with paging
+  (lifts the 12-run cap on what the desk shows).
+
 ## 2026-10-28 — Library backup and restore (complete)
 
 - **Feature/branch:** `F43-backup-restore`, off `main` at `b451c76`.

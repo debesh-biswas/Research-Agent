@@ -695,6 +695,19 @@ function onFormPage() {
   return pageName(route.parts) === "new" || (pageName(route.parts) === "topics" && Boolean(route.parts[1]));
 }
 
+/* Ask once, from a click, so the browser can tell the reader a run finished while they were away. */
+function askToNotify() {
+  if ("Notification" in window && Notification.permission === "default") {
+    void Notification.requestPermission();
+  }
+}
+
+function notifyFinished(text) {
+  if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+    new Notification("Research Agent", { body: text, tag: "run-finished" });
+  }
+}
+
 let pollTimer = null;
 
 function schedulePoll() {
@@ -715,6 +728,7 @@ async function poll() {
           text: `${topic.name} finished: ${label}.`,
           tone: run.status === "failed" ? "error" : "success",
         };
+        notifyFinished(state.finishedNotice.text);
         changed = true;
       } else if (!before.has(run.id) && run.status === "running") {
         changed = true;
@@ -1458,6 +1472,7 @@ function onClick(event) {
   }
   const runTopic = event.target.closest("[data-run-topic]");
   if (runTopic) {
+    askToNotify();
     const topic = topicById(runTopic.dataset.runTopic);
     void topicAction(
       "POST",
@@ -1570,6 +1585,7 @@ function onSubmit(event) {
   }
   if (form.id === "new-topic-review") {
     event.preventDefault();
+    askToNotify();
     void createTopic(form);
     return;
   }
