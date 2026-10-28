@@ -252,6 +252,20 @@ function renderPaperList(run) {
     .join("")}</ul>`;
 }
 
+function exportLine(run) {
+  const links = (path) =>
+    ["bib", "ris"]
+      .map((format) => `<a href="${path}?format=${format}" download>${format === "bib" ? "BibTeX" : "RIS"}</a>`)
+      .join(" · ");
+  const saved = new Set(
+    topics().flatMap((topic) => topic.runs.flatMap((item) => item.papers.filter((paper) => reading(paper).saved).map((paper) => paper.id))),
+  );
+  const savedPart = saved.size
+    ? ` &nbsp;|&nbsp; Your saved papers: ${links("/api/saved/citations")}`
+    : "";
+  return `<p class="quiet export-line">Export these papers for Zotero or Mendeley: ${links(`/api/runs/${encodeURIComponent(run.id)}/citations`)}${savedPart}</p>`;
+}
+
 function filterButton(id, label) {
   const pressed = state.filter === id ? "true" : "false";
   return `<button type="button" data-filter="${esc(id)}" aria-pressed="${pressed}">${esc(label)}</button>`;
@@ -364,7 +378,8 @@ function viewPapers(run) {
       ${abstracts ? filterButton("abstract", `Abstract only ${abstracts}`) : ""}
       <input class="search" id="paper-search" type="search" placeholder="Search titles" value="${esc(state.query)}" aria-label="Search titles" />
     </div>
-    <div id="paper-list">${renderPaperList(run)}</div>`;
+    <div id="paper-list">${renderPaperList(run)}</div>
+    ${exportLine(run)}`;
 }
 
 function voteButtons(paperId, vote) {

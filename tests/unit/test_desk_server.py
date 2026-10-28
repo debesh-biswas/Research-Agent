@@ -19,14 +19,16 @@ from research_agent.desk.server import (
     TopicSuggestRequest,
     _handler,
 )
+from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.models.base import ModelProviderError
 from research_agent.operations.health import HealthCheck
 from research_agent.operations.locks import RunLocked, lock_path
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.feedback import SqliteFeedbackRepository
 from research_agent.storage.papers import SqlitePaperRepository
-from research_agent.storage.reading import ReadingState
+from research_agent.storage.reading import ReadingState, SqliteReadingRepository
 from research_agent.storage.runs import SqliteRunRepository
+from research_agent.storage.selections import SqliteSelectionRepository
 from research_agent.storage.topics import (
     SqliteTopicRepository,
     TopicNotFoundError,
@@ -102,6 +104,11 @@ class FakeDesk:
 
     def pdf_path(self, paper_id: str) -> Path | None:
         return self.pdf if paper_id == "p1" else None
+
+    def citations(self, run_id: str | None, fmt: str) -> tuple[str, str] | None:
+        if run_id not in (None, "r1"):
+            return None
+        return (f"{run_id or 'saved_papers'}.{fmt}", f"{fmt} for {run_id or 'saved'}\n")
 
     def report(self, run_id: str) -> tuple[str, str] | None:
         return ("spatial_2026-09-28_weekly_report.md", "# Report\n") if run_id == "r1" else None
@@ -405,6 +412,15 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
             )
             assert response.read() == b"# Report\n"
         assert _call(base, "GET", "/api/runs/r2/report")[0] == 404
+        with urllib.request.urlopen(f"{base}/api/runs/r1/citations?format=ris") as response:
+            assert response.headers["Content-Type"].startswith("application/x-research-info")
+            assert response.headers["Content-Disposition"] == 'attachment; filename="r1.ris"'
+            assert response.read() == b"ris for r1\n"
+        with urllib.request.urlopen(f"{base}/api/saved/citations") as response:
+            assert response.headers["Content-Type"].startswith("application/x-bibtex")
+            assert response.read() == b"bib for saved\n"
+        assert _call(base, "GET", "/api/runs/r1/citations?format=docx")[0] == 400
+        assert _call(base, "GET", "/api/runs/r2/citations?format=bib")[0] == 404
         reading = "/api/papers/p1/reading"
         assert _call(base, "PUT", reading, {"saved": True, "note": "Read §4"}) == (
             200,
@@ -591,3 +607,46 @@ def test_a_client_that_hangs_up_mid_reply_is_not_a_server_error(tmp_path: Path) 
     handler._json(200, {"live": True})  # type: ignore[attr-defined]  # must not raise
 
     assert handler.close_connection is True
+
+
+def test_local_desk_exports_a_runs_kept_papers_and_all_saved_ones(tmp_path: Path) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    SqliteTopicRepository(connection).add(TopicSettings(id="spatial", name="Spatial"))
+    papers = SqlitePaperRepository(connection)
+    kept = papers.upsert(candidate(title="Topological Maps", doi="10.1/kept"))
+    dropped = papers.upsert(candidate(title="Click Rates", doi="10.1/dropped"))
+    run = SqliteRunRepository(connection).start("spatial")
+    SqliteSelectionRepository(connection).save(
+        run.id,
+        SelectionPlan(
+            decisions=[
+                SelectionDecision(
+                    paper_id=kept,
+                    rank=1,
+                    selected=True,
+                    action="deep_read",
+                    reason="selected_deep_read",
+                ),
+                SelectionDecision(
+                    paper_id=dropped,
+                    rank=2,
+                    selected=False,
+                    action="ignore",
+                    reason="action_ignore",
+                ),
+            ]
+        ),
+    )
+    SqliteReadingRepository(connection).save(dropped, ReadingState(saved=True))
+    connection.close()
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    name, bib = desk.citations(run.id, "bib") or ("", "")
+    assert name == f"spatial_{run.started_at.date().isoformat()}_papers.bib"
+    assert "Topological Maps" in bib and "Click Rates" not in bib
+    saved_name, ris = desk.citations(None, "ris") or ("", "")
+    assert saved_name == "saved_papers.ris"
+    assert "TI  - Click Rates" in ris and "Topological" not in ris
+    assert desk.citations("no_such_run", "bib") is None

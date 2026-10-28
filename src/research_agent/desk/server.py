@@ -12,7 +12,7 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Literal, Protocol
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from pydantic import ConfigDict, Field, ValidationError
@@ -20,6 +20,7 @@ from pydantic import ConfigDict, Field, ValidationError
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
 from research_agent.desk.shelf import build_shelf, run_report, screened_papers
+from research_agent.exports.citations import to_bibtex, to_ris
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
 from research_agent.operations.health import HealthCheck, run_checks
@@ -42,6 +43,10 @@ from research_agent.topics.suggest import suggest_keywords
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY = 16_000
+_CITATION_TYPES = {
+    "bib": "application/x-bibtex; charset=utf-8",
+    "ris": "application/x-research-info-systems; charset=utf-8",
+}
 _HEALTH_TIMEOUT_SECONDS = 30.0
 _TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -124,6 +129,8 @@ class DeskBackend(Protocol):
     def set_vote(self, topic_id: str, paper_id: str, vote: Literal[-1, 0, 1]) -> None: ...
 
     def report(self, run_id: str) -> tuple[str, str] | None: ...
+
+    def citations(self, run_id: str | None, fmt: str) -> tuple[str, str] | None: ...
 
 
 class LocalDesk:
@@ -216,6 +223,25 @@ class LocalDesk:
         if running:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
+
+    def citations(self, run_id: str | None, fmt: str) -> tuple[str, str] | None:
+        """A run's kept papers, or every saved paper when no run is named, as (name, text)."""
+        connection = connect(self._database)
+        try:
+            papers = SqlitePaperRepository(connection)
+            if run_id is None:
+                ids, stem = SqliteReadingRepository(connection).saved_ids(), "saved_papers"
+            else:
+                run = SqliteRunRepository(connection).get(run_id)
+                if run is None:
+                    return None
+                ids = SqliteSelectionRepository(connection).selected_for(run_id)
+                stem = f"{run.topic_id}_{run.started_at.date().isoformat()}_papers"
+            found = [paper for paper in (papers.get(paper_id) for paper_id in ids) if paper]
+        finally:
+            connection.close()
+        text = to_bibtex(found) if fmt == "bib" else to_ris(found)
+        return f"{stem}.{fmt}", text
 
     def report(self, run_id: str) -> tuple[str, str] | None:
         connection = connect(self._database)
@@ -350,6 +376,29 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             segments = [unquote(segment) for segment in path.split("/") if segment]
             if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "screened":
                 self._json(200, {"papers": backend.screened(segments[2])})
+                return
+            run_citations = (
+                len(segments) == 4
+                and segments[:2] == ["api", "runs"]
+                and segments[3] == "citations"
+            )
+            if run_citations or segments == ["api", "saved", "citations"]:
+                citation_run = segments[2] if run_citations else None
+                fmt = parse_qs(urlparse(self.path).query).get("format", ["bib"])[0]
+                if fmt not in _CITATION_TYPES:
+                    self._json(400, {"error": "Choose format=bib or format=ris."})
+                    return
+                export = backend.citations(citation_run, fmt)
+                if export is None:
+                    self._json(404, {"error": "That run is not in the library."})
+                    return
+                name, text = export
+                self._bytes(
+                    200,
+                    _CITATION_TYPES[fmt],
+                    text.encode("utf-8"),
+                    {"Content-Disposition": f'attachment; filename="{name}"'},
+                )
                 return
             if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "report":
                 report = backend.report(segments[2])
