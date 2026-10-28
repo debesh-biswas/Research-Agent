@@ -816,7 +816,7 @@ function suggestions(paper) {
   if (paper) {
     return ["What is the contribution?", "Where is this weak?", "What is the evidence?"];
   }
-  return ["What changed this week?", "Where do the papers disagree?", "What should I read first?"];
+  return ["What changed this week?", "How does this compare with earlier weeks?", "Where do the papers disagree?", "What should I read first?"];
 }
 
 function uniqueCites(cites) {
@@ -883,7 +883,7 @@ function viewAsk(run, paperId) {
       <textarea id="ask-input" name="question" rows="2" placeholder="Ask a question the card can answer" aria-label="Question">${esc(state.draft)}</textarea>
       <button class="primary" type="submit">Ask</button>
     </form>
-    <p class="note">Answers stay inside the cards on this shelf and see the last few questions of this conversation. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
+    <p class="note">Answers stay inside the cards on this shelf and see the last few questions of this conversation. A question about the week also sees the summaries of up to four earlier weeks. NVIDIA NIM answers when it is configured; otherwise the local model does.</p>`;
 }
 
 function statusMessage(text, tone) {

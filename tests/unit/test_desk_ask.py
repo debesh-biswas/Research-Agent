@@ -233,3 +233,98 @@ def test_a_failure_says_what_went_wrong(category: str, start: str) -> None:
     error = ModelProviderError("http://localhost:8080 failed", category)  # type: ignore[arg-type]
 
     assert failure_message(error).startswith(start)
+
+
+def _topic_shelf(*runs: dict[str, object]) -> dict[str, object]:
+    return {"topics": [{"id": "t", "runs": list(runs)}]}
+
+
+def _week(run_id: str, summary: str | None, *developments: str) -> dict[str, object]:
+    return {
+        "id": run_id,
+        "periodStart": f"start-{run_id}",
+        "periodEnd": f"end-{run_id}",
+        "executiveSummary": summary,
+        "developments": [{"text": text, "paperIds": ["x"]} for text in developments],
+        "papers": [{"id": f"{run_id}-paper", "title": "T"}],
+    }
+
+
+def _sent_context(shelf: dict[str, object], run_id: str, paper_id: str | None = None) -> object:
+    strong = CapturingProvider()
+    router = ModelRouter(ScriptProvider("local", "{}"), strong, retries=0)
+    asyncio.run(
+        answer_question(
+            router,
+            shelf,
+            topic_id="t",
+            run_id=run_id,
+            question="Compared with before?",
+            paper_id=paper_id,
+            max_chars=20_000,
+        )
+    )
+    return json.loads(strong.prompts[0].split("Cards:\n", 1)[1])
+
+
+def test_a_week_question_sees_up_to_four_older_weeks_newest_first() -> None:
+    shelf = _topic_shelf(
+        _week("newer", "Not seen."),
+        _week("now", "This week."),
+        _week("w1", "Maps won."),
+        _week("running", None),
+        _week("w2", None, "Only a development."),
+        _week("w3", "Three."),
+        _week("w4", "Four."),
+        _week("w5", "Five is past the window."),
+    )
+
+    sent = _sent_context(shelf, "now")
+
+    assert sent["earlier_weeks"] == [  # type: ignore[index]
+        {"period": "start-w1 to end-w1", "summary": "Maps won.", "developments": []},
+        {
+            "period": "start-w2 to end-w2",
+            "summary": None,
+            "developments": ["Only a development."],
+        },
+        {"period": "start-w3 to end-w3", "summary": "Three.", "developments": []},
+        {"period": "start-w4 to end-w4", "summary": "Four.", "developments": []},
+    ]
+
+
+def test_a_paper_question_and_the_first_week_carry_no_earlier_weeks() -> None:
+    shelf = _topic_shelf(_week("now", "This week."), _week("w1", "Maps won."))
+
+    assert "earlier_weeks" not in _sent_context(shelf, "now", "now-paper")  # type: ignore[operator]
+    assert "earlier_weeks" not in _sent_context(shelf, "w1")  # type: ignore[operator]
+
+
+def test_earlier_weeks_have_their_own_budget_and_the_oldest_go_first() -> None:
+    run = _run_with_cards(10, 500)
+    allowed = {f"paper-{index}" for index in range(10)}
+    weeks: list[object] = [{"period": f"w{index}", "summary": "s" * 400} for index in range(4)]
+
+    sent = json.loads(_context(run, allowed, max_chars=2000, weeks=weeks))
+
+    assert [week["period"] for week in sent["earlier_weeks"]] == ["w0"]
+    assert len(json.dumps(sent["earlier_weeks"])) <= 2000 // 4
+    cards_only = json.loads(_context(run, allowed, max_chars=2000))
+    assert sent["papers"] == cards_only["papers"], "weeks never cost this week a card"
+
+
+def test_no_earlier_week_fitting_leaves_no_earlier_weeks_key() -> None:
+    weeks: list[object] = [{"period": "w0", "summary": "s" * 5000}]
+
+    sent = json.loads(_context(_run_with_cards(1, 10), {"paper-0"}, 2000, weeks=weeks))
+
+    assert "earlier_weeks" not in sent
+
+
+def test_a_long_earlier_week_is_kept_compact() -> None:
+    shelf = _topic_shelf(_week("now", "This week."), _week("w1", "x" * 2000, "a", "b", "c", "d"))
+
+    week = _sent_context(shelf, "now")["earlier_weeks"][0]  # type: ignore[index]
+
+    assert len(week["summary"]) == 500
+    assert week["developments"] == ["a", "b", "c"]

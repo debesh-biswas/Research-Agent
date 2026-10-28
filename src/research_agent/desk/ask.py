@@ -17,17 +17,23 @@ from research_agent.models.router import ModelRouter
 
 _LOGGER = logging.getLogger(__name__)
 
-PROMPT_VERSION = "desk_ask.v2"
+PROMPT_VERSION = "desk_ask.v3"
 HISTORY_TURNS = 4
 """Earlier turns sent with a follow-up: enough for "and the second one?", small beside cards."""
 _HISTORY_ANSWER_CHARS = 1000
+EARLIER_WEEKS = 4
+"""Previous runs whose summaries a week question sees, matching the synthesis history window."""
+_WEEK_SUMMARY_CHARS = 500
+_WEEK_DEVELOPMENTS = 3
 
 _SYSTEM = (
     "You answer one question about a researcher's weekly reading shelf. Earlier questions and "
     "answers, when given, are context for a follow-up; answer only the new question, from the "
-    "cards. Reply with JSON only, "
+    "cards. earlier_weeks, when present, summarises previous runs on this topic: use it only to "
+    "compare with this week and name those weeks by their period. Reply with JSON only, "
     'in the form {"paragraphs": ["..."], "paper_ids": ["..."]}. Use only the cards given. '
-    "Every paper id must be copied from those cards. If the cards do not cover the question, "
+    "Every paper id must be copied from those cards; in the paragraphs, name a paper by its "
+    "title, never by its id. If the cards do not cover the question, "
     "say that in one paragraph and return an empty paper_ids list. Do not invent pages, "
     "numbers, papers, or citations. Write plain sentences, with no Markdown headings."
 )
@@ -79,7 +85,8 @@ async def answer_question(
         if paper_id not in allowed:
             raise DeskLookupError("That paper is not on this week's shelf.")
         allowed = {paper_id}
-    context = _context(run, allowed, max_chars)
+    weeks = [] if paper_id else _earlier_weeks(shelf, topic_id, run_id)
+    context = _context(run, allowed, max_chars, weeks)
     messages = [
         ModelMessage(role="system", content=_SYSTEM),
         ModelMessage(
@@ -150,7 +157,43 @@ def _papers(run: dict[str, object]) -> dict[str, str]:
     return titles
 
 
-def _context(run: dict[str, object], allowed: set[str], max_chars: int) -> str:
+def _earlier_weeks(shelf: dict[str, object], topic_id: str, run_id: str) -> list[object]:
+    """Summaries of the runs before this one on the shelf, newest first; empty weeks skipped."""
+    topics = shelf.get("topics")
+    runs: list[dict[str, object]] = []
+    for topic in topics if isinstance(topics, list) else []:
+        if isinstance(topic, dict) and topic.get("id") == topic_id:
+            raw = topic.get("runs")
+            runs = [run for run in raw if isinstance(run, dict)] if isinstance(raw, list) else []
+    ids = [run.get("id") for run in runs]
+    if run_id not in ids:
+        return []
+    weeks: list[object] = []
+    for run in runs[ids.index(run_id) + 1 :]:
+        raw_findings = run.get("developments")
+        developments = [
+            finding.get("text")
+            for finding in (raw_findings if isinstance(raw_findings, list) else [])
+            if isinstance(finding, dict) and finding.get("text")
+        ]
+        if not run.get("executiveSummary") and not developments:
+            continue
+        summary = run.get("executiveSummary")
+        weeks.append(
+            {
+                "period": f"{run.get('periodStart')} to {run.get('periodEnd')}",
+                "summary": summary[:_WEEK_SUMMARY_CHARS] if isinstance(summary, str) else None,
+                "developments": developments[:_WEEK_DEVELOPMENTS],
+            }
+        )
+        if len(weeks) == EARLIER_WEEKS:
+            break
+    return weeks
+
+
+def _context(
+    run: dict[str, object], allowed: set[str], max_chars: int, weeks: list[object] | None = None
+) -> str:
     cards = run.get("papers")
     chosen: list[object] = []
     if isinstance(cards, list):
@@ -162,12 +205,21 @@ def _context(run: dict[str, object], allowed: set[str], max_chars: int) -> str:
         "summary": run.get("executiveSummary"),
         "developments": run.get("developments") if len(allowed) != 1 else [],
         "contradictions": run.get("contradictions") if len(allowed) != 1 else [],
+        "changes_from_history": run.get("changes") if len(allowed) != 1 else [],
         "papers": chosen,
     }
     text = json.dumps(payload, ensure_ascii=False)
     # Drop the lowest-ranked whole cards rather than cut the JSON; the top card always stays.
     while len(text) > max_chars and len(chosen) > 1:
         chosen.pop()
+        text = json.dumps(payload, ensure_ascii=False)
+    # Earlier weeks get their own quarter-sized budget: this week's cards alone usually fill
+    # max_chars, and sharing it would leave no room for any comparison. Oldest goes first.
+    earlier = list(weeks or [])
+    while earlier and len(json.dumps(earlier, ensure_ascii=False)) > max_chars // 4:
+        earlier.pop()
+    if earlier:
+        payload["earlier_weeks"] = earlier
         text = json.dumps(payload, ensure_ascii=False)
     return text
 
