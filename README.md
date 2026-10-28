@@ -67,6 +67,9 @@ uv run research-agent backup                 # the whole library to one .zip
 uv run research-agent restore <backup.zip>   # asks for --yes; moves the current library aside
 ```
 
+Use `backup` rather than copying the data folder by hand: the database runs in SQLite's WAL
+mode, so recent writes can sit in `research_agent.db-wal` until the last connection closes.
+
 Each pipeline stage also has its own command (`discover`, `classify`, `acquire`, `parse`,
 `analyze`, `synthesize`, `ideate`, `report generate`); `uv run research-agent --help` lists them.
 

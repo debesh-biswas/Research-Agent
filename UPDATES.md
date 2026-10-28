@@ -2,6 +2,43 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — SQLite WAL and busy timeout (complete)
+
+- **Feature/branch:** `FIX22-sqlite-wal`, off `main` at `afceca8`.
+- **Status:** Complete; merged into `main`. Roadmap M9, first item.
+- **Summary:** `storage.database.connect` now opens every connection with
+  `PRAGMA journal_mode = WAL`, which is persistent in the file, so existing libraries switch on
+  their next open. The busy timeout rises from 5 s to 30 s (`BUSY_TIMEOUT_SECONDS`). The desk
+  can now read while a run writes.
+- **Files affected:** `src/research_agent/storage/database.py`,
+  `tests/unit/test_storage_migrations.py`, `README.md` (use `backup`, not a hand copy, because of
+  the `-wal` file).
+- **Decisions:** The fix is based on a measurement, not a guess. On a copy of the cloud-run
+  library, one process wrote small transactions in a loop (like `mark_stage` and error rows)
+  while two processes built the desk shelf for 20 s:
+
+  | | Rollback journal (before) | WAL (after) |
+  |---|---|---|
+  | Shelves built | 13–15 | 159–162 |
+  | Slowest shelf | 14.2 s | 0.56 s |
+  | "database is locked" | once | none |
+  | Writer transactions | 5,959 | 39,812 |
+
+  The shelf alone takes 0.17 s. `*.db-*` was already git-ignored. Backups already use SQLite's
+  online backup API, which reads through the WAL.
+- **Verification:**
+  - New regression test: a reader with a 100 ms busy timeout reads committed data while a writer
+    holds `BEGIN EXCLUSIVE`, then sees the row after the commit. Without the fix it fails, and a
+    direct check of the old mode gave "database is locked".
+  - `ruff format --check`, `ruff check` and `mypy` are clean.
+  - `uv run pytest -q`: 611 passed, 3 deselected, coverage 92.44%. The backup and restore tests
+    pass under WAL.
+- **Known issues:** The CLI's `_open_repository` leaves connections for the process to close
+  (the ResourceWarnings in the test run). That is harmless, since exit closes them and removes the
+  `-wal` file, but it is untidy. It predates this change.
+- **Next step:** Roadmap M9. `F49`: show storage use per topic, offer to delete a run's files when
+  clearing it, and refuse to clear a run that is still going.
+
 ## 2026-10-28 — Ask across weeks (complete)
 
 - **Feature/branch:** `F48-ask-across-weeks`, off `main` at `da69177`.
