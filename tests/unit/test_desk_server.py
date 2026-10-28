@@ -22,6 +22,7 @@ from research_agent.desk.server import (
     TopicSuggestRequest,
     _handler,
 )
+from research_agent.desk.settings_page import SettingsProblem
 from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.models.base import ModelProviderError
 from research_agent.operations.health import HealthCheck
@@ -53,6 +54,7 @@ class FakeDesk:
         self.pdf: Path | None = None
         self.votes: list[tuple[str, str, int]] = []
         self.cleared_threads: list[tuple[str, str | None]] = []
+        self.saved_settings: list[dict[str, object] | None] = []
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -98,6 +100,15 @@ class FakeDesk:
 
     def storage(self) -> dict[str, object]:
         return {"topics": {"spatial": 1024}, "database": 2048, "free": 10**9}
+
+    def settings_page(self) -> dict[str, object]:
+        return {"fields": [], "saved": self.saved_settings}
+
+    def save_settings(self, values: dict[str, object] | None) -> dict[str, object]:
+        if values and "bad" in values:
+            raise SettingsProblem("Bad: no")
+        self.saved_settings.append(values)
+        return self.settings_page()
 
     def update_topic(self, topic: TopicSettings) -> None:
         if topic.id == "missing":
@@ -311,6 +322,17 @@ def test_the_server_clears_a_run_and_a_topic_s_runs(tmp_path: Path) -> None:
         )
         assert _call(base, "DELETE", "/api/topics/busy/runs")[0] == 409
         assert backend.deleted_runs == ["run-123"]
+        assert _call(base, "PUT", "/api/settings", {"values": {"retries.nim": 1}})[0] == 200
+        assert _call(base, "PUT", "/api/settings", {"values": {"bad": 1}}) == (
+            400,
+            {"error": "Bad: no"},
+        )
+        assert _call(base, "PUT", "/api/settings", {"nope": 1})[0] == 400
+        assert _call(base, "DELETE", "/api/settings")[0] == 200
+        assert _call(base, "GET", "/api/settings") == (
+            200,
+            {"fields": [], "saved": [{"retries.nim": 1}, None]},
+        )
         assert _call(base, "GET", "/api/storage") == (
             200,
             {"topics": {"spatial": 1024}, "database": 2048, "free": 10**9},

@@ -41,6 +41,11 @@ Commands read `config/settings.yaml` and `config/topics.yaml` from the current f
 To use the command outside a checkout, install it with `uv tool install .` and run it from a
 folder that holds your `config/`; the desk's page ships inside the package.
 
+The desk's Settings page (footer link) changes the common settings: models, how papers are
+chosen, and speed and retries. Its changes are saved in the library and sit between `.env` and
+`config/settings.yaml`, which is never rewritten; every command uses them. A field set by an
+environment variable is shown locked, with the variable's name.
+
 Nested environment fields use a double underscore, such as
 `RESEARCH_AGENT_CONCURRENCY__DISCOVERY=2`. `config/topics.yaml` seeds a new library once, on
 the first command; after that, topics live in the library and change through the `topic`

@@ -213,6 +213,13 @@ MIGRATIONS: tuple[str, ...] = (
     "CREATE INDEX ask_turns_thread ON ask_turns (run_id, paper_id, id)",
     "ALTER TABLE classifications ADD COLUMN prompt_key TEXT",
     "CREATE INDEX classifications_prompt_key ON classifications (prompt_key)",
+    """
+    CREATE TABLE app_settings (
+        name TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
 )
 
 

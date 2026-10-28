@@ -1458,3 +1458,51 @@ a.primary {
   padding-left: 1.2rem;
   color: var(--muted);
 }
+
+.secret-list {
+  margin: 8px 0 0;
+  padding-left: 1.2rem;
+  font: 0.92rem/1.6 var(--sans);
+}
+
+code {
+  font: 0.86em var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* Settings: a readable column, groups that read as sections, and locked fields that look locked. */
+#settings-form {
+  max-width: 40rem;
+}
+
+#settings-form > fieldset {
+  gap: 14px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+#settings-form > fieldset > legend {
+  padding: 0 6px;
+  font: 700 1rem var(--sans);
+  color: var(--ink);
+}
+
+#settings-form .field .quiet {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.field input:disabled,
+.field select:disabled {
+  color: var(--muted);
+  background: var(--surface-2);
+  cursor: not-allowed;
+}
+
+/* Environment variable names are one long word; let them break on a phone. */
+.secret-list,
+#settings-form .quiet {
+  overflow-wrap: anywhere;
+}

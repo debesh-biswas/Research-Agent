@@ -79,6 +79,7 @@ const state = {
   olderRuns: new Map(),
   runsStatus: null,
   storage: null,
+  settings: null,
   library: { topic: "", show: "all", q: "", offset: 0, pending: false, data: null, error: "" },
   screenedFilter: "all",
   finishedNotice: null,
@@ -728,7 +729,8 @@ function updateBanner() {
 
 function onFormPage() {
   const route = parseRoute();
-  return pageName(route.parts) === "new" || (pageName(route.parts) === "topics" && Boolean(route.parts[1]));
+  const name = pageName(route.parts);
+  return name === "new" || name === "settings" || (name === "topics" && Boolean(route.parts[1]));
 }
 
 /* Ask once, from a click, so the browser can tell the reader a run finished while they were away. */
@@ -1050,6 +1052,122 @@ function settingsFields(settings) {
     </fieldset>`;
 }
 
+function settingInput(field) {
+  const id = `setting-${field.path.replaceAll(".", "-")}`;
+  const locked = field.environment || !state.settings.data.editable;
+  const attrs = `id="${id}" name="${esc(field.path)}" data-kind="${field.kind}"${locked ? " disabled" : ""}`;
+  let input;
+  if (field.kind === "select") {
+    input = `<select ${attrs}>${field.options
+      .map((option) => `<option${option === field.value ? " selected" : ""}>${esc(option)}</option>`)
+      .join("")}</select>`;
+  } else if (field.kind === "number") {
+    const bounds = [["min", field.minimum], ["max", field.maximum], ["step", field.step]]
+      .filter(([, bound]) => bound !== null)
+      .map(([key, bound]) => ` ${key}="${bound}"`)
+      .join("");
+    input = `<input type="number" ${attrs}${bounds} required value="${esc(field.value)}" />`;
+  } else {
+    const value = field.kind === "list" ? field.value.join(", ") : field.value;
+    input = `<input type="text" ${attrs} value="${esc(value)}" />`;
+  }
+  const notes = [
+    field.help,
+    field.environment ? `Set by ${field.environment} in .env or the environment; change it there.` : "",
+    field.changed && !field.environment ? "Changed here from the settings file." : "",
+  ].filter(Boolean);
+  return `<div class="field">
+      <label for="${id}">${esc(field.label)}</label>
+      ${input}
+      ${notes.map((note) => `<p class="quiet">${esc(note)}</p>`).join("")}
+    </div>`;
+}
+
+function viewSettings() {
+  const settings = state.settings || { pending: true };
+  if (!settings.data) {
+    return `<p class="kicker">Settings</p><h1>Settings</h1>${statusMessage(settings.error || "Loading the settings…", settings.error ? "error" : "")}`;
+  }
+  const data = settings.data;
+  const groups = [...new Set(data.fields.map((field) => field.group))]
+    .map(
+      (group) => `<fieldset class="field">
+        <legend>${esc(group)}</legend>
+        ${data.fields.filter((field) => field.group === group).map(settingInput).join("")}
+      </fieldset>`,
+    )
+    .join("");
+  const secrets = data.secrets
+    .map((secret) => `<li>${esc(secret.label)}: <strong>${secret.set ? "set" : "not set"}</strong> <span class="quiet">(${esc(secret.env)} in .env)</span></li>`)
+    .join("");
+  const status = settings.status || {};
+  const busy = settings.pending ? " disabled" : "";
+  const changed = data.fields.some((field) => field.changed);
+  return `<p class="kicker">Settings</p>
+    <h1>Settings</h1>
+    <p class="quiet">Changes apply to the next run and the next question; a run already going keeps its settings. ${
+      data.editable ? `They are saved in the library, over <code>${esc(data.settingsFile)}</code>, which stays as it is.` : "This desk was started without a settings file, so they can't be changed here."
+    }</p>
+    ${statusMessage(status.text, status.tone)}
+    <form class="topic-form" id="settings-form">
+      ${groups}
+      <div class="form-actions">
+        <button class="primary" type="submit"${busy}${data.editable ? "" : " disabled"}>Save settings</button>
+        ${changed ? `<button class="button" type="button" id="reset-settings"${busy}>Reset to the settings file</button>` : ""}
+      </div>
+    </form>
+    <h2>Kept outside the desk</h2>
+    <p class="quiet">Library folder: <code>${esc(data.dataDirectory)}</code>. Keys live in <code>.env</code>, never on this page:</p>
+    <ul class="secret-list">${secrets}</ul>`;
+}
+
+async function loadSettings() {
+  state.settings = { pending: true };
+  try {
+    const response = await request("/api/settings");
+    if (!response.ok) throw new Error("bad response");
+    state.settings = { data: await response.json() };
+  } catch {
+    state.settings = { error: "Can't load the settings right now." };
+  }
+  if (pageName(parseRoute().parts) === "settings") render();
+}
+
+function settingsValues(form) {
+  const values = {};
+  for (const input of form.querySelectorAll("[data-kind]")) {
+    if (input.disabled) continue;
+    const kind = input.dataset.kind;
+    values[input.name] =
+      kind === "number"
+        ? Number(input.value)
+        : kind === "list"
+          ? input.value.split(",").map((item) => item.trim()).filter(Boolean)
+          : input.value;
+  }
+  return values;
+}
+
+async function saveSettings(values, success) {
+  const data = state.settings.data;
+  state.settings = { data, pending: true };
+  render();
+  try {
+    const response = await request("/api/settings", {
+      method: values ? "PUT" : "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: values ? JSON.stringify({ values }) : undefined,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "The desk server refused those settings.");
+    state.settings = { data: payload, status: { text: success, tone: "success" } };
+  } catch (error) {
+    const text = error instanceof Error && error.name !== "TimeoutError" ? error.message : "Can't reach the desk server.";
+    state.settings = { data, status: { text, tone: "error" } };
+  }
+  render();
+}
+
 const HEALTH_LABEL = { ok: "OK", warn: "Warning", fail: "Problem" };
 
 function healthSummary(checks) {
@@ -1253,6 +1371,8 @@ function render() {
     body = viewLibrary();
   } else if (name === "setup" && state.live) {
     body = viewSetup();
+  } else if (name === "settings" && state.live) {
+    body = viewSettings();
   } else if (name === "topics" && state.live) {
     body = route.parts[1] ? viewTopicEdit(route.parts[1]) : viewTopics();
   } else if (!topic) {
@@ -1343,13 +1463,14 @@ function render() {
     <main id="main">${body}</main>
     <footer class="footer">${
       state.live
-        ? `Reading the local library. <a href="#/setup">Setup check</a>`
+        ? `Reading the local library. <a href="#/setup">Setup check</a> · <a href="#/settings">Settings</a>`
         : "Can't reach the desk server right now."
     }</footer>`;
 
   persist();
   schedulePoll();
   if (name === "setup" && state.live && !state.health) void checkHealth();
+  if (name === "settings" && state.live && !state.settings) void loadSettings();
   if (name === "topics" && state.live && !state.storage) void loadStorage();
   if (name === "library" && state.live && !state.library.data && !state.library.pending) void loadLibrary();
   if (name === "ask" && state.live && run) {
@@ -1829,6 +1950,12 @@ function onClick(event) {
     render();
     return;
   }
+  if (event.target.id === "reset-settings") {
+    void confirmAction("Reset every setting changed here to the settings file?", "Reset settings").then(
+      (ok) => ok && saveSettings(null, "Settings reset to the settings file."),
+    );
+    return;
+  }
   if (event.target.id === "ask-start-over") {
     const paperId = parseRoute().params.get("paper");
     const { run } = current();
@@ -1892,6 +2019,11 @@ function onSubmit(event) {
     event.preventDefault();
     askToNotify();
     void createTopic(form);
+    return;
+  }
+  if (form.id === "settings-form") {
+    event.preventDefault();
+    void saveSettings(settingsValues(form), "Settings saved.");
     return;
   }
   if (form.id === "topic-edit-form") {
@@ -1994,6 +2126,7 @@ window.addEventListener("hashchange", () => {
   state.moveFocus = true;
   if (!location.hash.startsWith("#/topics")) state.topicsStatus = null;
   if (!location.hash.startsWith("#/runs")) state.runsStatus = null;
+  if (!location.hash.startsWith("#/settings")) state.settings = null;
   state.storage = null;
   if (location.hash.startsWith("#/library")) state.library = { ...state.library, data: null };
   render();

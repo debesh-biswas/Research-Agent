@@ -16,7 +16,6 @@ from research_agent.config import (
     ApplicationSettings,
     ConfigurationError,
     TopicSettings,
-    _load_yaml_mapping,
     load_configuration,
 )
 from research_agent.desk.server import LocalDesk, serve
@@ -58,6 +57,7 @@ from research_agent.queries.planner import QueryPlanner, base_query
 from research_agent.reports.service import ReportOutcome, ReportService
 from research_agent.screening.service import PaperScreener, ScreeningFailure
 from research_agent.selection.selector import select
+from research_agent.storage.app_settings import load_settings
 from research_agent.storage.artifacts import LocalArtifactStore
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.papers import SqlitePaperRepository
@@ -144,7 +144,7 @@ def _web_root() -> Path | None:
 
 
 def _open_connection(settings_path: Path, topics_path: Path) -> sqlite3.Connection:
-    configuration = ApplicationSettings(**_load_yaml_mapping(settings_path))
+    configuration = load_settings(settings_path)
     # Every command that touches the database gets structured, redacted logging. Configuring it
     # here rather than in the callback uses the level from the settings file actually in use.
     configure_logging(configuration.log_level)
@@ -238,7 +238,7 @@ def new_topic(
 ) -> None:
     """Suggest keywords with the local model, confirm with the user, then run the pipeline."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
     except (ConfigurationError, ValidationError) as error:
         typer.echo(f"Unable to start: {error}", err=True)
@@ -379,7 +379,7 @@ def delete_topic(
         typer.echo("Not deleted.")
         raise typer.Exit(code=1)
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         repository = _open_repository(settings, topics)
         # A run writing under this topic would fail mid-way if its rows vanished.
         with run_lock(application.data_directory, topic_id):
@@ -439,7 +439,7 @@ def discover(
 ) -> None:
     """Search the enabled academic sources for one topic and print the merged candidates."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         topic = _open_repository(settings, topics).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
         typer.echo(f"Unable to run discovery: {error}", err=True)
@@ -504,7 +504,7 @@ def model_check(
 ) -> None:
     """Route one small prompt through the configured providers and report what answered."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
     except (ConfigurationError, ValidationError) as error:
         typer.echo(f"Unable to load settings: {error}", err=True)
         raise typer.Exit(code=1) from error
@@ -550,7 +550,7 @@ def backup(
 ) -> None:
     """Save the whole library (database, PDFs, parsed text, reports) to one .zip file."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         target = output or Path(f"research-agent-backup-{stamp}.zip")
         written = create_backup(application.data_directory, target)
@@ -569,7 +569,7 @@ def restore(
 ) -> None:
     """Restore a backup. An existing library is moved aside, never deleted."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
     except (ConfigurationError, ValidationError) as error:
         typer.echo(f"Unable to restore: {error}", err=True)
         raise typer.Exit(code=1) from error
@@ -599,7 +599,7 @@ HEALTH_TIMEOUT_SECONDS = 30.0
 def doctor(settings: SettingsOption = Path("config/settings.yaml")) -> None:
     """Check the library folder, models and sources a run needs, with a fix for each problem."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
     except (ConfigurationError, ValidationError) as error:
         typer.echo(f"fail\tSettings: {error}", err=True)
         raise typer.Exit(code=1) from error
@@ -631,7 +631,7 @@ def plan_queries(
 ) -> None:
     """Expand one topic into a bounded search plan, falling back when inference is unavailable."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -689,7 +689,7 @@ def classify(
 ) -> None:
     """Discover papers for one topic, triage them, and select a bounded reading set."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -806,7 +806,7 @@ def acquire(
 ) -> None:
     """Download the open-access PDFs for the papers one run selected."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -892,7 +892,7 @@ def parse(
 ) -> None:
     """Convert the PDFs a run acquired into structured, reusable text."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -957,7 +957,7 @@ def analyze(
 ) -> None:
     """Read the papers a run selected and write an evidence-backed analysis and card for each."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1052,7 +1052,7 @@ def synthesize(
 ) -> None:
     """Compare a run's analyses with each other and with the topic's recent history."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1149,7 +1149,7 @@ def ideate(
 ) -> None:
     """Turn a run's synthesis into supported research gaps and concrete research ideas."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1231,7 +1231,7 @@ def generate_report(
 ) -> None:
     """Assemble the weekly Markdown report for one run from its persisted records."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1271,7 +1271,7 @@ def latest_report(
 ) -> None:
     """Print the path of the newest stored report for one topic."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
         typer.echo(f"Unable to read reports: {error}", err=True)
@@ -1340,7 +1340,7 @@ def serve_desk(
         typer.echo("The reading desk files are missing from this installation.", err=True)
         raise typer.Exit(code=1)
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         close_orphaned_runs(connection, application.data_directory)
         connection.close()
@@ -1352,7 +1352,11 @@ def serve_desk(
     typer.echo(f"Desk at http://127.0.0.1:{port}")
     try:
         serve(
-            LocalDesk(application.data_directory / "research_agent.db", application),
+            LocalDesk(
+                application.data_directory / "research_agent.db",
+                application,
+                settings_file=settings,
+            ),
             web_root,
             port,
         )
@@ -1371,7 +1375,7 @@ def run_topic(
 ) -> None:
     """Run the complete weekly workflow for one topic."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1397,7 +1401,7 @@ def run_all(
 ) -> None:
     """Run every enabled topic in turn, reporting each outcome; disabled topics are skipped."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         stored = SqliteTopicRepository(connection).list()
     except (ConfigurationError, ValidationError, TopicStoreError) as error:
@@ -1440,7 +1444,7 @@ def generate_schedule(
 ) -> None:
     """Render this topic's weekly trigger for launchd or cron, with how to install it."""
     try:
-        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        application = load_settings(settings)
         connection = _open_connection(settings, topics)
         topic = SqliteTopicRepository(connection).get(topic_id)
         chosen = backend or application.scheduler_backend
