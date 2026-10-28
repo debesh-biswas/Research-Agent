@@ -192,7 +192,10 @@ a:hover {
   border: none;
   border-radius: 999px;
   padding: 8px 28px 8px 12px;
-  max-width: 16rem;
+  max-width: 11rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   cursor: pointer;
   transition:
     background-color var(--fast) var(--ease),
@@ -1229,7 +1232,8 @@ a.primary {
   margin: 24px auto;
 }
 
-@media (max-width: 860px) {
+/* The header stacks before the body does: brand, six links and two switchers need ~1080px. */
+@media (max-width: 1080px) {
   .topbar {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -1250,7 +1254,9 @@ a.primary {
     max-width: none;
     min-width: 0;
   }
+}
 
+@media (max-width: 860px) {
   .week-head,
   .page-head {
     flex-direction: column;
