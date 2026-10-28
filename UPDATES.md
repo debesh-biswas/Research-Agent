@@ -2,6 +2,60 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Offline fonts, favicon, period labels, accessibility (complete)
+
+- **Feature/branch:** `F52-offline-fonts-and-polish`, off `main` at `7514bef`.
+- **Status:** Complete; merged into `main`. Roadmap M10, second and last item.
+- **Summary:**
+  - **Self-hosted fonts.** The desk now serves its three fonts from `web/fonts/`: IBM Plex Mono
+    400/500, and Literata and Schibsted Grotesk as variable fonts. Only the latin and latin-ext
+    subsets are included, 276 KB of woff2 in total. The page makes no third-party request, so it
+    renders the same offline and tells Google nothing. The server serves `.woff2` as `font/woff2`.
+  - **Favicon.** A favicon SVG was added.
+  - **Period labels.** A single-day period now reads "27 Oct 2026" instead of "27–27 Oct 2026".
+    A period that crosses a year names both years ("28 Dec 2026 – 6 Jan 2027").
+  - **Contrast.** `--faint` darkens from `#7c8484` to `#656d6d`, which gives at least 4.63:1 on
+    every surface. It is still lighter than `--muted`, so the hierarchy holds.
+- **Files affected:**
+  - `web/index.html`;
+  - `web/fonts/` (8 woff2, `fonts.css`, `OFL-*.txt`);
+  - `web/favicon.svg`;
+  - `web/css/desk.css`;
+  - `web/js/desk.js` (`formatPeriod`);
+  - `src/research_agent/desk/server.py` (`_TYPES`);
+  - tests in `tests/unit/test_reading_desk.py` and `test_desk_server.py`.
+- **Decisions:**
+  - Fonts came from Google Fonts' CSS API, and the licences from `google/fonts`. The SIL OFL 1.1
+    allows redistribution with the licence, so each family's licence ships beside its files.
+  - Cyrillic, Greek and Vietnamese subsets were left out. Those characters fall back to the system
+    fonts in each stack.
+  - The accessibility work is based on measurement. axe-core 4.10.2 (WCAG 2 A/AA, 2.1 AA and best
+    practice) ran on all 13 pages, against a copy of the cloud-run library:
+    - before: colour contrast was the only finding, on every page (`--faint` at 3.34–3.82:1);
+    - after: 0 violations on every page and in the open confirm dialog.
+  - A keyboard pass tabbed 40 stops on the Week, Topics, Library and Runs pages. Every focused
+    element showed an outline or ring.
+  - Dark mode and keyboard shortcuts were not built: they are optional, and nothing asked for them.
+- **Verification:**
+  - Browser:
+    - no request left 127.0.0.1;
+    - all 10 font faces reported loaded;
+    - `formatPeriod` gave "27 Oct 2026", "17–27 Oct 2026", "28 Sept – 7 Oct 2026" and
+      "28 Dec 2026 – 6 Jan 2027";
+    - the favicon and fonts were served with their types.
+  - Tests:
+    - every `url()` in `fonts.css` exists;
+    - each licence is present;
+    - `index.html` has no Google Fonts link;
+    - the server serves `.woff2`.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 614 passed,
+    3 deselected.
+- **Known issues:** `en-GB` short months write September as "Sept" (browser ICU data). That is
+  correct British usage, so it was left.
+- **Next step:** Roadmap M11. `F53`: skip re-screening papers whose stored screening result is
+  for the same topic definition and prompt version. Check first how classification reuse
+  already works, so the fix is not rebuilding something that exists.
+
 ## 2026-10-28 — Confirm dialogs and request timeouts (complete)
 
 - **Feature/branch:** `F51-dialogs-and-timeouts`, off `main` at `d57e718`.

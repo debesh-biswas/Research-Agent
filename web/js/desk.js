@@ -156,6 +156,10 @@ function formatPeriod(run) {
   const start = new Date(`${run.periodStart}T00:00:00Z`);
   const end = new Date(`${run.periodEnd}T00:00:00Z`);
   const year = end.getUTCFullYear();
+  if (run.periodStart === run.periodEnd) return `${formatDay(run.periodEnd)} ${year}`;
+  if (start.getUTCFullYear() !== year) {
+    return `${formatDay(run.periodStart)} ${start.getUTCFullYear()} – ${formatDay(run.periodEnd)} ${year}`;
+  }
   if (start.getUTCMonth() === end.getUTCMonth()) {
     return `${start.getUTCDate()}–${end.getUTCDate()} ${end.toLocaleDateString("en-GB", {
       month: "short",

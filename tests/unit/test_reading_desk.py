@@ -1,5 +1,6 @@
 """The reading desk is a static page, served live with no sample-data fallback."""
 
+import re
 from pathlib import Path
 
 WEB = Path(__file__).resolve().parents[2] / "web"
@@ -130,3 +131,20 @@ def test_destructive_actions_confirm_in_a_dialog_and_short_calls_time_out() -> N
     assert "dialog.showModal()" in script and 'value="cancel" autofocus' in script
     assert "AbortSignal.timeout(REQUEST_MS)" in script
     assert 'await request("/api/shelf")' in script
+
+
+def test_fonts_are_self_hosted_with_their_licences() -> None:
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert "googleapis" not in html and "gstatic" not in html, "no third-party request"
+    assert 'href="fonts/fonts.css"' in html and 'href="favicon.svg"' in html
+    css = (WEB / "fonts" / "fonts.css").read_text(encoding="utf-8")
+    files = set(re.findall(r'url\("([^"]+)"\)', css))
+    assert files and all((WEB / "fonts" / name).is_file() for name in files)
+    for family in ("ibm-plex-mono", "literata", "schibsted-grotesk"):
+        assert "SIL Open Font License" in (WEB / "fonts" / f"OFL-{family}.txt").read_text()
+    assert (WEB / "favicon.svg").is_file()
+
+
+def test_a_single_day_period_is_not_written_as_a_range() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "run.periodStart === run.periodEnd" in script
