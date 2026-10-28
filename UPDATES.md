@@ -2,6 +2,49 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Confirm dialogs and request timeouts (complete)
+
+- **Feature/branch:** `F51-dialogs-and-timeouts`, off `main` at `d57e718`.
+- **Status:** Complete; merged into `main`. Roadmap M10, first item.
+- **Summary:**
+  - **Confirm dialog.** The four destructive actions now ask in an in-page `<dialog>` instead of
+    the browser's `confirm()`: clear a run, clear all runs, delete a topic, and start an Ask
+    conversation over. The button names the action ("Clear run", "Delete topic", …), styled in
+    the carmine danger colour. Cancel has focus, so Enter and Escape both cancel, and focus
+    returns to the button that opened it.
+  - **Request timeouts.** Calls that only read or write the library give up after 20 s
+    (`REQUEST_MS`, through `request()` with `AbortSignal.timeout`). These are the shelf, library,
+    old runs, screened papers, reading state, Ask threads, storage and topic changes. A stuck
+    request can no longer stall the progress poll or leave a page loading. Ask, keyword
+    suggestions and the setup check keep no client timeout: they wait on models and already
+    time out on the server.
+- **Files affected:** `web/js/desk.js` (`confirmAction`, `request`, `REQUEST_MS`),
+  `web/css/desk.css` (`.confirm`, `.danger`), `tests/unit/test_reading_desk.py`.
+- **Decisions:**
+  - No toast system. Every action that needs feedback already shows a status line (topics, runs,
+    notes, Ask turns), and a second channel would say the same thing twice.
+  - The dialog is built once and kept outside `#app`, because `render()` replaces `#app`.
+- **Verification:** Browser on the real desk with a copy of the cloud-run library:
+  - the dialog opened with focus on Cancel, the action "Clear run" and the full message;
+  - Escape and Enter each kept both runs, and focus went back to the Clear button;
+  - "Clear run" removed one run;
+  - topic delete showed "Delete topic" and Cancel kept the topic;
+  - no native dialogs fired, and no page errors;
+  - with `/api/storage` held open forever, `state.storage` went from pending to failed at the
+    20 s timeout, and the Topics page stayed usable.
+
+  The static test asserts no native `confirm(` remains and the shelf uses `request()`.
+  `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 612 passed,
+  3 deselected.
+- **Known issues:** None found.
+- **Next step:** Roadmap M10. `F52`:
+  - fix the same-day period label ("27–27 Oct" should read "27 Oct");
+  - self-host the fonts so the desk works offline and makes no third-party request;
+  - add a favicon;
+  - run an accessibility pass (focus styles, labels, contrast).
+
+  Dark mode and keyboard shortcuts are optional: build them only if cheap.
+
 ## 2026-10-28 — Clearing runs safely, and storage use (complete)
 
 - **Feature/branch:** `F49-run-files-and-storage`, off `main` at `0fbdc94`.

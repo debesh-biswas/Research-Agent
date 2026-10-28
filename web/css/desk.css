@@ -1396,3 +1396,48 @@ a.primary {
     scroll-behavior: auto !important;
   }
 }
+
+/* Confirm dialog for destructive actions; see confirmAction() in desk.js. */
+.confirm {
+  max-width: min(28rem, calc(100vw - 32px));
+  padding: 22px 24px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.confirm::backdrop {
+  background: rgba(21, 25, 26, 0.32);
+}
+
+.confirm p {
+  margin: 0 0 18px;
+  font: 1rem/1.5 var(--sans);
+}
+
+.confirm .form-actions {
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.danger {
+  font: 600 0.92rem var(--sans);
+  color: white;
+  background: var(--carmine);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+.danger:hover {
+  background: #8f2645;
+}
+
+.danger:focus-visible,
+.confirm .button:focus-visible {
+  outline: 2px solid var(--tide);
+  outline-offset: 2px;
+}

@@ -122,3 +122,11 @@ def test_library_search_is_debounced_and_keeps_the_caret() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
     assert 'id="library-search"' in script and 'params.set("q"' in script
     assert "librarySearchTimer = setTimeout" in script and "setSelectionRange" in script
+
+
+def test_destructive_actions_confirm_in_a_dialog_and_short_calls_time_out() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "confirm(" not in script.replace("confirmAction(", ""), "no native confirm() left"
+    assert "dialog.showModal()" in script and 'value="cancel" autofocus' in script
+    assert "AbortSignal.timeout(REQUEST_MS)" in script
+    assert 'await request("/api/shelf")' in script
