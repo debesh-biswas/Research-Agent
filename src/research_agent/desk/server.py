@@ -574,8 +574,16 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self.send_header("Cache-Control", "no-store")
             if self.close_connection:
                 self.send_header("Connection", "close")
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                # The browser left mid-reply (a reload, a closed tab): normal, not a server fault.
+                self.close_connection = True
+                _LOGGER.debug(
+                    "client disconnected before the reply was sent",
+                    extra={"node_name": "desk", "status": self.path.split("?", 1)[0]},
+                )
 
     return DeskHandler
 
