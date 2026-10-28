@@ -166,3 +166,9 @@ def test_the_wheel_ships_the_desk_page() -> None:
     pyproject = (WEB.parent / "pyproject.toml").read_text(encoding="utf-8")
 
     assert '"web" = "research_agent/web"' in pyproject
+
+
+def test_settings_page_is_linked_and_never_sends_locked_fields() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert 'href="#/settings"' in script and 'request("/api/settings")' in script
+    assert "if (input.disabled) continue;" in script

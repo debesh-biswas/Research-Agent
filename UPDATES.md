@@ -2,6 +2,84 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Settings page in the desk (complete)
+
+- **Feature/branch:** `F34-settings-screen`, off `main` at `7d00904`.
+- **Status:** Complete; merged into `main`. The user asked for it, and for F50 (undo after
+  clearing) to stay off.
+- **Summary:** A Settings page (`#/settings`, linked in the footer) edits 15 common settings in
+  three groups:
+  - **Models:** which provider does deep reads, the local model's address, name and timeout,
+    and the NIM model name and timeout.
+  - **Choosing papers:** the minimum relevance score, the quality weight, the recency window and
+    the preferred venues.
+  - **Speed and retries:** downloads and model calls at once, and retries for sources, NIM and
+    PDFs.
+
+  It also shows the library folder (read-only), and whether the NIM key, the Semantic Scholar
+  key and the OpenAlex email are set. It never shows their values.
+  - **Saving.** Changes go to the library's new `app_settings` table. `settings.yaml` is never
+    rewritten, so its comments survive.
+  - **Precedence.** Highest first: environment, `.env`, desk changes, `settings.yaml`, defaults.
+  - **Everywhere.** Every CLI command now loads settings through
+    `storage.app_settings.load_settings`, so desk changes apply to runs started from the terminal
+    too. The desk uses them from the next run or question on; a run already going keeps its own.
+  - **Locked fields.** A field set by an environment variable or a `.env` line is disabled, with
+    the variable's name. A value submitted for it anyway is never saved.
+  - **Reset.** "Reset to the settings file" (behind a confirm dialog) clears every desk change.
+- **Files affected:**
+  - `src/research_agent/storage/database.py`: `app_settings` migration.
+  - New `src/research_agent/storage/app_settings.py`: `SqliteSettingsOverrides`, `merged`,
+    `load_settings`, `read_overrides`.
+  - New `src/research_agent/desk/settings_page.py`: `FIELDS`, `page`, `overrides_for`,
+    `SettingsProblem`.
+  - `src/research_agent/desk/server.py`: `LocalDesk(..., settings_file=)`, `settings_page`,
+    `save_settings`, and `GET`/`PUT`/`DELETE /api/settings`.
+  - `src/research_agent/cli.py`: 21 call sites now use `load_settings`, and the desk is given
+    its settings file.
+  - `web/js/desk.js`, `web/css/desk.css` and `README.md`.
+  - Tests in `tests/unit/test_settings_page.py`, `test_desk_server.py` and
+    `test_reading_desk.py`.
+- **Decisions:**
+  - Desk changes live in the library rather than in a rewritten YAML file, which would lose the
+    explanatory comments. A backup carries them with the library.
+  - Only values that differ from the file are stored. Setting a field back to the file's value
+    removes the change.
+  - A saved change that a later version rejects is ignored with a warning, so it can never stop
+    every command from starting.
+  - The library folder is not editable: moving it would leave the library behind.
+  - Sources' pacing and token limits are left to the file. They are tuning that rarely needs
+    changing.
+- **Verification:**
+  - Unit tests cover:
+    - precedence: file, then desk, then environment;
+    - an invalid saved change being ignored;
+    - a missing database or table;
+    - only real differences being saved;
+    - a bad value refused by its label, and an unknown field refused;
+    - `.env` lock detection, where a commented line does not count;
+    - secrets never on the page;
+    - a LocalDesk save, which a fresh `load_settings` (as a command would run) then sees;
+    - reset, and refusal without a settings file.
+  - Server tests cover the three routes and their 400s.
+  - Browser on the real desk, started from a folder whose `.env` sets the NIM model:
+    - that field was locked and named the variable;
+    - saving NIM retries 0, minimum score 0.5 and venues "CVPR, CoRL" showed "Settings saved." and
+      marked those fields as changed;
+    - after a reload they were still set;
+    - reset through the dialog restored the file values;
+    - `settings.yaml` was byte-for-byte unchanged;
+    - axe found 0 violations;
+    - nothing overflowed at 390 px (long variable names now wrap);
+    - no page errors.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 638 passed,
+    3 deselected, coverage 92.85%.
+- **Known issues:** `log_level` and the library folder still need the file. The page does not
+  warn about unsaved edits when you navigate away.
+- **Next step:** `F57`: topic breadth. Topics get a breadth setting (focused / balanced /
+  exploratory). The model derives the search terms from the topic name and description at that
+  breadth, so the reader never types keywords, and screening is told how widely to accept.
+
 ## 2026-10-28 — Packaging and licence review (complete)
 
 - **Feature/branch:** `F56-packaging-and-licences`, off `main` at `6b0768a`.

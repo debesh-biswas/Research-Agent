@@ -22,6 +22,8 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question, failure_message
+from research_agent.desk.settings_page import SettingsProblem, overrides_for
+from research_agent.desk.settings_page import page as settings_page
 from research_agent.desk.shelf import (
     build_run,
     build_shelf,
@@ -35,6 +37,7 @@ from research_agent.models.router import build_router
 from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
+from research_agent.storage.app_settings import SqliteSettingsOverrides, load_settings
 from research_agent.storage.artifacts import LocalArtifactStore, safe_name
 from research_agent.storage.asks import AskTurn, SqliteAskRepository
 from research_agent.storage.database import apply_migrations, connect
@@ -82,6 +85,12 @@ class AskRequest(StrictModel):
     topic_id: str = Field(min_length=1, alias="topicId")
     run_id: str = Field(min_length=1, alias="runId")
     paper_id: str | None = Field(default=None, alias="paperId")
+
+
+class SettingsUpdate(StrictModel):
+    """Every editable field the Settings page submits, by dotted path."""
+
+    values: dict[str, str | int | float | list[str]]
 
 
 class VoteRequest(StrictModel):
@@ -154,6 +163,10 @@ class DeskBackend(Protocol):
 
     def storage(self) -> dict[str, object]: ...
 
+    def settings_page(self) -> dict[str, object]: ...
+
+    def save_settings(self, values: dict[str, object] | None) -> dict[str, object]: ...
+
     def library(self, query: "LibraryQuery") -> dict[str, object]: ...
 
 
@@ -170,10 +183,37 @@ class LibraryQuery(StrictModel):
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
 
-    def __init__(self, database: Path, settings: ApplicationSettings) -> None:
+    def __init__(
+        self, database: Path, settings: ApplicationSettings, settings_file: Path | None = None
+    ) -> None:
         self._database = database
         self._settings = settings
+        self._settings_file = settings_file
         self._store = LocalArtifactStore(settings.data_directory)
+
+    def settings_page(self) -> dict[str, object]:
+        connection = connect(self._database)
+        try:
+            overrides = SqliteSettingsOverrides(connection).get()
+        finally:
+            connection.close()
+        return settings_page(self._settings, self._settings_file, overrides)
+
+    def save_settings(self, values: dict[str, object] | None) -> dict[str, object]:
+        """Save the page's values (None resets to the file), then use them from the next call on.
+
+        A run already going keeps the settings it started with.
+        """
+        if self._settings_file is None:
+            raise SettingsProblem("This desk was started without a settings file.")
+        changes = {} if values is None else overrides_for(values, self._settings_file)
+        connection = connect(self._database)
+        try:
+            SqliteSettingsOverrides(connection).save(changes)
+        finally:
+            connection.close()
+        self._settings = load_settings(self._settings_file)
+        return self.settings_page()
 
     def shelf(self) -> dict[str, object]:
         connection = connect(self._database)
@@ -623,6 +663,9 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             if (thread_route := _ask_route(self.path)) is not None:
                 self._json(200, {"turns": backend.thread(*thread_route)})
                 return
+            if path == "/api/settings":
+                self._json(200, backend.settings_page())
+                return
             if path == "/api/storage":
                 self._json(200, backend.storage())
                 return
@@ -652,6 +695,14 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             if self._foreign():
                 return
             segments = [unquote(part) for part in urlparse(self.path).path.split("/") if part]
+            if segments == ["api", "settings"]:
+                try:
+                    update = SettingsUpdate.model_validate(_read_json(self))
+                except (ValueError, ValidationError):
+                    self._json(400, {"error": "The settings could not be read."})
+                    return
+                self._save_settings(dict(update.values))
+                return
             if (
                 len(segments) == 4
                 and segments[:2] == ["api", "papers"]
@@ -791,7 +842,9 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self._discard_body()
             path = urlparse(self.path).path
             segments = [segment for segment in path.split("/") if segment]
-            if (thread_route := _ask_route(self.path)) is not None:
+            if path == "/api/settings":
+                self._save_settings(None)
+            elif (thread_route := _ask_route(self.path)) is not None:
                 cleared = backend.clear_thread(*thread_route)
                 self._json(200, {"status": "cleared", "turns": cleared})
             elif len(segments) == 3 and segments[:2] == ["api", "runs"]:
@@ -813,6 +866,12 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 self._topic_action(lambda: backend.delete_topic(topic_id), 200, "deleted")
             else:
                 self._json(404, {"error": "Not found."})
+
+        def _save_settings(self, values: dict[str, object] | None) -> None:
+            try:
+                self._json(200, backend.save_settings(values))
+            except SettingsProblem as error:
+                self._json(400 if values is not None else 409, {"error": str(error)})
 
         def _discard_body(self) -> None:
             """Consume a body no route reads; left unread, it would corrupt the next request."""
