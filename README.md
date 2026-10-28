@@ -75,7 +75,8 @@ Each pipeline stage also has its own command (`discover`, `classify`, `acquire`,
 `research-agent desk` serves the reading desk on this machine. It reads topics, runs, papers,
 and the weekly report from the local library. Ask sends the question to NVIDIA NIM when that
 provider is configured, and to the local model otherwise. The answer is limited to the cards
-on the shelf.
+on the shelf. Each run and each paper keeps its own conversation in the library, so a follow-up
+question sees the last few turns; "Start over" deletes it.
 
 ```bash
 uv run research-agent desk

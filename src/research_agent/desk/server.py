@@ -18,7 +18,7 @@ import httpx
 from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
-from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
+from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question, failure_message
 from research_agent.desk.shelf import build_run, build_shelf, run_report, screened_papers
 from research_agent.exports.citations import to_bibtex, to_ris
 from research_agent.models.base import ModelProviderError
@@ -27,6 +27,7 @@ from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import execute_run
 from research_agent.storage.artifacts import LocalArtifactStore
+from research_agent.storage.asks import AskTurn, SqliteAskRepository
 from research_agent.storage.database import apply_migrations, connect
 from research_agent.storage.feedback import SqliteFeedbackRepository
 from research_agent.storage.library import SqliteLibraryRepository
@@ -106,6 +107,10 @@ class DeskBackend(Protocol):
 
     async def ask(self, request: AskRequest) -> DeskReply: ...
 
+    def thread(self, run_id: str, paper_id: str | None) -> list[dict[str, object]]: ...
+
+    def clear_thread(self, run_id: str, paper_id: str | None) -> int: ...
+
     async def suggest(self, request: TopicSuggestRequest) -> list[str]: ...
 
     def create_and_run(self, topic: TopicSettings) -> None: ...
@@ -175,19 +180,56 @@ class LocalDesk:
             connection.close()
 
     async def ask(self, request: AskRequest) -> DeskReply:
+        """Answer with the thread's earlier turns as context, then add this turn to it."""
         shelf = self.shelf()
-        timeout = self._settings.models.nim.timeout_seconds
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            router = build_router(client, self._settings)
-            return await answer_question(
-                router,
-                shelf,
-                topic_id=request.topic_id,
-                run_id=request.run_id,
-                question=request.question.strip(),
-                paper_id=request.paper_id,
-                max_chars=self._settings.reports.max_input_chars,
+        question = request.question.strip()
+        connection = connect(self._database)
+        try:
+            asks = SqliteAskRepository(connection)
+            earlier = asks.turns(request.run_id, request.paper_id)
+            timeout = self._settings.models.nim.timeout_seconds
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                router = build_router(client, self._settings)
+                reply = await answer_question(
+                    router,
+                    shelf,
+                    topic_id=request.topic_id,
+                    run_id=request.run_id,
+                    question=question,
+                    paper_id=request.paper_id,
+                    max_chars=self._settings.reports.max_input_chars,
+                    history=[(turn.question, turn.paragraphs) for turn in earlier],
+                )
+            asks.add(
+                request.run_id,
+                request.paper_id,
+                AskTurn(
+                    question=question,
+                    paragraphs=reply.paragraphs,
+                    cites=reply.cites,
+                    note=reply.note,
+                ),
             )
+        finally:
+            connection.close()
+        return reply
+
+    def thread(self, run_id: str, paper_id: str | None) -> list[dict[str, object]]:
+        connection = connect(self._database)
+        try:
+            turns = SqliteAskRepository(connection).turns(run_id, paper_id)
+        finally:
+            connection.close()
+        return [
+            turn.model_dump(include={"question", "paragraphs", "cites", "note"}) for turn in turns
+        ]
+
+    def clear_thread(self, run_id: str, paper_id: str | None) -> int:
+        connection = connect(self._database)
+        try:
+            return SqliteAskRepository(connection).clear(run_id, paper_id)
+        finally:
+            connection.close()
 
     async def suggest(self, request: TopicSuggestRequest) -> list[str]:
         timeout = self._settings.models.local.timeout_seconds
@@ -517,6 +559,9 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
                 else:
                     self._bytes(200, "application/pdf", pdf.read_bytes())
                 return
+            if (thread_route := _ask_route(self.path)) is not None:
+                self._json(200, {"turns": backend.thread(*thread_route)})
+                return
             if path == "/api/health":
                 checks = asyncio.run(backend.health())
                 self._json(200, {"checks": [check.model_dump() for check in checks]})
@@ -627,12 +672,17 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             except DeskLookupError as error:
                 self._json(404, {"error": str(error)})
                 return
-            except ModelProviderError:
+            except ModelProviderError as error:
                 _LOGGER.warning(
-                    "desk answer failed",
-                    extra={"node_name": "desk_ask", "status": "failed"},
+                    "desk answer failed: %s",
+                    error,
+                    extra={
+                        "node_name": "desk_ask",
+                        "status": "failed",
+                        "error_type": error.category,
+                    },
                 )
-                self._json(502, {"error": "The model did not answer."})
+                self._json(502, {"error": failure_message(error), "setup": True})
                 return
             self._json(200, _reply_body(reply))
 
@@ -677,7 +727,10 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             self._discard_body()
             path = urlparse(self.path).path
             segments = [segment for segment in path.split("/") if segment]
-            if len(segments) == 3 and segments[:2] == ["api", "runs"]:
+            if (thread_route := _ask_route(self.path)) is not None:
+                cleared = backend.clear_thread(*thread_route)
+                self._json(200, {"status": "cleared", "turns": cleared})
+            elif len(segments) == 3 and segments[:2] == ["api", "runs"]:
                 backend.delete_run(unquote(segments[2]))
                 self._json(200, {"status": "cleared"})
             elif (
@@ -798,6 +851,16 @@ def _read_json(handler: BaseHTTPRequestHandler) -> object:
         return json.loads(raw)
     except json.JSONDecodeError as error:
         raise ValueError("body") from error
+
+
+def _ask_route(raw_path: str) -> tuple[str, str | None] | None:
+    """(run id, paper id or None) for /api/runs/<id>/ask[?paper=<id>], else None."""
+    url = urlparse(raw_path)
+    segments = [unquote(segment) for segment in url.path.split("/") if segment]
+    if len(segments) != 4 or segments[:2] != ["api", "runs"] or segments[3] != "ask":
+        return None
+    paper = parse_qs(url.query).get("paper", [""])[0]
+    return segments[2], paper or None
 
 
 def _reply_body(reply: DeskReply) -> dict[str, object]:

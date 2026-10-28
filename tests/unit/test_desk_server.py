@@ -1,5 +1,6 @@
 """The desk server serves the page and the two JSON routes, and refuses paths outside web/."""
 
+import asyncio
 import http.client
 import json
 import threading
@@ -50,6 +51,7 @@ class FakeDesk:
         self.started: list[str] = []
         self.pdf: Path | None = None
         self.votes: list[tuple[str, str, int]] = []
+        self.cleared_threads: list[tuple[str, str | None]] = []
 
     def shelf(self) -> dict[str, object]:
         return {"live": True, "topics": []}
@@ -64,6 +66,13 @@ class FakeDesk:
             model="glm-test",
             fell_back=False,
         )
+
+    def thread(self, run_id: str, paper_id: str | None) -> list[dict[str, object]]:
+        return [{"question": f"{run_id}/{paper_id}", "paragraphs": ["Yes."], "cites": []}]
+
+    def clear_thread(self, run_id: str, paper_id: str | None) -> int:
+        self.cleared_threads.append((run_id, paper_id))
+        return 3
 
     async def suggest(self, request: TopicSuggestRequest) -> list[str]:
         if request.name == "fail":
@@ -173,6 +182,15 @@ def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
         )
         with pytest_http_error(failed) as error:
             assert error.code == 502
+        failure = {"question": "fail", "topicId": "spatial", "runId": "run-1"}
+        assert _call(f"http://127.0.0.1:{port}", "POST", "/api/ask", failure) == (
+            502,
+            {
+                "error": "The model answered with an error. The setup check shows which model "
+                "is failing.",
+                "setup": True,
+            },
+        )
     finally:
         server.shutdown()
         server.server_close()
@@ -461,6 +479,20 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
                 ]
             },
         )
+        assert _call(base, "GET", "/api/runs/r1/ask?paper=p%201") == (
+            200,
+            {"turns": [{"question": "r1/p 1", "paragraphs": ["Yes."], "cites": []}]},
+        )
+        assert _call(base, "GET", "/api/runs/r1/ask")[1] == {
+            "turns": [{"question": "r1/None", "paragraphs": ["Yes."], "cites": []}]
+        }
+        assert _call(base, "DELETE", "/api/runs/r1/ask?paper=p1") == (
+            200,
+            {"status": "cleared", "turns": 3},
+        )
+        assert _call(base, "DELETE", "/api/runs/r1/ask")[0] == 200
+        assert backend.cleared_threads == [("r1", "p1"), ("r1", None)]
+        assert backend.deleted_runs == []
         assert _call(base, "POST", "/api/topics/robotics/run", {}) == (202, {"status": "started"})
         status, payload = _call(base, "POST", "/api/topics/paused/run", {})
         assert (status, payload) == (409, {"error": "Paused is disabled; enable it to run it."})
@@ -704,3 +736,55 @@ def test_local_desk_serves_an_old_run_and_a_library_page(tmp_path: Path) -> None
     assert page["total"] == 1
     row = page["papers"][0]  # type: ignore[index]
     assert (row["title"], row["topicName"], row["runId"]) == ("Maps", "Spatial", run.id)
+
+
+def test_local_desk_sends_earlier_turns_and_keeps_each_thread_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "research_agent.db"
+    connection = connect(database)
+    apply_migrations(connection)
+    SqliteTopicRepository(connection).add(TopicSettings(id="spatial", name="Spatial"))
+    run = SqliteRunRepository(connection).start("spatial")
+    seen: list[list[tuple[str, list[str]]]] = []
+
+    async def fake_answer(*_: object, question: str, history: object, **__: object) -> DeskReply:
+        seen.append(list(history))  # type: ignore[call-overload]
+        if question == "fail":
+            raise ModelProviderError("down", "MODEL_TIMEOUT")
+        return DeskReply(paragraphs=[f"On {question}."], provider="local", model="m")
+
+    monkeypatch.setattr("research_agent.desk.server.answer_question", fake_answer)
+    desk = LocalDesk(database, ApplicationSettings(data_directory=tmp_path))
+
+    def ask(question: str, paper: str | None = None) -> None:
+        request = AskRequest(question=question, topicId="spatial", runId=run.id, paperId=paper)
+        asyncio.run(desk.ask(request))
+
+    ask("first")
+    ask("second")
+    ask("about the paper", "p1")
+    with pytest.raises(ModelProviderError):
+        ask("fail")
+
+    assert seen == [
+        [],
+        [("first", ["On first."])],
+        [],
+        [("first", ["On first."]), ("second", ["On second."])],
+    ]
+    assert [turn["question"] for turn in desk.thread(run.id, None)] == ["first", "second"]
+    assert desk.thread(run.id, "p1") == [
+        {
+            "question": "about the paper",
+            "paragraphs": ["On about the paper."],
+            "cites": [],
+            "note": "",
+        }
+    ]
+    assert desk.clear_thread(run.id, None) == 2
+    assert desk.thread(run.id, None) == []
+    assert len(desk.thread(run.id, "p1")) == 1
+    desk.delete_run(run.id)
+    assert connection.execute("SELECT COUNT(*) FROM ask_turns").fetchone()[0] == 0
+    connection.close()
