@@ -29,11 +29,14 @@ class ResultRepository(Protocol):
         result: ClassificationResult,
         is_active: bool = True,
         raw_response: object = None,
+        prompt_key: str | None = None,
     ) -> None: ...
 
     def classifications_for(
         self, run_id: str, active_only: bool = False
     ) -> list[ClassificationResult]: ...
+
+    def screening_for(self, prompt_key: str) -> ClassificationResult | None: ...
 
     def classification_pairs(
         self, topic_id: str, limit: int = 4
@@ -77,13 +80,17 @@ class SqliteResultRepository:
         result: ClassificationResult,
         is_active: bool = True,
         raw_response: object = None,
+        prompt_key: str | None = None,
     ) -> None:
-        """Store one verdict. Shadow results are stored with ``is_active`` false and never route."""
+        """Store one verdict. Shadow results are stored with ``is_active`` false and never route.
+
+        `prompt_key` identifies the exact screening prompt, so an identical one can reuse it.
+        """
         with self._connection:
             self._connection.execute(
                 "INSERT INTO classifications (id, run_id, paper_id, classifier_name, is_active, "
-                "   latency_ms, created_at, payload_json, raw_response_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "   latency_ms, created_at, payload_json, raw_response_json, prompt_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     uuid.uuid4().hex,
                     run_id,
@@ -94,8 +101,18 @@ class SqliteResultRepository:
                     now_iso(),
                     result.model_dump_json(),
                     None if raw_response is None else json.dumps(raw_response, default=str),
+                    prompt_key,
                 ),
             )
+
+    def screening_for(self, prompt_key: str) -> ClassificationResult | None:
+        """The newest active verdict given for exactly this screening prompt, if any."""
+        row = self._connection.execute(
+            "SELECT payload_json FROM classifications WHERE prompt_key = ? AND is_active = 1 "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (prompt_key,),
+        ).fetchone()
+        return ClassificationResult.model_validate_json(row["payload_json"]) if row else None
 
     def classifications_for(
         self, run_id: str, active_only: bool = False

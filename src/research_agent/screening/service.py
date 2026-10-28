@@ -1,7 +1,9 @@
 """One semantic paper screener backed by NIM with local fallback."""
 
 import asyncio
+import hashlib
 import logging
+from typing import Protocol
 
 from pydantic import Field
 
@@ -24,6 +26,12 @@ _LOGGER = logging.getLogger(__name__)
 Provenance = dict[str, object]
 
 
+class ScreeningCache(Protocol):
+    """Earlier verdicts by prompt key; the results repository implements it."""
+
+    def screening_for(self, prompt_key: str) -> ClassificationResult | None: ...
+
+
 class ScreeningError(Exception):
     def __init__(self, message: str, category: ErrorCategory = "CLASSIFIER_ERROR") -> None:
         super().__init__(message)
@@ -43,9 +51,15 @@ class PaperScreener:
 
     name = "semantic_screening"
 
-    def __init__(self, router: ModelRouter, settings: ApplicationSettings) -> None:
+    def __init__(
+        self,
+        router: ModelRouter,
+        settings: ApplicationSettings,
+        cache: ScreeningCache | None = None,
+    ) -> None:
         self._router = router
         self._settings = settings
+        self._cache = cache
         self._semaphore = asyncio.Semaphore(settings.concurrency.analysis)
 
     async def screen_many(
@@ -79,8 +93,15 @@ class PaperScreener:
     async def _one_bounded(
         self, paper: PaperCandidate, topic: TopicSettings, examples: FeedbackExamples | None
     ) -> tuple[ClassificationResult, Provenance]:
+        prompt = render(paper, topic, self._settings.screening, examples)
+        key = self._prompt_key(prompt)
+        reused = self._cache.screening_for(key) if self._cache else None
+        if reused is not None:
+            # The same paper text, topic, votes, prompt version and models: the model would be
+            # asked the identical question, so its earlier answer stands.
+            record = reused.model_copy(update={"paper_id": canonical_id(paper)})
+            return record, {"version": PROMPT_VERSION, "reused": True, "prompt_key": key}
         async with self._semaphore:
-            prompt = render(paper, topic, self._settings.screening, examples)
             messages = [
                 ModelMessage(role="system", content=SYSTEM_PROMPT),
                 ModelMessage(role="user", content=prompt),
@@ -121,6 +142,7 @@ class PaperScreener:
                 **verdict.model_dump(),
             )
             return record, {
+                "prompt_key": key,
                 "version": PROMPT_VERSION,
                 "model_provider": result.provider,
                 "model_name": result.model,
@@ -130,3 +152,10 @@ class PaperScreener:
                     len(examples.relevant) + len(examples.not_relevant) if examples else 0
                 ),
             }
+
+    def _prompt_key(self, prompt: str) -> str:
+        models = self._settings.models
+        material = "\n".join(
+            (PROMPT_VERSION, models.nim.model, models.local.model, SYSTEM_PROMPT, prompt)
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
