@@ -2,6 +2,35 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Download or print the weekly report from the desk (complete)
+
+- **Feature/branch:** `F41-report-download`, off `main` at `ef3649c`.
+- **Status:** Complete; merged into `main`. Roadmap M6, first item.
+- **Summary:** The Markdown report existed only on disk (`report latest` printed its path). The
+  Report page now has "Download Markdown" (when a report file exists) and "Print or save as PDF".
+  `GET /api/runs/<id>/report` serves the run's report as `text/markdown` with a download name of
+  `<topic_id>_<YYYY-MM-DD>_weekly_report.md`. A print stylesheet hides the header, footer,
+  banner, buttons and status stamps, prints black on white with page margins, and keeps findings
+  from splitting across pages — so the browser's own Save as PDF produces the report alone, with no
+  PDF dependency added.
+- **Files affected:** `src/research_agent/desk/shelf.py` (`run_report`; runs carry `hasReport`),
+  `src/research_agent/desk/server.py` (`DeskBackend.report`, route; `_bytes` takes extra headers),
+  `web/js/desk.js`, `web/css/desk.css`, tests.
+- **Decisions:** The report is located the way the shelf already finds a run's period (synthesis
+  period, else run dates) and `report_filename`, so there is one source of truth. The download
+  name is safe to put in a header: topic ids are `[a-z0-9_]` and the file name is fixed-format.
+  Reports remain one per topic per period end (by design in `reports/naming.py`), so two runs
+  ending on the same day share — and the later one overwrites — that file.
+- **Verification:** `run_report` against real repositories and store (missing report, unknown run,
+  found report with its download name); route headers and body, 404 when absent. Browser on the
+  real cloud-run library: both buttons shown; the download saved
+  `embodied_spatial_intelligence_2026-10-27_weekly_report.md` (2,599 words, starting with the
+  report title); the print button called `window.print`; under print media the header, footer and
+  buttons are hidden; Chromium's print-to-PDF produced a clean 206 KB report (first page checked
+  visually). `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 573 passed,
+  3 deselected, coverage 91.83%.
+- **Next step:** Roadmap M6 — `F42`: citation export (BibTeX, RIS) per run and for saved papers.
+
 ## 2026-10-28 — Treat browser disconnects as normal in the desk server (complete)
 
 - **Feature/branch:** `FIX21-quiet-client-disconnects`, off `main` at `04a1624`.

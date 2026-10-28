@@ -153,6 +153,7 @@ def _run(
         "summary": _summary(summary, len(cards), len(errors), counted=record.summary is not None),
         "errors": [_error(error) for error in errors],
         "executiveSummary": stored_summary or _fallback_summary(summary, developments, topic.name),
+        "hasReport": store.exists(topic.id, "reports", report_filename(period_end)),
         "developments": developments,
         "directions": _findings(synthesis.emerging_directions if synthesis else []),
         "methods": _findings(synthesis.methods_gaining_attention if synthesis else []),
@@ -167,6 +168,20 @@ def _run(
             topic.id, _with_reading([_public_paper(card) for card in cards], reading), feedback
         ),
     }
+
+
+def run_report(
+    run_id: str, runs: RunRepository, results: ResultRepository, store: ArtifactStore
+) -> tuple[str, str] | None:
+    """A run's Markdown report as (download filename, text), or none when it was not written."""
+    record = runs.get(run_id)
+    if record is None:
+        return None
+    _, period_end = _period(record, results.synthesis_for(run_id))
+    name = report_filename(period_end)
+    if not store.exists(record.topic_id, "reports", name):
+        return None
+    return f"{record.topic_id}_{name}", store.read_text(record.topic_id, "reports", name)
 
 
 def _period(

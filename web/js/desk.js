@@ -606,9 +606,16 @@ function viewReport(run) {
     run.historyPeriods > 0
       ? `Compared with ${run.historyPeriods} earlier ${run.historyPeriods === 1 ? "week" : "weeks"}.`
       : "No earlier week was on file.";
+  const download = run.hasReport
+    ? `<a class="button" href="/api/runs/${encodeURIComponent(run.id)}/report" download>Download Markdown</a>`
+    : "";
   return `<p class="kicker">Weekly report</p>
     <div class="page-head"><h1>${esc(formatPeriod(run))}</h1>${stamp(run.status, false)}</div>
     <p class="quiet">${esc(history)}</p>
+    <div class="report-actions">
+      ${download}
+      <button class="button" type="button" id="print-report">Print or save as PDF</button>
+    </div>
     <div class="prose">
       ${reportSection("Executive summary", `<p class="lede">${esc(run.executiveSummary)}</p>`)}
       ${reportSection("Most important developments", findings(run, run.developments))}
@@ -1393,6 +1400,10 @@ async function createTopic(form) {
 }
 
 function onClick(event) {
+  if (event.target.id === "print-report") {
+    window.print();
+    return;
+  }
   const voteButton = event.target.closest("[data-vote]");
   if (voteButton) {
     const { topic } = current();

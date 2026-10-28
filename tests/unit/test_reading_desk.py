@@ -88,3 +88,11 @@ def test_relevance_votes_are_offered_on_papers_and_screened_rows() -> None:
     assert script.count("voteButtons(") >= 3, (
         "defined once, used on the paper page and screened rows"
     )
+
+
+def test_the_report_can_be_downloaded_and_printed() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    css = (WEB / "css" / "desk.css").read_text(encoding="utf-8")
+    assert '/report" download>Download Markdown' in script
+    assert "window.print()" in script
+    assert "@media print" in css and "@page" in css
