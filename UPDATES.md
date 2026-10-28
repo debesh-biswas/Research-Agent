@@ -2,6 +2,31 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Complete the paper card: setup, related work, open the PDF (complete)
+
+- **Feature/branch:** `F38-complete-paper-card`, off `main` at `3d62708`.
+- **Status:** Complete; merged into `main`. Roadmap M5, second item.
+- **Summary:** Each analysis stores `experimental_setup` and `related_work`, and each acquired
+  paper has a PDF in the library, but the desk showed neither. The paper page now has
+  "Experimental setup" (after Method) and "Related work" (after Limitations) sections, and an
+  "Open PDF" link beside DOI/arXiv when a PDF is stored. `GET /api/papers/<id>/pdf` serves it as
+  `application/pdf`; the shelf card carries `setup`, `relatedWork` and `hasPdf`.
+- **Files affected:** `src/research_agent/desk/shelf.py`, `src/research_agent/desk/server.py`
+  (`DeskBackend.pdf_path`, `LocalDesk.pdf_path`, route), `web/js/desk.js`,
+  `tests/unit/test_desk_server.py`, `tests/unit/test_reading_desk.py`.
+- **Decisions:** The route serves a file only when the library recorded it as that paper's PDF
+  *and* it resolves inside `data_directory`, ends in `.pdf` and exists — so a stale or tampered
+  `paper_files` row cannot be used to read another file; every other case is a 404. The route is
+  a plain GET behind FIX15's Host check (opening a link in a new tab sends no `Origin`).
+- **Verification:** `LocalDesk.pdf_path` against a real database: a PDF inside the library is
+  served; one outside the library, a non-`.pdf` file and a missing file all return none, as does
+  an unknown paper. Route test: 200 with `application/pdf` and the file's bytes, 404 otherwise.
+  Browser on the real cloud-run library: both papers show Experimental setup and Related work;
+  Open PDF returned the stored files (2.2 MB and 12.4 MB, `application/pdf`, starting `%PDF-`);
+  no page errors. `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 559
+  passed, 3 deselected, coverage 91.66%.
+- **Next step:** Roadmap M5 — `F39`: reading state per paper (read/unread, saved, notes).
+
 ## 2026-10-28 — Keep the desk header on one line with long topic names (complete)
 
 - **Feature/branch:** `FIX20-header-one-line`, off `main` at `3a4a2c7`.

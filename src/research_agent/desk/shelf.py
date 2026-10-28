@@ -210,6 +210,7 @@ def _paper(
         "relevance": verdict.relevance if verdict else "medium",
         "model": analysis.model_name if analysis else None,
         "screening": _screening(verdict, decision),
+        "hasPdf": "pdf" in papers.files_for(paper_id),
     }
 
 
@@ -238,17 +239,20 @@ def _public_paper(card: dict[str, object]) -> dict[str, object]:
             analysis.main_contribution if analysis else paper.abstract, "Not analysed."
         ),
         "method": analysis.method if analysis else "",
+        "setup": (analysis.experimental_setup or "") if analysis else "",
         "datasets": list(analysis.datasets) if analysis else [],
         "benchmarks": list(analysis.benchmarks) if analysis else [],
         "results": list(analysis.main_results) if analysis else [],
         "strengths": list(analysis.strengths) if analysis else [],
         "limitations": list(analysis.limitations) if analysis else [],
+        "relatedWork": list(analysis.related_work) if analysis else [],
         "claims": [
             {"text": claim.text, "section": claim.source_section, "page": claim.page}
             for claim in (analysis.key_claims if analysis else [])
         ],
         "relevance": analysis.topic_relevance if analysis else "",
         "screening": card["screening"],
+        "hasPdf": card["hasPdf"],
     }
 
 

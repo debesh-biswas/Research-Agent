@@ -97,6 +97,8 @@ class DeskBackend(Protocol):
 
     def screened(self, run_id: str) -> list[dict[str, object]]: ...
 
+    def pdf_path(self, paper_id: str) -> Path | None: ...
+
 
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
@@ -187,6 +189,21 @@ class LocalDesk:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
 
+    def pdf_path(self, paper_id: str) -> Path | None:
+        """The stored PDF for a paper, only if it really is a PDF inside the library folder."""
+        connection = connect(self._database)
+        try:
+            stored = SqlitePaperRepository(connection).files_for(paper_id).get("pdf")
+        finally:
+            connection.close()
+        if stored is None:
+            return None
+        path = Path(stored).resolve()
+        library = self._settings.data_directory.resolve()
+        if path.suffix.lower() != ".pdf" or not path.is_relative_to(library) or not path.is_file():
+            return None
+        return path
+
     def screened(self, run_id: str) -> list[dict[str, object]]:
         connection = connect(self._database)
         try:
@@ -262,6 +279,13 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             segments = [unquote(segment) for segment in path.split("/") if segment]
             if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "screened":
                 self._json(200, {"papers": backend.screened(segments[2])})
+                return
+            if len(segments) == 4 and segments[:2] == ["api", "papers"] and segments[3] == "pdf":
+                pdf = backend.pdf_path(segments[2])
+                if pdf is None:
+                    self._json(404, {"error": "No stored PDF for this paper."})
+                else:
+                    self._bytes(200, "application/pdf", pdf.read_bytes())
                 return
             if path == "/api/health":
                 checks = asyncio.run(backend.health())
