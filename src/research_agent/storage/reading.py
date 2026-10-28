@@ -29,6 +29,8 @@ class ReadingRepository(Protocol):
 
     def save(self, paper_id: str, state: ReadingState) -> None: ...
 
+    def saved_ids(self) -> list[str]: ...
+
 
 class SqliteReadingRepository:
     """SQLite-backed :class:`ReadingRepository`."""
@@ -53,6 +55,13 @@ class SqliteReadingRepository:
             )
             for row in rows
         }
+
+    def saved_ids(self) -> list[str]:
+        """Every saved paper, most recently changed first."""
+        rows = self._connection.execute(
+            "SELECT paper_id FROM reading_state WHERE saved = 1 ORDER BY updated_at DESC, paper_id"
+        ).fetchall()
+        return [row["paper_id"] for row in rows]
 
     def save(self, paper_id: str, state: ReadingState) -> None:
         with self._connection:

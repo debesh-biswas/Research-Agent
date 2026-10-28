@@ -96,3 +96,9 @@ def test_the_report_can_be_downloaded_and_printed() -> None:
     assert '/report" download>Download Markdown' in script
     assert "window.print()" in script
     assert "@media print" in css and "@page" in css
+
+
+def test_papers_page_exports_citations() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert "/citations`" in script and '"/api/saved/citations"' in script
+    assert "?format=${format}" in script

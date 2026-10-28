@@ -2,6 +2,40 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Citation export: BibTeX and RIS (complete)
+
+- **Feature/branch:** `F42-citation-export`, off `main` at `d4973e0`.
+- **Status:** Complete; merged into `main`. Roadmap M6, second item.
+- **Summary:** Papers could not leave the desk for a reference manager. The Papers page now offers
+  "Export these papers for Zotero or Mendeley: BibTeX · RIS" (the run's kept papers) and, when any
+  paper is saved, "Your saved papers: BibTeX · RIS" (every saved paper in the library).
+  `research_agent/exports/citations.py` holds two pure functions: `to_bibtex` (an `@article` when
+  the paper has a venue, otherwise `@misc` with `eprint`/`archiveprefix` for arXiv; title in double
+  braces to keep its capitalisation; special characters escaped; deterministic ASCII keys
+  `<surname><year><first long word>` with a/b/… suffixes on collisions) and `to_ris` (`JOUR` or
+  `GEN`, one `AU` per author, `PY`/`DA`, `JO`, `DO`, `UR`, `ER`).
+- **Files affected:** `src/research_agent/exports/` (new package), `src/research_agent/storage/reading.py`
+  (`saved_ids`), `src/research_agent/desk/server.py` (`DeskBackend.citations`;
+  `GET /api/runs/<id>/citations?format=bib|ris` and `GET /api/saved/citations?format=…`, with
+  BibTeX/RIS content types and download names), `web/js/desk.js`, `web/css/desk.css`, tests in
+  `tests/unit/test_exports_citations.py` (new), `test_desk_server.py`, `test_storage_reading.py`,
+  `test_reading_desk.py`.
+- **Decisions:** No new dependency: the formats are simple enough to write by hand, and the tests
+  pin the exact output. The saved-papers link shows no count, because the shelf holds only recent
+  runs while the export covers every saved paper.
+- **Verification:** Exact BibTeX for an article and an arXiv preprint; ASCII-folded, unique keys
+  for colliding authors; `& % { } _` escaped and braces balanced; RIS field order and terminators
+  with a source-URL fallback; `saved_ids`; `LocalDesk.citations` exports only kept papers for a run
+  and only saved papers otherwise; route formats, headers, 400 for an unknown format, 404 for an
+  unknown run. Browser on a copy of the real cloud-run library: all four links downloaded files
+  named `embodied_spatial_intelligence_2026-10-27_papers.{bib,ris}` and `saved_papers.{bib,ris}`,
+  which independent parsers (`bibtexparser` 1.4.3, `rispy` 0.9.0, installed only in the session
+  scratchpad) read back completely — entry types, keys, arXiv ids, and all 14 and 15 authors.
+  `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 579 passed,
+  3 deselected, coverage 92.03%.
+- **Next step:** Roadmap M6 — `F43`: library backup and restore (`research-agent backup` /
+  `restore`: the database plus artifacts).
+
 ## 2026-10-28 — Download or print the weekly report from the desk (complete)
 
 - **Feature/branch:** `F41-report-download`, off `main` at `ef3649c`.
