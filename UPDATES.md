@@ -2,6 +2,54 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Packaging and licence review (complete)
+
+- **Feature/branch:** `F56-packaging-and-licences`, off `main` at `6b0768a`.
+- **Status:** Complete; merged into `main`. Roadmap M12. F34 (settings screen) still needs a
+  decision from the user and was not built.
+- **Summary:**
+  - **Desk page in the wheel.** The wheel now ships the desk's page, fonts and favicon as
+    `research_agent/web/`, through a hatch `force-include`.
+  - **Found from any folder.** `research-agent desk` finds them next to the installed package, or
+    beside the source in a checkout (`cli._web_root`), never in the current directory. Before
+    this, the desk worked only when started from the repository root, and an installed copy had
+    no page at all.
+  - **LICENSE added.** It holds the MIT licence `pyproject.toml` already declared, credited to its
+    author, and is now in the wheel's `dist-info/licenses/`.
+  - **README.** It explains that commands read `config/` from the current folder, and how to
+    install the command with `uv tool install .`. A new "Licences" section was added.
+- **Licence review:**
+  - Direct dependencies are MIT (Docling, LangGraph, Pydantic, pydantic-settings, PyYAML,
+    RapidFuzz, Typer) or BSD-3-Clause (HTTPX). All are compatible with MIT.
+  - A scan of all 155 installed distributions found nothing in the GPL family. certifi, orjson,
+    pathspec and tqdm are MPL-2.0, which is file-level copyleft and fine when used unmodified.
+  - The fonts are under the SIL OFL 1.1, with licences shipped (F52).
+  - The vendored ponytail skill is MIT, with its licence in `.claude/skills/ponytail/`.
+  - Docling's runtime-downloaded models carry their publishers' licences. The README notes this.
+- **Files affected:** `pyproject.toml`, `src/research_agent/cli.py`, `LICENSE`, `README.md`,
+  `tests/unit/test_reading_desk.py`.
+- **Decisions:**
+  - Defaults stay relative to the current folder (`config/…`, `data`). Moving them to a user
+    config directory would change where existing libraries live, for no gain to a single user who
+    runs from one folder.
+  - No installer script: `uv sync` (checkout) and `uv tool install .` (command) already cover it.
+- **Verification:**
+  - `uv build --wheel`: the wheel has all 16 `research_agent/web/` files and the licence.
+  - The extracted wheel, imported with `-I` from an unrelated folder (with
+    `cli.__file__` inside the extracted wheel), served `/`, a woff2, the favicon and
+    `/api/shelf`, all with HTTP 200 and the right types.
+  - A new test confirms `_web_root()` from a foreign working directory, and that the wheel
+    includes `web/`.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 630 passed,
+    3 deselected, coverage 92.65%.
+- **Known issues:** `uv tool install .` itself was not run here: it downloads Docling's full torch
+  stack. The wheel it would install is the one verified above.
+- **Next step:** The roadmap is built through M12. Left for the user:
+  - decide whether to build F34, the settings screen;
+  - decide whether to build F50, undo after clearing (backups cover recovery today);
+  - run the deferred timing run on their Mac;
+  - add keywords to their real topics, which the cloud run showed matter for screening.
+
 ## 2026-10-28 — Retry failed full-text reads on the next run (complete)
 
 - **Feature/branch:** `F55-retry-failed-full-text`, off `main` at `d6dd8de`.

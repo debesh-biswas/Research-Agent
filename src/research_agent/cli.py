@@ -131,6 +131,18 @@ def validate_config(
     )
 
 
+def _web_root() -> Path | None:
+    """The desk's page: inside an installed package, or beside the source in a checkout.
+
+    Never the current directory, so `research-agent desk` works from any folder.
+    """
+    package = Path(__file__).resolve().parent
+    for candidate in (package / "web", package.parents[1] / "web"):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
 def _open_connection(settings_path: Path, topics_path: Path) -> sqlite3.Connection:
     configuration = ApplicationSettings(**_load_yaml_mapping(settings_path))
     # Every command that touches the database gets structured, redacted logging. Configuring it
@@ -1323,9 +1335,9 @@ def serve_desk(
     topics: TopicsOption = Path("config/topics.yaml"),
 ) -> None:
     """Serve the reading desk on this machine. It reads the local library and can ask NIM."""
-    web_root = Path("web")
-    if not (web_root / "index.html").is_file():
-        typer.echo("The reading desk files are not in ./web.", err=True)
+    web_root = _web_root()
+    if web_root is None:
+        typer.echo("The reading desk files are missing from this installation.", err=True)
         raise typer.Exit(code=1)
     try:
         application = ApplicationSettings(**_load_yaml_mapping(settings))
