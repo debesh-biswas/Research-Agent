@@ -44,6 +44,12 @@ from research_agent.models.base import (
 )
 from research_agent.models.router import build_router
 from research_agent.observability.logging import configure_logging
+from research_agent.operations.backup import (
+    BackupError,
+    create_backup,
+    library_exists,
+    restore_backup,
+)
 from research_agent.operations.health import HealthCheck, run_checks
 from research_agent.operations.locks import RunLocked, run_lock
 from research_agent.operations.runner import RunOutcome, close_orphaned_runs, execute_run
@@ -521,6 +527,56 @@ async def _model_check(
         return await router.generate(
             cast(Capability, capability), [ModelMessage(role="user", content=prompt)]
         )
+
+
+@app.command("backup")
+def backup(
+    output: Annotated[
+        Path | None, typer.Option(help="Where to write the backup; defaults to the current folder.")
+    ] = None,
+    settings: SettingsOption = Path("config/settings.yaml"),
+) -> None:
+    """Save the whole library (database, PDFs, parsed text, reports) to one .zip file."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        target = output or Path(f"research-agent-backup-{stamp}.zip")
+        written = create_backup(application.data_directory, target)
+    except (ConfigurationError, ValidationError, BackupError, OSError) as error:
+        typer.echo(f"Unable to back up: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    size = written.stat().st_size / 1024**2
+    typer.echo(f"Backed up the library to {written} ({size:.1f} MB).")
+
+
+@app.command("restore")
+def restore(
+    archive: Annotated[Path, typer.Argument(help="A backup made by `research-agent backup`.")],
+    yes: Annotated[bool, typer.Option("--yes", help="Replace the current library.")] = False,
+    settings: SettingsOption = Path("config/settings.yaml"),
+) -> None:
+    """Restore a backup. An existing library is moved aside, never deleted."""
+    try:
+        application = ApplicationSettings(**_load_yaml_mapping(settings))
+    except (ConfigurationError, ValidationError) as error:
+        typer.echo(f"Unable to restore: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    data_directory = application.data_directory
+    if library_exists(data_directory) and not yes:
+        typer.echo(
+            f"A library already exists at {data_directory}. Re-run with --yes to replace it; "
+            "the current one will be moved aside, not deleted.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    try:
+        moved = restore_backup(archive, data_directory)
+    except (BackupError, OSError) as error:
+        typer.echo(f"Unable to restore: {error}", err=True)
+        raise typer.Exit(code=1) from error
+    typer.echo(f"Restored {archive} into {data_directory}.")
+    if moved is not None:
+        typer.echo(f"The previous library was moved to {moved}.")
 
 
 HEALTH_TIMEOUT_SECONDS = 30.0
