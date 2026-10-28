@@ -116,3 +116,9 @@ def test_library_lists_every_kept_paper_and_opens_older_runs() -> None:
     assert "/api/library?" in script and "/api/runs/${encodeURIComponent(runId)}`" in script
     assert "keepOlderRuns()" in script and "data-library-page" in script
     assert "brand-action" not in script, "New topic lives on the Topics and welcome pages"
+
+
+def test_library_search_is_debounced_and_keeps_the_caret() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    assert 'id="library-search"' in script and 'params.set("q"' in script
+    assert "librarySearchTimer = setTimeout" in script and "setSelectionRange" in script

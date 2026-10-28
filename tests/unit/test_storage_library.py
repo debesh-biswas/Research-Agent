@@ -1,10 +1,12 @@
 import sqlite3
 
 from research_agent.config import TopicSettings
+from research_agent.domain.analysis import PaperAnalysis
 from research_agent.domain.selection import SelectionDecision, SelectionPlan
 from research_agent.storage.library import SqliteLibraryRepository
 from research_agent.storage.papers import SqlitePaperRepository
 from research_agent.storage.reading import ReadingState, SqliteReadingRepository
+from research_agent.storage.results import SqliteResultRepository
 from research_agent.storage.runs import SqliteRunRepository
 from research_agent.storage.selections import SqliteSelectionRepository
 from research_agent.storage.topics import SqliteTopicRepository
@@ -52,3 +54,43 @@ def test_each_kept_paper_appears_once_under_its_newest_run(connection: sqlite3.C
     _, rest = library.page(offset=2, limit=2)
     assert first_total == 3 and len(first) == 2 and len(rest) == 1
     assert {e.paper_id for e in first + rest} == {a, b, c}
+
+
+def test_search_needs_every_word_across_text_authors_and_analyses(
+    connection: sqlite3.Connection,
+) -> None:
+    papers = SqlitePaperRepository(connection)
+    maps = papers.upsert(
+        candidate(title="Topological Maps", doi="10.1/a").model_copy(
+            update={"authors": ["José Núñez"], "venue": "CVPR", "abstract": "Rooms at 100% scale."}
+        )
+    )
+    other = papers.upsert(candidate(title="Grasping in Clutter", doi="10.1/b"))
+    run_id = _run_keeping(connection, TOPIC_ID, [maps, other], [])
+    SqliteResultRepository(connection).save_analysis(
+        run_id,
+        PaperAnalysis(
+            paper_id=other,
+            research_problem="p",
+            main_contribution="c",
+            method="m",
+            datasets=["ScanNet"],
+            topic_relevance="r",
+            model_provider="local",
+            model_name="test",
+            prompt_version="paper_analysis.v1",
+        ),
+    )
+    library = SqliteLibraryRepository(connection)
+
+    def found(search: str) -> set[str]:
+        return {entry.paper_id for entry in library.page(search=search)[1]}
+
+    assert found("topological") == {maps}, "title, any case"
+    assert found("josé") == {maps} and found("Núñez") == {maps}, "authors, decoded"
+    assert found("cvpr") == {maps} and found("rooms") == {maps}, "venue and abstract"
+    assert found("scannet") == {other}, "a dataset named only in the analysis"
+    assert found("maps cvpr") == {maps} and found("maps scannet") == set(), "every word"
+    assert found("100%") == {maps} and found("10_%") == set(), "wildcards are literal"
+    assert found("   ") == {maps, other}, "blank search matches everything"
+    assert library.page(search="maps")[0] == 1
