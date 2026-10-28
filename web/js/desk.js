@@ -349,7 +349,9 @@ function errorBlock(run) {
         `<li><strong>${esc(error.category)}</strong> ${esc(error.message)}</li>`,
     )
     .join("");
-  return `<details class="errors"><summary>${run.errors.length} ${noun}. The week still finished.</summary><ul class="error-list">${items}</ul></details>`;
+  // A re-run repeats what failed and reuses what worked (screening, full-text reads).
+  const hint = `<p class="quiet">Run the topic again to retry what failed. Screening and full-text reads that already worked are reused, not redone.</p>`;
+  return `<details class="errors"><summary>${run.errors.length} ${noun}. The week still finished.</summary><ul class="error-list">${items}</ul>${hint}</details>`;
 }
 
 function viewWeek(run) {

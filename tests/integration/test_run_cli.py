@@ -278,3 +278,42 @@ def test_a_second_run_reuses_screening_for_unchanged_papers(
         (asked_first, 0),
         (asked_first, asked_first),
     ]
+
+
+def test_a_paper_read_from_its_abstract_after_a_failed_download_is_retried_next_run(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    down = invoke(
+        monkeypatch, settings_path, topics_path, "run", TOPIC_ID, transport=handler(pdf=False)
+    )
+    assert down.exit_code == 0, down.output
+    reads = (
+        "SELECT a.paper_id, json_extract(a.payload_json, '$.abstract_only') FROM paper_analyses a "
+        "JOIN runs r ON r.id = a.run_id ORDER BY r.started_at, a.paper_id"
+    )
+    first = rows(tmp_path, reads)
+    assert first and all(flag == 1 for _, flag in first)
+
+    back = invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID)
+
+    assert back.exit_code == 0, back.output
+    upgraded = rows(tmp_path, reads)[len(first) :]
+    assert [(paper, flag) for paper, flag in upgraded] == [(paper, 0) for paper, _ in first]
+    kept = rows(
+        tmp_path,
+        "SELECT paper_id, COUNT(DISTINCT run_id) FROM selections WHERE selected = 1 "
+        "GROUP BY paper_id ORDER BY paper_id",
+    )
+    assert kept == [(paper, 2) for paper, _ in first], "both runs kept them"
+
+
+def test_a_paper_already_read_in_full_is_not_redone(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    assert invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID).exit_code == 0
+    once = rows(tmp_path, "SELECT COUNT(*) FROM paper_analyses")
+    assert invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID).exit_code == 0
+
+    assert rows(tmp_path, "SELECT COUNT(*) FROM paper_analyses") == once
+    reasons = rows(tmp_path, "SELECT DISTINCT reason FROM selections WHERE selected = 0")
+    assert reasons == [("already_analyzed",)]

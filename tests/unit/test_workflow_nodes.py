@@ -2,11 +2,16 @@
 
 import asyncio
 from datetime import date
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from research_agent.config import ApplicationSettings, QuerySettings, TopicSettings
 from research_agent.discovery.aggregator import DiscoveryResult
+from research_agent.domain.papers import SourceReference
 from research_agent.workflow import nodes
+from research_agent.workflow.nodes import _full_text_worth_retrying
 from research_agent.workflow.state import ResearchState
 from tests.unit.conftest import TOPIC_ID, candidate
 
@@ -82,3 +87,42 @@ def test_discovery_deduplicates_across_queries() -> None:
 
     assert len(discovery.queries) == 3
     assert len(update["candidates"]) == 1, "the same paper found twice is one candidate"
+
+
+class _Papers:
+    def __init__(self, files: dict[str, str]) -> None:
+        self.files = files
+
+    def files_for(self, paper_id: str) -> dict[str, str]:
+        return self.files
+
+
+class _Results:
+    def __init__(self, abstract_only: bool | None) -> None:
+        self.abstract_only = abstract_only
+
+    def analysis_for(self, paper_id: str) -> object:
+        if self.abstract_only is None:
+            return None
+        return SimpleNamespace(abstract_only=self.abstract_only)
+
+
+@pytest.mark.parametrize(
+    ("pdf_url", "files", "abstract_only", "retry"),
+    [
+        ("https://example.org/a.pdf", {}, True, True),
+        ("https://example.org/a.pdf", {"pdf": "a.pdf"}, True, True),  # stored, parse failed
+        (None, {}, True, False),  # no open-access PDF: nothing to retry
+        ("https://example.org/a.pdf", {"parsed": "a.md"}, True, False),
+        ("https://example.org/a.pdf", {}, False, False),  # read in full already
+        ("https://example.org/a.pdf", {}, None, False),
+    ],
+)
+def test_only_a_failed_full_text_read_is_retried(
+    pdf_url: str | None, files: dict[str, str], abstract_only: bool | None, retry: bool
+) -> None:
+    services = SimpleNamespace(papers=_Papers(files), results=_Results(abstract_only))
+    paper = candidate(sources=[SourceReference(source="openalex", source_id="W1", pdf_url=pdf_url)])
+
+    assert _full_text_worth_retrying(services, "p", paper) is retry  # type: ignore[arg-type]
+    assert _full_text_worth_retrying(services, "p", None) is False  # type: ignore[arg-type]

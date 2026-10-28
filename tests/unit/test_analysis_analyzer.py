@@ -231,6 +231,28 @@ def test_a_stored_analysis_short_circuits_unless_forced(
     assert len(sent) == 2
 
 
+def test_an_abstract_only_analysis_is_redone_once_full_text_arrives(
+    connection: sqlite3.Connection, tmp_path: Path, run_id: str
+) -> None:
+    paper = stored(connection)
+    handler, sent = replying()
+    analysis = analyzer(connection, tmp_path, handler)
+    paper_id = paper.canonical_id or ""
+    asyncio.run(analysis.analyze(paper, None, topic(), run_id))
+    results = SqliteResultRepository(connection)
+    first = results.analysis_for(paper_id)
+    assert first is not None and first.abstract_only
+
+    still = asyncio.run(analysis.analyze(paper, None, topic(), run_id))
+    upgraded = asyncio.run(analysis.analyze(paper, parsed(paper_id), topic(), run_id))
+    settled = asyncio.run(analysis.analyze(paper, parsed(paper_id), topic(), run_id))
+
+    assert (still.status, upgraded.status, settled.status) == ("cached", "analyzed", "cached")
+    latest = results.analysis_for(paper_id)
+    assert latest is not None and not latest.abstract_only
+    assert len(sent) == 2
+
+
 def test_a_successful_analysis_marks_the_paper_analyzed(
     connection: sqlite3.Connection, tmp_path: Path, run_id: str
 ) -> None:
