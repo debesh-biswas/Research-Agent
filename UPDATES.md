@@ -2,6 +2,30 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Keep the desk header on one line with long topic names (complete)
+
+- **Feature/branch:** `FIX20-header-one-line`, off `main` at `3a4a2c7`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** Found while verifying F37 on the real cloud-run library: with a long topic name
+  ("Embodied Spatial Intelligence") and the run switcher shown, the header nav wrapped "Topics"
+  onto a second line at 1280 px (header 116 px tall instead of 78) — a regression from F28's extra
+  nav item that short test names hid. The switchers now cap at 11rem with an ellipsis (the full
+  name shows when the select opens), and the header's stacked layout starts below 1080 px instead
+  of 860 px; the page body keeps its 860 px breakpoint.
+- **Files affected:** `web/css/desk.css` only (the three header rules moved, not copied, into a
+  new `max-width: 1080px` block).
+- **Decisions:** Measured the candidates in Chromium across widths before choosing. `flex-wrap:
+  nowrap` on the nav was rejected: it kept one row by sliding the links under the switchers (up to
+  193 px of overlap at 870–1000 px). A narrower switcher alone fixed ≥1100 px but still wrapped
+  between 860 and 1100 px.
+- **Verification:** Chromium on the real library at 1440, 1280, 1100, 1080, 1000, 900 and 390 px:
+  one nav row with no nav/switcher overlap at every width (stacked header at ≤1080 px; two nav
+  rows only at 390 px, as before), no horizontal page overflow; screenshots checked at 1280 and
+  1000 px. `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 557 passed,
+  3 deselected, coverage 91.62%.
+- **Next step:** Roadmap M5 — `F38`: show `experimental_setup` and `related_work` on paper cards
+  and open the stored PDF from the desk.
+
 ## 2026-10-28 — Show why each paper was kept or dropped (complete)
 
 - **Feature/branch:** `F37-why-papers-were-kept`, off `main` at `2832c61`.
