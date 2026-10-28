@@ -152,6 +152,8 @@ def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
     web = tmp_path / "web"
     web.mkdir()
     (web / "index.html").write_text("<p>desk</p>", encoding="utf-8")
+    (web / "fonts").mkdir()
+    (web / "fonts" / "a.woff2").write_bytes(b"wOF2")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(FakeDesk(), web.resolve()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -161,6 +163,8 @@ def test_the_server_serves_the_shelf_the_page_and_ask(tmp_path: Path) -> None:
             assert json.load(response) == {"live": True, "topics": []}
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as response:
             assert response.read() == b"<p>desk</p>"
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/fonts/a.woff2") as response:
+            assert (response.headers["Content-Type"], response.read()) == ("font/woff2", b"wOF2")
         body = json.dumps(
             {"question": "What changed?", "topicId": "spatial", "runId": "run-1"}
         ).encode()
