@@ -72,7 +72,7 @@ def build_services(
             concurrency=application.concurrency.discovery,
             settings=application,
         ),
-        screener=PaperScreener(router, application),
+        screener=PaperScreener(router, application, cache=results),
         acquirer=PdfDownloader(
             downloading,
             store,

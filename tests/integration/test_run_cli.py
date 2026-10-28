@@ -244,3 +244,33 @@ def test_an_unsupported_backend_exits_non_zero(
 
     assert result.exit_code == 1
     assert "unsupported scheduler backend" in result.output
+
+
+def test_a_second_run_reuses_screening_for_unchanged_papers(
+    monkeypatch: pytest.MonkeyPatch, settings_path: Path, topics_path: Path, tmp_path: Path
+) -> None:
+    respond = handler()
+    screenings: list[str] = []
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        if b"research-paper screener" in request.content:
+            screenings.append(str(request.url))
+        return respond(request)
+
+    first = invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID, transport=counting)
+    asked_first = len(screenings)
+    second = invoke(monkeypatch, settings_path, topics_path, "run", TOPIC_ID, transport=counting)
+
+    assert first.exit_code == 0 and second.exit_code == 0, second.output
+    assert asked_first > 0
+    assert len(screenings) == asked_first, "the second run asked the model nothing new"
+    per_run = rows(
+        tmp_path,
+        "SELECT c.run_id, COUNT(*), SUM(json_extract(c.raw_response_json, '$.reused') IS 1) "
+        "FROM classifications c JOIN runs r ON r.id = c.run_id "
+        "GROUP BY c.run_id ORDER BY MIN(r.started_at)",
+    )
+    assert [(count, reused) for _, count, reused in per_run] == [
+        (asked_first, 0),
+        (asked_first, asked_first),
+    ]

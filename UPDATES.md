@@ -2,6 +2,57 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Reuse screening for unchanged papers (complete)
+
+- **Feature/branch:** `F53-reuse-screening`, off `main` at `1da502e`.
+- **Status:** Complete; merged into `main`. Roadmap M11, first item.
+- **Summary:** Screening now reuses an earlier verdict when the model would be asked exactly the
+  same question. Before, every run screened every candidate again, including the days a weekly
+  10-day lookback shares with the previous week and every paper in a re-run after a failure.
+  - Each screening is keyed by a SHA-256 of: the prompt version, the configured NIM and local
+    model names, the system prompt, and the rendered prompt. The rendered prompt holds the topic
+    name and keywords, the reader's vote examples, the paper title and the abstract.
+  - On a match, the stored active verdict is copied into this run, with provenance
+    `{"reused": true, "prompt_key": …}`, and no model is called.
+  - Any change to a paper's text, the topic's keywords, the votes, the prompt version or a model
+    name asks the model again.
+  - The run counts gain `screening_reused`, so the manifest shows how many were reused.
+- **Files affected:**
+  - `src/research_agent/storage/database.py`: migration adding `classifications.prompt_key`
+    plus an index.
+  - `src/research_agent/storage/results.py`: `save_classification(..., prompt_key=)` and
+    `screening_for`.
+  - `src/research_agent/screening/service.py`: `ScreeningCache` protocol, `cache=`,
+    `_prompt_key`.
+  - `src/research_agent/workflow/nodes.py`: classify stores the key and counts reuse.
+  - `src/research_agent/operations/wiring.py`: passes the results repository as the cache.
+  - Tests in `tests/unit/test_screening_service.py` and `tests/integration/test_run_cli.py`.
+- **Decisions:**
+  - The key is the exact prompt, not a hand-picked list of "topic definition" fields. That keeps
+    it correct whenever the prompt changes: anything the model sees is in the key, and nothing it
+    does not see is.
+  - Failed screenings store no row, so they are always retried.
+  - Shadow (`is_active = 0`) rows are never reused.
+  - Rows from before this migration have no key, so the first run after upgrading screens as
+    before.
+  - Switching between NIM and local without renaming a model reuses verdicts. To force a fresh
+    screen, change the model name or the keywords.
+  - The standalone `classify` CLI stage does not persist, so it is left without a cache.
+- **Verification:**
+  - Unit tests with the real SQLite repository:
+    - the second identical screen made no model call and was marked reused, with the same key;
+    - new keywords, new vote examples and a different local model each called the model again;
+    - shadow rows and rows without a key never match.
+  - New CLI integration test: two `research-agent run` calls over the mocked endpoints. The
+    second run sent 0 screening requests, and its classifications were all marked reused.
+    Disabling the cache in the wiring makes it fail (4 calls against 2).
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 617 passed,
+    3 deselected, coverage 92.61%.
+- **Known issues:** None found.
+- **Next step:** Roadmap M11. `F54`: a usage view showing model calls, tokens and time per run
+  from the stored provenance. Check first which token counts are recorded (`ModelResult` has
+  `prompt_tokens` and `completion_tokens`), and whether they are persisted anywhere.
+
 ## 2026-10-28 — Offline fonts, favicon, period labels, accessibility (complete)
 
 - **Feature/branch:** `F52-offline-fonts-and-polish`, off `main` at `7514bef`.

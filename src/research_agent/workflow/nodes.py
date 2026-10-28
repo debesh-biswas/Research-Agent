@@ -139,7 +139,13 @@ def classify(services: WorkflowServices) -> Node:
             candidate = by_id.get(result.paper_id)
             if candidate is not None:
                 services.papers.upsert(candidate)
-            services.results.save_classification(run_id, result, raw_response=provenance)
+            key = provenance.get("prompt_key")
+            services.results.save_classification(
+                run_id,
+                result,
+                raw_response=provenance,
+                prompt_key=key if isinstance(key, str) else None,
+            )
         errors = list(state.errors)
         for failure in failures:
             errors.append(
@@ -151,7 +157,8 @@ def classify(services: WorkflowServices) -> Node:
                     paper_id=failure.paper_id,
                 )
             )
-        counts = {**state.counts, "classified": len(outcome)}
+        reused = sum(1 for _, provenance in outcome if provenance.get("reused"))
+        counts = {**state.counts, "classified": len(outcome), "screening_reused": reused}
         return {
             "classifications": [result for result, _ in outcome],
             "counts": counts,
