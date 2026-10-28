@@ -19,7 +19,7 @@ from pydantic import ConfigDict, Field, ValidationError
 
 from research_agent.config import ApplicationSettings, StrictModel, TopicSettings
 from research_agent.desk.ask import DeskLookupError, DeskReply, answer_question
-from research_agent.desk.shelf import build_shelf, screened_papers
+from research_agent.desk.shelf import build_shelf, run_report, screened_papers
 from research_agent.models.base import ModelProviderError
 from research_agent.models.router import build_router
 from research_agent.operations.health import HealthCheck, run_checks
@@ -123,6 +123,8 @@ class DeskBackend(Protocol):
 
     def set_vote(self, topic_id: str, paper_id: str, vote: Literal[-1, 0, 1]) -> None: ...
 
+    def report(self, run_id: str) -> tuple[str, str] | None: ...
+
 
 class LocalDesk:
     """Read the SQLite library and answer with the configured model router."""
@@ -214,6 +216,18 @@ class LocalDesk:
         if running:
             raise RunLocked(f"{topic.name} is already running.")
         self._start_run(topic)
+
+    def report(self, run_id: str) -> tuple[str, str] | None:
+        connection = connect(self._database)
+        try:
+            return run_report(
+                run_id,
+                SqliteRunRepository(connection),
+                SqliteResultRepository(connection),
+                self._store,
+            )
+        finally:
+            connection.close()
 
     def set_vote(self, topic_id: str, paper_id: str, vote: Literal[-1, 0, 1]) -> None:
         """Record or clear the reader's relevance vote; future runs screen with it."""
@@ -336,6 +350,19 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             segments = [unquote(segment) for segment in path.split("/") if segment]
             if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "screened":
                 self._json(200, {"papers": backend.screened(segments[2])})
+                return
+            if len(segments) == 4 and segments[:2] == ["api", "runs"] and segments[3] == "report":
+                report = backend.report(segments[2])
+                if report is None:
+                    self._json(404, {"error": "No report was written for this run."})
+                else:
+                    name, text = report
+                    self._bytes(
+                        200,
+                        "text/markdown; charset=utf-8",
+                        text.encode("utf-8"),
+                        {"Content-Disposition": f'attachment; filename="{name}"'},
+                    )
                 return
             if len(segments) == 4 and segments[:2] == ["api", "papers"] and segments[3] == "pdf":
                 pdf = backend.pdf_path(segments[2])
@@ -567,9 +594,17 @@ def _handler(backend: DeskBackend, web_root: Path) -> type[BaseHTTPRequestHandle
             body = json.dumps(payload).encode("utf-8")
             self._bytes(status, "application/json; charset=utf-8", body)
 
-        def _bytes(self, status: int, content_type: str, body: bytes) -> None:
+        def _bytes(
+            self,
+            status: int,
+            content_type: str,
+            body: bytes,
+            headers: dict[str, str] | None = None,
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             if self.close_connection:

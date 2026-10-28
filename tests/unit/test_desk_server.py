@@ -103,6 +103,9 @@ class FakeDesk:
     def pdf_path(self, paper_id: str) -> Path | None:
         return self.pdf if paper_id == "p1" else None
 
+    def report(self, run_id: str) -> tuple[str, str] | None:
+        return ("spatial_2026-09-28_weekly_report.md", "# Report\n") if run_id == "r1" else None
+
     def set_vote(self, topic_id: str, paper_id: str, vote: int) -> None:
         if paper_id != "p1":
             raise DeskLookupError("That paper is not in the library.")
@@ -395,6 +398,13 @@ def test_the_server_edits_deletes_and_runs_topics(tmp_path: Path) -> None:
                 b"%PDF-1.4 test",
             )
         assert _call(base, "GET", "/api/papers/p2/pdf")[0] == 404
+        with urllib.request.urlopen(f"{base}/api/runs/r1/report") as response:
+            assert response.headers["Content-Type"] == "text/markdown; charset=utf-8"
+            assert response.headers["Content-Disposition"] == (
+                'attachment; filename="spatial_2026-09-28_weekly_report.md"'
+            )
+            assert response.read() == b"# Report\n"
+        assert _call(base, "GET", "/api/runs/r2/report")[0] == 404
         reading = "/api/papers/p1/reading"
         assert _call(base, "PUT", reading, {"saved": True, "note": "Read §4"}) == (
             200,

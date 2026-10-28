@@ -9,6 +9,7 @@ from research_agent.desk.shelf import (
     build_shelf,
     executive_summary_text,
     find_run,
+    run_report,
     screened_papers,
 )
 from research_agent.domain.analysis import (
@@ -280,3 +281,23 @@ def test_screened_papers_explain_every_decision(
         "decision": "selected_deep_read",
         "rank": 1,
     }
+
+
+def test_a_run_report_is_found_by_its_period_or_reported_missing(
+    connection: sqlite3.Connection, tmp_path: Path
+) -> None:
+    runs = SqliteRunRepository(connection)
+    results = SqliteResultRepository(connection)
+    store = LocalArtifactStore(tmp_path)
+    record = runs.start(TOPIC_ID)
+    runs.complete(record.id, RunSummary())
+    assert run_report(record.id, runs, results, store) is None, "no report written yet"
+    assert run_report("no_such_run", runs, results, store) is None
+
+    period_end = record.started_at.date()
+    store.write_text(TOPIC_ID, "reports", report_filename(period_end), "# Weekly\n")
+
+    assert run_report(record.id, runs, results, store) == (
+        f"{TOPIC_ID}_{report_filename(period_end)}",
+        "# Weekly\n",
+    )

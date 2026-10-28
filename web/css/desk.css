@@ -1335,6 +1335,50 @@ a.primary {
   }
 }
 
+.report-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* A printed or saved-as-PDF report is the report alone: no navigation, buttons or banners. */
+@page {
+  margin: 18mm 16mm;
+}
+
+@media print {
+  .topbar,
+  .footer,
+  #run-banner,
+  .skip,
+  .report-actions,
+  .reading-bar,
+  .vote-hint,
+  .filters,
+  .stamp {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  #main {
+    padding: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  section,
+  article {
+    break-inside: avoid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
