@@ -2,6 +2,44 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-28 — Library backup and restore (complete)
+
+- **Feature/branch:** `F43-backup-restore`, off `main` at `b451c76`.
+- **Status:** Complete; merged into `main`. Roadmap M6, third item.
+- **Summary:** There was no way to back up or move the library. New:
+  - `research-agent backup [--output FILE]` writes one zip: a manifest (`backup.json`: kind, app
+    version, time, the library's folder), a consistent copy of `research_agent.db` made with
+    SQLite's online backup API, and every file under `topics/` (PDFs, parsed text, analyses,
+    reports, manifests). Locks are not included.
+  - `research-agent restore FILE [--yes]` checks the whole archive first — a zip, a Research Agent
+    manifest, the database present, and every member either the manifest, the database, or under
+    `topics/` with no absolute path or `..` — then extracts into a staging folder beside the
+    library and swaps it in. An existing library needs `--yes` and is renamed to
+    `<folder>.before-restore-<UTC time>`, never deleted.
+  - Both refuse while a run is in progress (a live lock in `locks/`), since a run writes into the
+    library for minutes.
+- **Bug avoided on the way:** the library records absolute file paths (`paper_files.path`), so a
+  library restored to a different folder or machine would have pointed Open PDF and the parse cache
+  at the old location. Restore now rewrites paths under the backup's recorded folder to the new
+  one, in the staged copy, before the swap; paths outside the library are left as they are.
+- **Files affected:** `src/research_agent/operations/backup.py` (new), `src/research_agent/cli.py`
+  (`backup`, `restore`), `README.md`, `tests/unit/test_operations_backup.py` (new),
+  `tests/integration/test_backup_cli.py` (new).
+- **Verification:** Round trip into an empty folder (topics restored, files byte-identical, no
+  manifest or locks extracted); restore over a library moves it aside intact; five untrustworthy
+  archives (wrong kind, no manifest, `../`, absolute path, outside `topics/`) refused with nothing
+  written; a non-zip refused; both commands refused under a held lock; no library → refused;
+  restore elsewhere repoints recorded paths and leaves outside paths alone; CLI backup → restore
+  refused without `--yes` → replaced with `--yes`. Real data: backed up the cloud-run library
+  (14.0 MB), restored it elsewhere — identical row counts across 7 tables and all 10 artifact files
+  byte-identical — and the real desk on the restored copy served a PDF via Open PDF (HTTP 200,
+  2.3 MB, `%PDF-`). `ruff format --check`, `ruff check`, `mypy` clean; `uv run pytest -q` → 592
+  passed, 3 deselected, coverage 91.98%.
+- **Known issues:** Backups include PDFs, so they grow with the library (about 7 MB per deep-read
+  paper here). The desk has no backup button; the CLI is enough for one user.
+- **Next step:** Roadmap M6 — `F44`: notify when a run finishes (a macOS notification; email only
+  if the user asks).
+
 ## 2026-10-28 — Citation export: BibTeX and RIS (complete)
 
 - **Feature/branch:** `F42-citation-export`, off `main` at `d4973e0`.

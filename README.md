@@ -63,6 +63,8 @@ uv run research-agent run-all                # every enabled topic
 uv run research-agent report latest <topic_id>
 uv run research-agent model check
 uv run research-agent doctor                 # check folder, models and sources, with fixes
+uv run research-agent backup                 # the whole library to one .zip
+uv run research-agent restore <backup.zip>   # asks for --yes; moves the current library aside
 ```
 
 Each pipeline stage also has its own command (`discover`, `classify`, `acquire`, `parse`,
