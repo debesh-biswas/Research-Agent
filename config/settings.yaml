@@ -13,6 +13,7 @@ concurrency:
 retries:
   academic_apis: 3
   nim: 2
+  local_model: 2
   screening_repair: 1
   pdf_download: 2
 

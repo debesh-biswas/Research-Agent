@@ -85,6 +85,9 @@ class ChatCompletionsProvider:
                 retries=self._retries,
                 error_category="MODEL_API_ERROR",
                 transient_category="MODEL_TIMEOUT",
+                # A model call may legitimately take its whole timeout; repeating that would turn
+                # one stuck call into many minutes, so only quick failures are retried.
+                retry_timeouts=False,
             )
         except SourceRequestError as error:
             # The message names the URL and status only; credentials never reach it.

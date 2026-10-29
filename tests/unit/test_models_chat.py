@@ -249,3 +249,46 @@ def test_missing_usage_leaves_token_counts_unset() -> None:
 
 async def _no_sleep(delay: float) -> None:
     del delay
+
+
+def test_a_brief_local_failure_is_retried_but_a_timeout_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    calls: list[str] = []
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        calls.append("flaky")
+        if len(calls) == 1:
+            return httpx.Response(502, text="bad gateway")
+        if len(calls) == 2:
+            raise httpx.ConnectError("reset", request=request)
+        return httpx.Response(200, json=completion("ok"))
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        calls.append("slow")
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    async def run() -> None:
+        async with mock_client(flaky) as client:
+            result = await LocalModelProvider(client, settings(), retries=2).generate("p", MESSAGES)
+        assert result.text == "ok"
+        async with mock_client(slow) as client:
+            with pytest.raises(ModelProviderError, match="after 1 attempts: timeout"):
+                await LocalModelProvider(client, settings(), retries=2).generate("p", MESSAGES)
+
+    asyncio.run(run())
+    assert calls == ["flaky", "flaky", "flaky", "slow"]
+
+
+def test_the_router_gives_the_local_model_its_retry_setting() -> None:
+    from research_agent.config import ApplicationSettings
+    from research_agent.models.router import build_router
+
+    async def run() -> int:
+        async with mock_client(lambda request: httpx.Response(200, json=completion())) as client:
+            router = build_router(client, ApplicationSettings())
+            retries: int = router._local._retries  # type: ignore[attr-defined]
+            return retries
+
+    assert asyncio.run(run()) == 2

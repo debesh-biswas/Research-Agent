@@ -129,6 +129,14 @@ FIELDS: tuple[SettingField, ...] = (
         step=1,
     ),
     SettingField(
+        path="retries.local_model",
+        group="Speed and retries",
+        label="Retries for a brief local-model failure",
+        kind="number",
+        minimum=0,
+        step=1,
+    ),
+    SettingField(
         path="retries.pdf_download",
         group="Speed and retries",
         label="Retries for a PDF download",

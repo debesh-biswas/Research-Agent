@@ -182,7 +182,7 @@ def build_router(
     client: httpx.AsyncClient, settings: ApplicationSettings, meter: UsageMeter | None = None
 ) -> ModelRouter:
     """Construct the router a configuration actually enables, warning about an unusable NIM."""
-    local = LocalModelProvider(client, settings.models.local)
+    local = LocalModelProvider(client, settings.models.local, retries=settings.retries.local_model)
     strong: ModelProvider | None = None
     if settings.strong_model_provider == "nvidia_nim":
         nim = NvidiaNIMProvider(client, settings.models.nim)

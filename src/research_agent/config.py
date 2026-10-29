@@ -32,6 +32,8 @@ class ConcurrencySettings(StrictModel):
 class RetrySettings(StrictModel):
     academic_apis: int = Field(default=3, ge=0)
     nim: int = Field(default=2, ge=0)
+    local_model: int = Field(default=2, ge=0)
+    """Retries for a brief local-model failure (HTTP 5xx or 429, a dropped connection)."""
     screening_repair: int = Field(default=1, ge=0)
     pdf_download: int = Field(default=2, ge=0)
 
