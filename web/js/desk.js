@@ -61,7 +61,10 @@ const NAV_GROUPS = [
 const icon = (body) =>
   `<svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const ICONS = {
-  brand: `<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="currentColor"/><path d="M7 7.5h5.2a4.5 4.5 0 0 1 0 9H7z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg>`,
+  // The mark is the sieve itself: many found, fewer kept, a few read.
+  brand: `<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="4" rx="1" fill="currentColor" opacity=".3"/><rect x="5" y="10" width="14" height="4" rx="1" fill="currentColor" opacity=".6"/><rect x="8.5" y="16" width="7" height="4" rx="1" fill="currentColor"/></svg>`,
+  saved: `<svg viewBox="0 0 12 14" width="10" height="12" aria-hidden="true"><path d="M2 1h8v12L6 10l-4 3z" fill="currentColor"/></svg>`,
+  menu: icon('<path d="M3.5 6h13M3.5 10h13M3.5 14h13"/>'),
   week: icon('<rect x="3" y="4" width="14" height="13" rx="3"/><path d="M3 8.5h14M7 2.5v3M13 2.5v3"/>'),
   papers: icon('<rect x="4" y="2.5" width="12" height="15" rx="2.5"/><path d="M7 7h6M7 10h6M7 13h3.5"/>'),
   report: icon('<rect x="2.5" y="4" width="15" height="12" rx="2.5"/><path d="M5.5 7.5h4.5M5.5 10.5h9M5.5 13h9"/>'),
@@ -280,18 +283,21 @@ function renderPaperList(run) {
     return `<p class="empty">No papers match. Clear the search or show every paper.</p>`;
   }
   return `<ul class="paper-list">${rows
-    .map(({ paper, index }) => {
-      const mark = paper.abstractOnly ? ` <span class="mark">Abstract only</span>` : "";
+    .map(({ paper }) => {
       const progress = reading(paper);
       const unread = progress.read ? "" : `<span class="unread-dot" title="Unread"></span><span class="visually-hidden">Unread: </span>`;
-      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">★<span class="visually-hidden"> saved</span></span>` : "";
+      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">${ICONS.saved}<span class="visually-hidden"> saved</span></span>` : "";
+      const score = paper.screening && paper.screening.score != null ? Number(paper.screening.score).toFixed(2) : "–";
+      const kind = paper.abstractOnly
+        ? `<span class="pill pill-warning">Abstract only</span>`
+        : `<span class="pill">${esc(ACTION_LABEL[paper.action] || "Kept")}</span>`;
       return `<li><a class="paper-row" href="#/papers/${esc(paper.id)}">
-        <span class="idx">${String(index + 1).padStart(2, "0")}</span>
-        <span>
+        <span class="paper-main">
           <span class="paper-row-title">${unread}${esc(paper.title)}${saved}</span>
-          <span class="paper-row-meta">${esc(paperMeta(paper))}${mark}</span>
+          <span class="paper-row-meta">${esc(paperMeta(paper))}</span>
           <span class="paper-row-dek">${esc(paper.contribution)}</span>
         </span>
+        <span class="paper-side">${kind}<span class="num score" title="Screening relevance">${esc(score)}</span></span>
       </a></li>`;
     })
     .join("")}</ul>`;
@@ -340,27 +346,35 @@ function readingOrder(run) {
     .join("");
 }
 
+const SIEVE = [
+  ["read", "Read in full"],
+  ["kept", "Kept as a summary"],
+  ["dropped", "Screened out"],
+  ["unscreened", "Not screened"],
+];
+
+/* The week's signature: every paper the search found is one mark, coloured by how far it got. */
 function funnel(summary) {
   const found = summary.candidatesDiscovered;
   const screened = summary.papersClassified;
   const kept = summary.papersSelected;
   const read = summary.deepReads;
-  const whole = Math.max(found, screened, kept, read, 1);
-  // One bar, like a storage meter: what was read, kept, only screened, and found but unscreened.
-  const parts = [
-    ["read", read],
-    ["kept", Math.max(kept - read, 0)],
-    ["screened", Math.max(screened - kept, 0)],
-    ["found", Math.max(found - screened, 0)],
-  ]
-    .filter(([, count]) => count > 0)
-    .map(([key, count]) => `<span class="sieve-${key}" style="flex-grow:${count / whole}"></span>`)
+  const counts = {
+    read,
+    kept: Math.max(kept - read, 0),
+    dropped: Math.max(screened - kept, 0),
+    unscreened: Math.max(found - screened, 0),
+  };
+  const cell = (label, value) => `<div><dt>${esc(label)}</dt><dd class="num">${esc(value)}</dd></div>`;
+  const marks = SIEVE.map(([key]) => `<i class="u u-${key}"></i>`.repeat(counts[key])).join("");
+  const legend = SIEVE.filter(([key]) => counts[key] > 0)
+    .map(([key, label]) => `<li><i class="u u-${key}"></i>${esc(label)} <span class="num">${esc(counts[key])}</span></li>`)
     .join("");
-  const stat = (key, count, label) =>
-    `<div class="stat stat-${key}"><dt>${esc(label)}</dt><dd>${esc(count)}</dd></div>`;
-  return `<div class="sieve" role="img" aria-label="${esc(`${found} found, ${screened} screened, ${kept} kept, ${read} read in full`)}">${parts}</div>
-    <dl class="funnel">${stat("found", found, "Found")}${stat("screened", screened, "Screened")}${stat("kept", kept, "Kept")}${stat("read", read, "Read in full")}</dl>`;
+  return `<dl class="kpis">${cell("Found", found)}${cell("Screened", screened)}${cell("Kept", kept)}${cell("Read in full", read)}</dl>
+    <div class="sieve" style="--rows: ${Math.max(1, Math.ceil(found / 75))}" role="img" aria-label="${esc(`${found} papers found: ${read} read in full, ${counts.kept} kept as summaries, ${counts.dropped} screened out, ${counts.unscreened} not screened`)}">${marks}</div>
+    <ul class="sieve-legend">${legend}</ul>`;
 }
+
 
 
 /* What the model chose to search for, so the topic's breadth is visible rather than taken on trust. */
@@ -407,6 +421,17 @@ function errorBlock(run) {
   return `<details class="errors"><summary>${run.errors.length} ${noun}. The week still finished.</summary><ul class="error-list">${items}</ul>${hint}</details>`;
 }
 
+/* The week's one finding, from its own numbers: how much was kept and read, and where to start. */
+function weekFinding(run) {
+  const summary = run.summary;
+  const first = paperById(run, (run.readingOrder.essential || [])[0]);
+  const parts = [`${summary.papersSelected} of ${summary.candidatesDiscovered} papers kept, ${summary.deepReads} read in full.`];
+  if (first) parts.push(`Start with ${shortTitle(first.title)}.`);
+  return parts.join(" ");
+}
+
+const WEEK_FINDINGS = 4;
+
 function viewWeek(run) {
   const gaps = run.gaps
     .map(
@@ -420,34 +445,47 @@ function viewWeek(run) {
         `<article class="idea"><p><a href="#/report?section=ideas">${esc(idea.title)}</a></p></article>`,
     )
     .join("");
-  return `<p class="kicker">This week</p>
-    <div class="week-head">
-      <h1>${esc(formatPeriod(run))}</h1>
+  const developments = run.developments.slice(0, WEEK_FINDINGS);
+  const more =
+    run.developments.length > WEEK_FINDINGS
+      ? `<a href="#/report">All ${esc(run.developments.length)} in the report</a>`
+      : "";
+  const block = (title, body, action = "") =>
+    body ? `<section class="block"><div class="block-head"><h2>${esc(title)}</h2>${action}</div>${body}</section>` : "";
+  return `<div class="title-row">
+      <div>
+        <h1>${esc(formatPeriod(run))}</h1>
+        <p class="subline">${esc(runProgress(run) || weekFinding(run))}</p>
+      </div>
       <div class="week-actions">
         ${stamp(run.status, true)}
-        <button class="button" type="button" data-clear-run="${esc(run.id)}">Clear this run</button>
+        <button class="button" type="button" data-clear-run="${esc(run.id)}">Clear run</button>
       </div>
     </div>
-    ${funnel(run.summary)}
-    <p class="quiet">${esc(runProgress(run) || [formatDuration(run.durationSeconds), ...run.models].join(" · "))}</p>
-    ${queriesBlock(run)}
-    ${usageBlock(run.modelUsage || [])}
+    <section class="overview" aria-label="The week in numbers">
+      ${funnel(run.summary)}
+      <div class="run-facts">
+        <p class="run-line">${esc([formatDuration(run.durationSeconds), ...run.models].join(" · "))}</p>
+        ${queriesBlock(run)}
+        ${usageBlock(run.modelUsage || [])}
+      </div>
+    </section>
     <div class="desk-grid">
       <div>
-        <p class="lede">${esc(run.executiveSummary)}</p>
-        ${reportSection("What changed", findings(run, run.developments))}
-        ${reportSection("Since last time", stringList(run.changes))}
-        ${reportSection("Open problems", gaps)}
-        ${ideas ? reportSection("Worth trying", ideas) : ""}
+        ${block("Summary", `<p class="lede">${esc(run.executiveSummary)}</p>`, `<a href="#/report">Report</a>`)}
+        ${block("What changed", findings(run, developments), more)}
+        ${block("Since last time", stringList(run.changes))}
+        ${block("Open problems", gaps)}
+        ${ideas ? block("Worth trying", ideas) : ""}
         ${errorBlock(run)}
       </div>
       <aside class="side" aria-label="Reading order">
-        <p class="kicker">Reading order</p>
+        <div class="block-head"><h2>Read first</h2><a href="#/papers">All ${esc(run.papers.length)}</a></div>
         ${readingOrder(run)}
-        <p class="shelf-label"><a href="#/papers">All papers</a></p>
       </aside>
     </div>`;
 }
+
 
 function viewPapers(run) {
   const deep = run.papers.filter((paper) => paper.action === "deep_read").length;
@@ -667,7 +705,6 @@ function viewPaper(run, paperId) {
     .filter(Boolean)
     .join("");
   return `<a class="back" href="#/papers">Papers</a>
-    <p class="kicker">${esc(paper.venue || "Paper")} · ${esc(ACTION_LABEL[paper.action] || "")}</p>
     <h1>${esc(paper.title)}</h1>
     <p class="meta">${esc(paperMeta(paper))}${paper.date ? ` · ${esc(formatDay(paper.date))}` : ""}</p>
     ${skim}
@@ -714,9 +751,8 @@ function viewReport(run) {
   const download = run.hasReport
     ? `<a class="button" href="/api/runs/${encodeURIComponent(run.id)}/report" download>Download Markdown</a>`
     : "";
-  return `<p class="kicker">Weekly report</p>
-    <div class="page-head"><h1>${esc(formatPeriod(run))}</h1>${stamp(run.status, false)}</div>
-    <p class="quiet">${esc(history)}</p>
+  return `<div class="page-head"><h1>Report</h1>${stamp(run.status, false)}</div>
+    <p class="quiet">${esc(formatPeriod(run))}. ${esc(history)}</p>
     <div class="report-actions">
       ${download}
       <button class="button" type="button" id="print-report">Print or save as PDF</button>
@@ -965,8 +1001,7 @@ function viewAsk(run, paperId) {
   const prompts = suggestions(paper)
     .map((prompt) => `<button type="button" data-suggest="${esc(prompt)}">${esc(prompt)}</button>`)
     .join("");
-  return `<p class="kicker">Ask</p>
-    <div class="page-head"><h1>${paper ? "This paper" : "This week"}</h1>${restart}</div>
+  return `<div class="page-head"><h1>${paper ? "Ask about this paper" : "Ask about this week"}</h1>${restart}</div>
     ${context}
     <div class="suggest">${prompts}</div>
     ${loading ? `<p class="quiet">Loading the earlier questions…</p>` : renderThread(run, turns)}
@@ -1139,14 +1174,14 @@ function settingInput(field) {
 function viewSettings() {
   const settings = state.settings || { pending: true };
   if (!settings.data) {
-    return `<p class="kicker">Settings</p><h1>Settings</h1>${statusMessage(settings.error || "Loading the settings…", settings.error ? "error" : "")}`;
+    return `<h1>Settings</h1>${statusMessage(settings.error || "Loading the settings…", settings.error ? "error" : "")}`;
   }
   const data = settings.data;
   const groups = [...new Set(data.fields.map((field) => field.group))]
     .map(
       (group) => `<fieldset class="field">
         <legend>${esc(group)}</legend>
-        ${data.fields.filter((field) => field.group === group).map(settingInput).join("")}
+        <div class="group-panel">${data.fields.filter((field) => field.group === group).map(settingInput).join("")}</div>
       </fieldset>`,
     )
     .join("");
@@ -1156,8 +1191,7 @@ function viewSettings() {
   const status = settings.status || {};
   const busy = settings.pending ? " disabled" : "";
   const changed = data.fields.some((field) => field.changed);
-  return `<p class="kicker">Settings</p>
-    <h1>Settings</h1>
+  return `<h1>Settings</h1>
     <p class="quiet">Changes apply to the next run and the next question; a run already going keeps its settings. ${
       data.editable ? `They are saved in the library, over <code>${esc(data.settingsFile)}</code>, which stays as it is.` : "This desk was started without a settings file, so they can't be changed here."
     }</p>
@@ -1251,8 +1285,7 @@ function viewSetup() {
       ? statusMessage(health.error, "error")
       : statusMessage(healthSummary(health.checks), health.checks.some((check) => check.status === "fail") ? "error" : "success");
   const firstTopic = topics().length ? "" : `<a class="primary" href="#/new">Create your first topic</a>`;
-  return `<p class="kicker">Setup</p>
-    <h1>Setup check</h1>
+  return `<h1>Setup check</h1>
     <p class="quiet">What a weekly run needs, checked on this machine.</p>
     ${summary}
     ${rows ? `<ul class="health-list">${rows}</ul>` : ""}
@@ -1342,8 +1375,7 @@ function breadthLabel(value) {
 function viewNewTopic() {
   const nt = state.newTopic;
   const settings = nt.settings || (window.DESK && window.DESK.defaults);
-  return `<p class="kicker">New topic</p>
-    <h1>New topic</h1>
+  return `<h1>New topic</h1>
     <p class="empty">Name the topic, say what it covers, and choose how widely to search. Creating it starts its first run.</p>
     <div class="panel">
       <form id="new-topic-form" class="topic-form" novalidate>
@@ -1387,8 +1419,7 @@ function render() {
     body = route.parts[1] ? viewTopicEdit(route.parts[1]) : viewTopics();
   } else if (!topic) {
     body = state.live
-      ? `<p class="kicker">Welcome</p>
-        <h1>Set up your desk</h1>
+      ? `<h1>Set up your desk</h1>
         <p class="empty">Two steps before your first weekly run.</p>
         <div class="form-actions">
           <a class="button" href="#/setup">1. Check setup</a>
@@ -1411,12 +1442,12 @@ function render() {
 
   const nav = NAV_GROUPS.map(
     ([group, items]) =>
-      `<p class="nav-group">${esc(group)}</p>${items
+      `<div class="nav-section"><p class="nav-group">${esc(group)}</p>${items
         .map(([id, label, href, icon]) => {
           const currentPage = name === id ? ' aria-current="page"' : "";
           return `<a href="${href}"${currentPage}>${ICONS[icon]}<span>${label}</span></a>`;
         })
-        .join("")}`,
+        .join("")}</div>`,
   ).join("");
 
   const topicOptions = topics()
@@ -1435,7 +1466,7 @@ function render() {
         .join("")
     : "";
   const runSwitcher = hasRuns
-    ? `<label class="picker"><span>Run</span><select class="switcher" id="run">${runOptions}</select></label>`
+    ? `<span class="scope-sep" aria-hidden="true">/</span><label class="picker"><span class="visually-hidden">Run</span><select class="switcher" id="run">${runOptions}</select></label>`
     : "";
 
   const titles = {
@@ -1452,16 +1483,29 @@ function render() {
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
 
+  const running = Boolean(topic && topic.runs.some((item) => item.status === "running"));
+  // One near-black action per screen: Run now steps down when the page has its own.
+  const runClass = body.includes('class="primary"') ? "button" : "primary";
+  const runNow =
+    topic && state.live
+      ? `<button class="${runClass}" type="button" data-run-topic="${esc(topic.id)}"${running || !topic.settings.enabled ? " disabled" : ""}>${running ? "Running" : "Run now"}</button>`
+      : "";
   document.getElementById("app").innerHTML = `<aside class="sidebar" aria-label="Navigation">
-      <a class="brand" href="#/week">${ICONS.brand}<span>Desk</span></a>
-      <div class="pickers">
-        <label class="picker"><span>Topic</span><select class="switcher" id="topic">${topicOptions}</select></label>
-        ${runSwitcher}
+      <div class="sidebar-head">
+        <a class="brand" href="#/week">${ICONS.brand}<span>Desk</span></a>
+        <button class="menu-close" type="button" data-menu>Close</button>
       </div>
       <nav class="nav" aria-label="Desk">${nav}</nav>
-      <p class="sidebar-foot">${state.live ? "Reading the local library" : "Can't reach the desk server right now."}</p>
     </aside>
-    <div class="content">
+    <header class="topbar">
+      <button class="menu-button" type="button" data-menu aria-label="Menu">${ICONS.menu}</button>
+      <div class="scope">
+        <label class="picker"><span class="visually-hidden">Topic</span><select class="switcher" id="topic">${topicOptions}</select></label>
+        ${runSwitcher}
+      </div>
+      <div class="topbar-actions">${runNow}</div>
+    </header>
+    <div class="sheet">
       <div id="run-banner" aria-live="polite">${bannerHtml()}</div>
       <main id="main">${body}</main>
     </div>`;
@@ -1599,7 +1643,7 @@ function viewLibrary() {
     .map((paper) => {
       const progress = reading(paper);
       const unread = progress.read ? "" : `<span class="unread-dot" title="Unread"></span><span class="visually-hidden">Unread: </span>`;
-      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">★<span class="visually-hidden"> saved</span></span>` : "";
+      const saved = progress.saved ? ` <span class="saved-mark" title="Saved">${ICONS.saved}<span class="visually-hidden"> saved</span></span>` : "";
       const meta = [authors(paper), paper.venue, paper.topicName, `kept ${formatDay(paper.runDate)}`, ACTION_LABEL[paper.action]]
         .filter(Boolean)
         .join(" · ");
@@ -1619,8 +1663,7 @@ function viewLibrary() {
       : rows
         ? `<ul class="paper-list library-list">${rows}</ul>`
         : `<p class="empty">${library.show === "all" && !library.q.trim() ? "No papers have been kept yet. Run a topic to fill the library." : "No papers match."}</p>`;
-  return `<p class="kicker">Library</p>
-    <h1>Every paper you've kept</h1>
+  return `<h1>Every paper you've kept</h1>
     <p class="quiet">Across all topics and runs, newest first. Each paper appears once, under the latest run that kept it.</p>
     <div class="toolbar"><div class="filters">
       ${show("all", "All")}${show("unread", "Unread")}${show("saved", "Saved")}
@@ -1904,6 +1947,10 @@ function onClick(event) {
     );
     return;
   }
+  if (event.target.closest("[data-menu]")) {
+    document.body.classList.toggle("menu-open");
+    return;
+  }
   if (event.target.id === "reset-settings") {
     void confirmAction("Reset every setting changed here to the settings file?", "Reset settings").then(
       (ok) => ok && saveSettings(null, "Settings reset to the settings file."),
@@ -2077,6 +2124,7 @@ window.addEventListener("hashchange", () => {
   if (!location.hash.startsWith("#/topics")) state.topicsStatus = null;
   if (!location.hash.startsWith("#/runs")) state.runsStatus = null;
   if (!location.hash.startsWith("#/settings")) state.settings = null;
+  document.body.classList.remove("menu-open");
   state.storage = null;
   if (location.hash.startsWith("#/library")) state.library = { ...state.library, data: null };
   render();

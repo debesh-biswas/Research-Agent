@@ -130,6 +130,8 @@ logic must remain behind interfaces, and LangGraph will be used only for orchest
 The project is MIT-licensed (`LICENSE`). Its direct dependencies are MIT (Docling, LangGraph,
 Pydantic, pydantic-settings, PyYAML, RapidFuzz, Typer) or BSD-3-Clause (HTTPX). Nothing in the
 installed tree is GPL-family; certifi, orjson, pathspec and tqdm are MPL-2.0, used unmodified.
-The desk uses the platform's own font (SF Pro on a Mac), so it ships no font files. The vendored
-`ponytail` and `apple-design` skills under `.claude/skills/` are MIT, with their licences. Docling downloads its layout and
+The desk serves its own copy of IBM Plex Sans (`web/fonts/`, SIL Open Font License 1.1, licence
+alongside), so a page never calls a font CDN. Its look follows the "framed-sheet" app style from
+`Leonxlnx/taste-skill` (MIT), used as a design tool and not shipped. The vendored `ponytail` and
+`apple-design` skills under `.claude/skills/` are MIT, with their licences. Docling downloads its layout and
 table models on first use; those carry their own licences from their publishers.

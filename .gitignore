@@ -27,3 +27,4 @@ logs/
 *.pdf
 UPDATES.md
 !tests/fixtures/documents/*.pdf
+/.taste-skill/
