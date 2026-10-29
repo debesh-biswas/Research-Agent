@@ -188,7 +188,7 @@ def test_synthesis_is_persisted_with_validated_references(
     payload = json.loads(str(stored[0][0]))
     assert payload["emerging_directions"] == []
     assert payload["paper_ids"] == ["doi_10_1234_abcd"]
-    assert payload["prompt_version"] == "weekly_synthesis.v1"
+    assert payload["prompt_version"] == "weekly_synthesis.v2"
 
 
 def test_a_second_period_compares_against_history(

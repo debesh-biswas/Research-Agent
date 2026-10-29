@@ -2,6 +2,77 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Batch synthesis for large weeks (complete)
+
+- **Feature/branch:** `F58-batch-synthesis`, off `main` at `8ee0976`.
+- **Status:** Complete; merged into `main`. Asked for by the user, keeping reasoning on for
+  synthesis.
+- **Problem:** The synthesis prompt was cut at `synthesis.max_input_chars` (24,000). A 45-paper
+  week (about 65,000 characters of analyses) reached the model only up to the cut, and the
+  29 Oct synthesis cited 10 of 45 papers.
+- **Summary:**
+  - A week that fits in one prompt is synthesized exactly as before.
+  - A larger week is packed, in order, into batches whose prompts each fit (`prompts.batches`).
+    Each batch is synthesized separately, still under `synthesis` with thinking on. Each batch
+    gives at most 4 entries per evidence field and leaves the history comparison to the merge.
+  - One merge call (`MERGE_SYSTEM_PROMPT`, `render_merge`) then combines the batches. It joins
+    findings that say the same thing (taking the union of their paper ids), keeps at most 8 per
+    field ranked across the week, adds contradictions between batches, and compares with earlier
+    weeks.
+  - **Partial failures:**
+    - a failed batch is skipped;
+    - if every batch fails, the reason is reported;
+    - if the merge fails, the batch findings are taken in turn (each batch's best first),
+      de-duplicated and capped at 8, so the report still has a synthesis.
+  - The usual check still drops any finding that cites a paper outside the run.
+  - `SynthesisOutcome.batches` records how many batches were used.
+  - The synthesis prompt now includes the topic's description.
+  - A failed synthesis call's log line now says why it failed.
+- **New model capability `synthesis_merge`.** The merge runs under its own capability, which
+  is strong (NIM when configured). It is not in `thinking_capabilities` by default, so thinking
+  stays on for reading the papers in each batch while the merge's long JSON answer keeps its
+  whole output budget. Add it to `thinking_capabilities` to reason during the merge as well.
+  `config/settings.yaml` explains this choice.
+- **Files affected:**
+  - `src/research_agent/synthesis/prompts.py` (`weekly_synthesis.v2`, `batches`, `render_merge`,
+    `BATCH_ENTRIES`, `MERGED_ENTRIES`);
+  - `src/research_agent/synthesis/synthesizer.py` (`_draft`, `_union`);
+  - `src/research_agent/models/base.py`;
+  - `config/settings.yaml`;
+  - `tests/unit/test_synthesis_synthesizer.py`, with the pinned prompt version updated.
+- **Verification:** All runs re-synthesized the 29 Oct cloud run's 45 papers on a scratch copy of
+  the library, using OpenRouter `nvidia/nemotron-3.5-super-vl:free` with thinking on.
+
+  | Attempt | Merge | Papers cited |
+  |---|---|---|
+  | Before this change | n/a (one call) | 10 |
+  | Batches, uncapped | Prompt over budget and cut, then a cut-off JSON reply | 43, but the fallback gave 108 findings |
+  | With the caps | Failed again: cut-off JSON at about 6,400 characters | 29–30, fallback, 8 per field |
+  | Merge as `synthesis_merge` | Empty reply | 29, fallback |
+  | Cloud model's `max_output_tokens` at 32,000 | Succeeded | 36 |
+
+  - The empty reply happened because OpenRouter does not honour the thinking-off switch for this
+    model, so it reasoned anyway and ran out of output budget.
+  - The successful merge combined related findings across batches (for example, multi-robot and
+    decoupled world-action models cite 2 papers together) and ranked them across the week.
+  - Unit tests cover:
+    - a week that fits makes one call;
+    - a large week is batched with every paper in exactly one batch, every prompt within budget,
+      and history left to the merge;
+    - the merge combines the paper ids and does the history comparison;
+    - a failed merge falls back to batch findings;
+    - a failed batch is skipped, and all failing is reported;
+    - the fallback interleaves batches and stops at the cap;
+    - batches keep thinking on while the merge sends `enable_thinking: false`.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 652 passed,
+    3 deselected, coverage 93.08%.
+- **Known issues:**
+  - The cloud config (scratchpad only) now uses `max_output_tokens: 32000`. The repository default
+    stays at 16,000, because Qwen3-14B's 32k-token context must also hold the input.
+  - A 45-paper week costs about 5 synthesis calls instead of 1, roughly 4–5 minutes on the free
+    model.
+- **Next step:** `CHORE4`, raising `selection.min_relevance_score` to 0.6, as the user asked.
+
 ## 2026-10-29 — Retry brief local-model failures (complete)
 
 - **Feature/branch:** `FIX23-retry-local-model`, off `main` at `c4dbb4b`.

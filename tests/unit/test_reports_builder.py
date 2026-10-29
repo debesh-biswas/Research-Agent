@@ -78,7 +78,7 @@ def synthesis() -> WeeklySynthesis:
         paper_ids=["p1", "p2"],
         model_provider="nvidia_nim",
         model_name="some-model",
-        prompt_version="weekly_synthesis.v1",
+        prompt_version="weekly_synthesis.v2",
     )
 
 

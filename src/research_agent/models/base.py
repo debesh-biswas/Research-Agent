@@ -13,6 +13,7 @@ Capability = Literal[
     "screening",
     "deep_reasoning",
     "synthesis",
+    "synthesis_merge",
     "ideation",
     "report_writing",
 ]
@@ -20,8 +21,10 @@ Capability = Literal[
 # TRD section 26. Strong capabilities resolve to the configured strong provider, falling back to
 # local inference; the mapping is fixed by the specification, so it is code rather than settings.
 STRONG_CAPABILITIES: frozenset[Capability] = frozenset(
-    {"screening", "deep_reasoning", "synthesis", "ideation", "report_writing"}
+    {"screening", "deep_reasoning", "synthesis", "synthesis_merge", "ideation", "report_writing"}
 )
+"""`synthesis_merge` combines batch syntheses. It is separate from `synthesis` so thinking can stay
+on for reading the papers while the merge, a long JSON answer, keeps its whole output budget."""
 
 
 class ModelMessage(StrictModel):

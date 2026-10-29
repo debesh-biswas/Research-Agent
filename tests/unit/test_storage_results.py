@@ -22,7 +22,7 @@ def synthesis(development: str) -> WeeklySynthesis:
         major_developments=[SupportedFinding(text=development, supporting_paper_ids=["p1"])],
         model_provider="local",
         model_name="qwen",
-        prompt_version="weekly_synthesis.v1",
+        prompt_version="weekly_synthesis.v2",
     )
 
 

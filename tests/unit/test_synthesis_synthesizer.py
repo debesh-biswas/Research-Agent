@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import sqlite3
 from datetime import date
 
@@ -263,3 +264,162 @@ def test_the_same_inputs_store_identical_references(
 
     stored = SqliteResultRepository(connection).recent_syntheses(TOPIC_ID)
     assert stored[0].paper_ids == stored[1].paper_ids == ["p1", "p2"]
+
+
+def batching_handler(
+    fail: set[str] | None = None,
+) -> tuple[object, list[str]]:
+    """Answer batches with a finding citing their own papers, and merges with one combined one.
+
+    `fail` names prompt kinds ("batch:<first id>" or "merge") that get an empty reply.
+    """
+    prompts: list[str] = []
+    failing = fail or set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        prompt = json.loads(request.content)["messages"][-1]["content"]
+        prompts.append(prompt)
+        ids = re.findall(r"- id: (\S+)", prompt)
+        if "Partial syntheses" in prompt:
+            kind = "merge"
+            cited = sorted(set(re.findall(r"\[([^\]]+)\]", prompt)))
+            body = draft(
+                major_developments=[
+                    {"text": "Merged week", "supporting_paper_ids": ", ".join(cited).split(", ")}
+                ],
+                changes_from_history=["Compared once, at the merge"],
+            )
+        else:
+            kind = f"batch:{ids[0]}"
+            body = draft(
+                major_developments=[{"text": f"Batch from {ids[0]}", "supporting_paper_ids": ids}],
+                emerging_directions=[],
+                common_limitations=[{"text": "Simulation only", "supporting_paper_ids": ids[:1]}],
+            )
+        content = "" if kind in failing else json.dumps(body)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"role": "assistant", "content": content}}]}
+        )
+
+    return handler, prompts
+
+
+def week(count: int) -> list[PaperAnalysis]:
+    return [analysis(f"p{index:02d}") for index in range(count)]
+
+
+SMALL_BUDGET = SynthesisSettings(max_input_chars=1500)
+
+
+def test_a_week_that_fits_is_still_one_call(connection: sqlite3.Connection, run_id: str) -> None:
+    handler, prompts = batching_handler()
+
+    outcome = run(synthesizer(connection, handler), run_id, week(2))
+
+    assert (outcome.batches, len(prompts)) == (1, 1)
+    assert "one batch of a larger week" not in prompts[0]
+
+
+def test_a_large_week_is_batched_so_every_paper_reaches_the_model_then_merged(
+    connection: sqlite3.Connection, run_id: str
+) -> None:
+    handler, prompts = batching_handler()
+    papers = week(9)
+
+    outcome = run(synthesizer(connection, handler, SMALL_BUDGET), run_id, papers)
+
+    batch_prompts, merge_prompts = prompts[:-1], prompts[-1:]
+    assert outcome.batches == len(batch_prompts) > 1
+    assert all(len(prompt) <= SMALL_BUDGET.max_input_chars for prompt in prompts)
+    seen = [found for prompt in batch_prompts for found in re.findall(r"- id: (\S+)", prompt)]
+    assert seen == [paper.paper_id for paper in papers], "each paper in exactly one batch"
+    assert all("leave changes_from_history empty" in prompt for prompt in batch_prompts)
+    assert "Partial syntheses" in merge_prompts[0] and "Batch from p00" in merge_prompts[0]
+    assert outcome.synthesis is not None
+    (merged,) = outcome.synthesis.major_developments
+    assert merged.text == "Merged week"
+    assert merged.supporting_paper_ids == sorted(paper.paper_id for paper in papers)
+    assert outcome.synthesis.changes_from_history == ["Compared once, at the merge"]
+
+
+def test_a_failed_merge_keeps_the_batch_findings(
+    connection: sqlite3.Connection, run_id: str
+) -> None:
+    handler, _ = batching_handler(fail={"merge"})
+
+    outcome = run(synthesizer(connection, handler, SMALL_BUDGET), run_id, week(9))
+
+    assert outcome.synthesis is not None
+    texts = [finding.text for finding in outcome.synthesis.major_developments]
+    assert texts[0] == "Batch from p00" and len(set(texts)) == len(texts) == outcome.batches
+    assert texts == sorted(texts), "one finding per batch, in batch order"
+    assert [f.text for f in outcome.synthesis.common_limitations] == ["Simulation only"]
+
+
+def test_a_failed_batch_leaves_the_others_and_all_failing_is_reported(
+    connection: sqlite3.Connection, run_id: str
+) -> None:
+    handler, prompts = batching_handler(fail={"batch:p00"})
+
+    outcome = run(synthesizer(connection, handler, SMALL_BUDGET), run_id, week(9))
+
+    assert outcome.synthesis is not None
+    assert "Batch from p00" not in prompts[-1] and "Batch from" in prompts[-1]
+
+    everything = {f"batch:p{index:02d}" for index in range(9)}
+    handler, _ = batching_handler(fail=everything)
+    failed = run(synthesizer(connection, handler, SMALL_BUDGET), run_id, week(9))
+    assert failed.synthesis is None and failed.reason and "every batch failed" in failed.reason
+
+
+def test_the_fallback_takes_each_batchs_best_in_turn_up_to_the_cap() -> None:
+    from research_agent.domain.analysis import SynthesisDraft
+    from research_agent.synthesis.synthesizer import _union
+
+    def batch(name: str) -> SynthesisDraft:
+        return SynthesisDraft.model_validate(
+            {
+                "major_developments": [
+                    {"text": f"{name}{rank}", "supporting_paper_ids": ["p"]} for rank in range(6)
+                ],
+                "new_datasets": [f"{name}-data", "shared"],
+            }
+        )
+
+    merged = _union([batch("a"), batch("b")])
+
+    assert [f.text for f in merged.major_developments] == [
+        "a0",
+        "b0",
+        "a1",
+        "b1",
+        "a2",
+        "b2",
+        "a3",
+        "b3",
+    ]
+    assert merged.new_datasets == ["a-data", "b-data", "shared"]
+
+
+def test_batches_keep_thinking_and_the_merge_keeps_its_output_budget(
+    connection: sqlite3.Connection, run_id: str
+) -> None:
+    bodies: list[dict[str, object]] = []
+    answer, _ = batching_handler()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return answer(request)  # type: ignore[operator, no-any-return]
+
+    settings = ApplicationSettings.model_validate(
+        {"models": {"local": {"disable_thinking": True, "thinking_capabilities": ["synthesis"]}}}
+    )
+    router = build_router(mock_client(handler), settings)
+    synthesis = WeeklySynthesizer(router, SqliteResultRepository(connection), SMALL_BUDGET)
+
+    outcome = run(synthesis, run_id, week(9))
+
+    assert outcome.batches > 1
+    *batch_bodies, merge_body = bodies
+    assert all("chat_template_kwargs" not in body for body in batch_bodies), "thinking on"
+    assert merge_body["chat_template_kwargs"] == {"enable_thinking": False}

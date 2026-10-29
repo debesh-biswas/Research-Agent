@@ -159,7 +159,7 @@ def test_history_and_keywords_reach_the_prompt() -> None:
             ],
             model_provider="local",
             model_name="qwen",
-            prompt_version="weekly_synthesis.v1",
+            prompt_version="weekly_synthesis.v2",
         )
     ]
 

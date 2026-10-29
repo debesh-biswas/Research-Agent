@@ -118,7 +118,7 @@ def test_build_shelf_uses_the_stored_week(connection: sqlite3.Connection, tmp_pa
             ],
             model_provider="nvidia_nim",
             model_name="glm-test",
-            prompt_version="weekly_synthesis.v1",
+            prompt_version="weekly_synthesis.v2",
             history_periods=1,
         ),
         period_start=datetime(2026, 9, 18, tzinfo=UTC).date(),
