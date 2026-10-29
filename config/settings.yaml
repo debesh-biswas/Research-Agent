@@ -55,7 +55,9 @@ screening:
 
 selection:
   # Relevance is the eligibility gate; quality orders eligible papers by recency, venue, and impact.
-  min_relevance_score: 0.3
+  # 0.6 since the 29 Oct run: at 0.3, papers the screener rated only loosely related (0.45-0.55:
+  # battery-pack disassembly, digital twins for manufacturing) were kept beside the 0.8+ ones.
+  min_relevance_score: 0.6
   require_action: true
   quality_weight: 0.35
   recency_window_days: 30

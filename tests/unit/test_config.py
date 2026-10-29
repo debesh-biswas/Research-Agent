@@ -103,7 +103,7 @@ def test_query_settings_default_to_the_trd_range() -> None:
 def test_selection_defaults_require_an_action_and_a_minimum_score() -> None:
     settings = ApplicationSettings()
 
-    assert settings.selection.min_relevance_score == 0.3
+    assert settings.selection.min_relevance_score == 0.6
     assert settings.selection.require_action is True
 
 
