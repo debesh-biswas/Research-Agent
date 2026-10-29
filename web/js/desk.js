@@ -37,6 +37,41 @@ const POLL_MS = 5000;
    stall the progress poll or leave a page loading forever. Model calls (Ask and
    the setup check) are left alone: they are slow on purpose and time out on the server. */
 const REQUEST_MS = 20000;
+
+/* Sidebar groups: what this run holds, what has accumulated, and the desk itself. */
+const NAV_GROUPS = [
+  ["This run", [
+    ["week", "This week", "#/week", "week"],
+    ["papers", "Papers", "#/papers", "papers"],
+    ["report", "Report", "#/report", "report"],
+    ["ask", "Ask", "#/ask", "ask"],
+  ]],
+  ["Library", [
+    ["library", "Library", "#/library", "library"],
+    ["runs", "Runs", "#/runs", "runs"],
+  ]],
+  ["Desk", [
+    ["topics", "Topics", "#/topics", "topics"],
+    ["settings", "Settings", "#/settings", "settings"],
+    ["setup", "Setup check", "#/setup", "setup"],
+  ]],
+];
+
+/* Line icons drawn on a 20-unit grid, so they share one stroke weight and optical size. */
+const icon = (body) =>
+  `<svg class="icon" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const ICONS = {
+  brand: `<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="currentColor"/><path d="M7 7.5h5.2a4.5 4.5 0 0 1 0 9H7z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg>`,
+  week: icon('<rect x="3" y="4" width="14" height="13" rx="3"/><path d="M3 8.5h14M7 2.5v3M13 2.5v3"/>'),
+  papers: icon('<rect x="4" y="2.5" width="12" height="15" rx="2.5"/><path d="M7 7h6M7 10h6M7 13h3.5"/>'),
+  report: icon('<rect x="2.5" y="4" width="15" height="12" rx="2.5"/><path d="M5.5 7.5h4.5M5.5 10.5h9M5.5 13h9"/>'),
+  ask: icon('<path d="M3.5 6A2.5 2.5 0 0 1 6 3.5h8A2.5 2.5 0 0 1 16.5 6v5a2.5 2.5 0 0 1-2.5 2.5H9.2l-3.7 3v-3A2.5 2.5 0 0 1 3.5 11z"/>'),
+  library: icon('<rect x="3" y="3.5" width="3.5" height="13" rx="1"/><rect x="8.2" y="3.5" width="3.5" height="13" rx="1"/><path d="m13.4 4.6 3.1-.8 3 11.6-3.1.8z"/>'),
+  runs: icon('<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.6 1.8"/>'),
+  topics: icon('<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3.2"/>'),
+  settings: icon('<path d="M3.5 6.5h13M3.5 13.5h13"/><circle cx="8" cy="6.5" r="2" fill="var(--sidebar-bg, #fff)"/><circle cx="12.5" cy="13.5" r="2" fill="var(--sidebar-bg, #fff)"/>'),
+  setup: icon('<path d="M10 2.5 16 5v4.5c0 3.8-2.6 6.6-6 8-3.4-1.4-6-4.2-6-8V5z"/><path d="m7.3 10 2 2 3.6-4"/>'),
+};
 const AWAIT_RUN_MS = 5 * 60 * 1000;
 
 const SOURCES = [
@@ -182,13 +217,19 @@ function stamp(status, landed) {
   return `<span class="stamp stamp-${esc(status)}${motion}">${esc(label)}</span>`;
 }
 
+/* A paper's short name for a citation chip: the part of the title before its colon. */
+function shortTitle(title) {
+  const head = title.split(":")[0].trim();
+  return head.length > 42 ? `${head.slice(0, 40).trimEnd()}…` : head;
+}
+
 function paperLinks(run, ids) {
   const items = ids
     .map((id) => paperById(run, id))
     .filter(Boolean)
-    .map((paper) => `<a href="#/papers/${esc(paper.id)}">${esc(paper.title)}</a>`);
+    .map((paper) => `<li><a class="chip" href="#/papers/${esc(paper.id)}" title="${esc(paper.title)}">${esc(shortTitle(paper.title))}</a></li>`);
   if (!items.length) return "";
-  return `<p class="from">From ${items.join(", ")}</p>`;
+  return `<ul class="from" aria-label="Sources">${items.join("")}</ul>`;
 }
 
 function findings(run, items) {
@@ -300,16 +341,27 @@ function readingOrder(run) {
 }
 
 function funnel(summary) {
-  const items = [
-    [summary.candidatesDiscovered, "found"],
-    [summary.papersClassified, "screened"],
-    [summary.papersSelected, "kept"],
-    [summary.deepReads, "read"],
-  ];
-  return `<ul class="funnel">${items
-    .map(([count, label]) => `<li><strong>${esc(count)}</strong> ${esc(label)}</li>`)
-    .join("")}</ul>`;
+  const found = summary.candidatesDiscovered;
+  const screened = summary.papersClassified;
+  const kept = summary.papersSelected;
+  const read = summary.deepReads;
+  const whole = Math.max(found, screened, kept, read, 1);
+  // One bar, like a storage meter: what was read, kept, only screened, and found but unscreened.
+  const parts = [
+    ["read", read],
+    ["kept", Math.max(kept - read, 0)],
+    ["screened", Math.max(screened - kept, 0)],
+    ["found", Math.max(found - screened, 0)],
+  ]
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => `<span class="sieve-${key}" style="flex-grow:${count / whole}"></span>`)
+    .join("");
+  const stat = (key, count, label) =>
+    `<div class="stat stat-${key}"><dt>${esc(label)}</dt><dd>${esc(count)}</dd></div>`;
+  return `<div class="sieve" role="img" aria-label="${esc(`${found} found, ${screened} screened, ${kept} kept, ${read} read in full`)}">${parts}</div>
+    <dl class="funnel">${stat("found", found, "Found")}${stat("screened", screened, "Screened")}${stat("kept", kept, "Kept")}${stat("read", read, "Read in full")}</dl>`;
 }
+
 
 /* What the model chose to search for, so the topic's breadth is visible rather than taken on trust. */
 function queriesBlock(run) {
@@ -389,7 +441,7 @@ function viewWeek(run) {
         ${ideas ? reportSection("Worth trying", ideas) : ""}
         ${errorBlock(run)}
       </div>
-      <aside class="side">
+      <aside class="side" aria-label="Reading order">
         <p class="kicker">Reading order</p>
         ${readingOrder(run)}
         <p class="shelf-label"><a href="#/papers">All papers</a></p>
@@ -407,14 +459,14 @@ function viewPapers(run) {
         ? ` · <a href="#/screened">See all ${esc(run.summary.papersClassified)} screened, including the dropped ones</a>`
         : ""
     }</p>
-    <div class="filters">
+    <div class="toolbar"><div class="filters">
       ${filterButton("all", `All ${run.papers.length}`)}
       ${filterButton("deep_read", `Deep reads ${deep}`)}
       ${filterButton("summarize", `Summaries ${summaries}`)}
       ${filterButton("unread", `Unread ${run.papers.filter((paper) => !reading(paper).read).length}`)}
       ${filterButton("saved", `Saved ${run.papers.filter((paper) => reading(paper).saved).length}`)}
       ${abstracts ? filterButton("abstract", `Abstract only ${abstracts}`) : ""}
-      <input class="search" id="paper-search" type="search" placeholder="Search titles" value="${esc(state.query)}" aria-label="Search titles" />
+      </div><input class="search" id="paper-search" type="search" placeholder="Search titles" value="${esc(state.query)}" aria-label="Search titles" />
     </div>
     <div id="paper-list">${renderPaperList(run)}</div>
     ${exportLine(run)}`;
@@ -423,14 +475,14 @@ function viewPapers(run) {
 function voteButtons(paperId, vote) {
   const button = (value, label) =>
     `<button class="button vote" type="button" data-vote="${value}" data-vote-paper="${esc(paperId)}" aria-pressed="${vote === value}">${label}</button>`;
-  return `${button(1, "👍 Relevant")}${button(-1, "👎 Not relevant")}`;
+  return `${button(1, "Relevant")}${button(-1, "Not relevant")}`;
 }
 
 function readingBar(paper) {
   const progress = reading(paper);
   return `<div class="reading-bar">
       ${voteButtons(paper.id, paper.vote || 0)}
-      <button class="button" type="button" data-toggle-saved="${esc(paper.id)}" aria-pressed="${progress.saved}">${progress.saved ? "★ Saved" : "☆ Save"}</button>
+      <button class="button" type="button" data-toggle-saved="${esc(paper.id)}" aria-pressed="${progress.saved}">${progress.saved ? "Saved" : "Save"}</button>
       <button class="button" type="button" data-toggle-read="${esc(paper.id)}">${progress.read ? "Mark unread" : "Mark read"}</button>
     </div>
     <p class="quiet vote-hint">Relevant / Not relevant teach this topic's future screening.</p>`;
@@ -1021,7 +1073,7 @@ function viewTopics() {
     })
     .join("");
   const status = state.topicsStatus || {};
-  return `<div class="page-head"><h1>Topics</h1><a class="button" href="#/new">New topic</a></div>
+  return `<div class="page-head"><h1>Topics</h1><a class="primary" href="#/new">New topic</a></div>
     <p class="quiet">Runs start only when you press Run now. Paused topics can't be run until enabled.</p>
     ${statusMessage(status.text, status.tone)}
     ${rows ? `<ul class="run-list">${rows}</ul>` : `<p class="empty">No topics yet. Create one to start a weekly run.</p>`}
@@ -1357,20 +1409,15 @@ function render() {
   else if (name === "ask") body = viewAsk(run, route.params.get("paper"));
   else body = viewWeek(run);
 
-  const nav = [
-    ["week", "This week", "#/week"],
-    ["papers", "Papers", "#/papers"],
-    ["report", "Report", "#/report"],
-    ["runs", "Runs", "#/runs"],
-    ["ask", "Ask", "#/ask"],
-    ["topics", "Topics", "#/topics"],
-    ["library", "Library", "#/library"],
-  ]
-    .map(([id, label, href]) => {
-      const currentPage = name === id ? ' aria-current="page"' : "";
-      return `<a href="${href}"${currentPage}>${label}</a>`;
-    })
-    .join("");
+  const nav = NAV_GROUPS.map(
+    ([group, items]) =>
+      `<p class="nav-group">${esc(group)}</p>${items
+        .map(([id, label, href, icon]) => {
+          const currentPage = name === id ? ' aria-current="page"' : "";
+          return `<a href="${href}"${currentPage}>${ICONS[icon]}<span>${label}</span></a>`;
+        })
+        .join("")}`,
+  ).join("");
 
   const topicOptions = topics()
     .map(
@@ -1388,8 +1435,7 @@ function render() {
         .join("")
     : "";
   const runSwitcher = hasRuns
-    ? `<label class="quiet" for="run">Run</label>
-        <select class="switcher" id="run" aria-label="Run">${runOptions}</select>`
+    ? `<label class="picker"><span>Run</span><select class="switcher" id="run">${runOptions}</select></label>`
     : "";
 
   const titles = {
@@ -1406,24 +1452,19 @@ function render() {
   };
   document.title = `Desk · ${titles[name] || "This week"}`;
 
-  document.getElementById("app").innerHTML = `<header class="topbar">
-      <div class="brand-group">
-        <a class="brand" href="#/week">Desk</a>
-      </div>
-      <nav class="nav" aria-label="Desk">${nav}</nav>
-      <div class="tools">
-        <label class="quiet" for="topic">Topic</label>
-        <select class="switcher" id="topic" aria-label="Topic">${topicOptions}</select>
+  document.getElementById("app").innerHTML = `<aside class="sidebar" aria-label="Navigation">
+      <a class="brand" href="#/week">${ICONS.brand}<span>Desk</span></a>
+      <div class="pickers">
+        <label class="picker"><span>Topic</span><select class="switcher" id="topic">${topicOptions}</select></label>
         ${runSwitcher}
       </div>
-    </header>
-    <div id="run-banner" aria-live="polite">${bannerHtml()}</div>
-    <main id="main">${body}</main>
-    <footer class="footer">${
-      state.live
-        ? `Reading the local library. <a href="#/setup">Setup check</a> · <a href="#/settings">Settings</a>`
-        : "Can't reach the desk server right now."
-    }</footer>`;
+      <nav class="nav" aria-label="Desk">${nav}</nav>
+      <p class="sidebar-foot">${state.live ? "Reading the local library" : "Can't reach the desk server right now."}</p>
+    </aside>
+    <div class="content">
+      <div id="run-banner" aria-live="polite">${bannerHtml()}</div>
+      <main id="main">${body}</main>
+    </div>`;
 
   persist();
   schedulePoll();
@@ -1581,8 +1622,9 @@ function viewLibrary() {
   return `<p class="kicker">Library</p>
     <h1>Every paper you've kept</h1>
     <p class="quiet">Across all topics and runs, newest first. Each paper appears once, under the latest run that kept it.</p>
-    <div class="filters">
+    <div class="toolbar"><div class="filters">
       ${show("all", "All")}${show("unread", "Unread")}${show("saved", "Saved")}
+      </div>
       <label class="visually-hidden" for="library-topic">Topic</label>
       <select class="switcher" id="library-topic">${topicOptions}</select>
       <input class="search" id="library-search" type="search" placeholder="Search titles, authors, methods, datasets" value="${esc(library.q)}" aria-label="Search the library" />

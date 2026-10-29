@@ -2,6 +2,41 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Apple-style desk redesign, base (complete)
+
+- **Feature/branch:** `F59-apple-redesign`.
+- **Status:** Complete; merged into `main`. This is the base layer. The user then asked for more
+  character, using `Leonxlnx/taste-skill`, as a follow-up (F60).
+- **Summary:** The stylesheet was rewritten from scratch, following `.claude/skills/apple-design`.
+  - **Type:** the system font (SF Pro on a Mac) with size-specific tracking; `web/fonts/` was
+    removed.
+  - **Colour:** Apple's system colours in light and dark (`prefers-color-scheme`). Filled buttons
+    keep `#0071e3` in dark mode too, because white on `#0a84ff` fails AA.
+  - **Shell:** a translucent sidebar (`backdrop-filter`) replaces the top tabs. It has three
+    groups (This run, Library, Desk), line icons and pop-up pickers. On a phone it becomes a
+    translucent top bar, with a scroll-edge fade.
+  - **Lists:** inset grouped lists replace bordered cards; filters are segmented controls; list
+    filters and search share a toolbar.
+  - **Funnel:** drawn as a storage-style bar with stat tiles.
+  - **Citations:** pill chips with each paper's short name.
+  - **Ask:** reads as messages.
+  - **Run banner and composer:** floating material.
+  - **Motion and feedback:** `:active` scale(0.97) press feedback; the dialog and stamps
+    materialize.
+  - **Preferences:** `prefers-reduced-motion`, `prefers-reduced-transparency` and
+    `prefers-contrast` are all honoured.
+  - **Copy:** emoji were removed from buttons.
+- **Files affected:** `web/css/desk.css` (rewritten), `web/js/desk.js` (`NAV_GROUPS`, `ICONS`,
+  shell, `funnel`, `paperLinks`/`shortTitle`, toolbars), `web/index.html`, `web/favicon.svg`,
+  `README.md`, `tests/unit/test_reading_desk.py`.
+- **Verification:**
+  - axe-core (WCAG 2 A/AA, 2.1 AA, best practice) on 12 pages in light and dark: 0 violations.
+    The fixes it prompted were landmark labels, underlined inline links, and contrast for the pill
+    links and breadth text.
+  - No horizontal overflow at 390 px.
+  - No page errors.
+  - `uv run pytest -q`: 653 passed, 3 deselected. ruff and mypy are clean.
+
 ## 2026-10-29 — Vendor the apple-design skill (complete)
 
 - **Feature/branch:** `CHORE5-vendor-apple-design-skill`.
