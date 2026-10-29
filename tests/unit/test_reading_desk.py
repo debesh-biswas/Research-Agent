@@ -1,6 +1,5 @@
 """The reading desk is a static page, served live with no sample-data fallback."""
 
-import re
 from pathlib import Path
 
 import pytest
@@ -37,7 +36,7 @@ def test_clearing_data_is_wired_to_the_run_and_topic_endpoints() -> None:
 
 def test_topics_page_is_wired_to_the_topic_endpoints() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
-    assert '["topics", "Topics", "#/topics"]' in script
+    assert '["topics", "Topics", "#/topics", "topics"]' in script
     for hook in ("data-run-topic", "data-toggle-topic", "data-delete-topic", "topic-edit-form"):
         assert hook in script
     assert '"PUT"' in script and "/run`" in script
@@ -120,7 +119,7 @@ def test_a_finished_run_notifies_a_reader_who_is_away() -> None:
 
 def test_library_lists_every_kept_paper_and_opens_older_runs() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
-    assert '["library", "Library", "#/library"]' in script
+    assert '["library", "Library", "#/library", "library"]' in script
     assert "/api/library?" in script and "/api/runs/${encodeURIComponent(runId)}`" in script
     assert "keepOlderRuns()" in script and "data-library-page" in script
     assert "brand-action" not in script, "New topic lives on the Topics and welcome pages"
@@ -140,16 +139,20 @@ def test_destructive_actions_confirm_in_a_dialog_and_short_calls_time_out() -> N
     assert 'await request("/api/shelf")' in script
 
 
-def test_fonts_are_self_hosted_with_their_licences() -> None:
+def test_the_desk_uses_the_system_font_and_loads_nothing_from_elsewhere() -> None:
     html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "css" / "desk.css").read_text(encoding="utf-8")
     assert "googleapis" not in html and "gstatic" not in html, "no third-party request"
-    assert 'href="fonts/fonts.css"' in html and 'href="favicon.svg"' in html
-    css = (WEB / "fonts" / "fonts.css").read_text(encoding="utf-8")
-    files = set(re.findall(r'url\("([^"]+)"\)', css))
-    assert files and all((WEB / "fonts" / name).is_file() for name in files)
-    for family in ("ibm-plex-mono", "literata", "schibsted-grotesk"):
-        assert "SIL Open Font License" in (WEB / "fonts" / f"OFL-{family}.txt").read_text()
-    assert (WEB / "favicon.svg").is_file()
+    assert "@font-face" not in css and "-apple-system" in css, "the platform font, no web font"
+    assert 'href="favicon.svg"' in html and (WEB / "favicon.svg").is_file()
+    assert "prefers-color-scheme: dark" in css and "prefers-reduced-transparency" in css
+
+
+def test_the_sidebar_groups_every_page() -> None:
+    script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
+    for route in ("#/week", "#/papers", "#/report", "#/ask", "#/library", "#/runs", "#/topics"):
+        assert f'"{route}"' in script
+    assert '<aside class="sidebar" aria-label="Navigation">' in script
 
 
 def test_a_single_day_period_is_not_written_as_a_range() -> None:
@@ -173,5 +176,5 @@ def test_the_wheel_ships_the_desk_page() -> None:
 
 def test_settings_page_is_linked_and_never_sends_locked_fields() -> None:
     script = (WEB / "js" / "desk.js").read_text(encoding="utf-8")
-    assert 'href="#/settings"' in script and 'request("/api/settings")' in script
+    assert '"#/settings"' in script and 'request("/api/settings")' in script
     assert "if (input.disabled) continue;" in script
