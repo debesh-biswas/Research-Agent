@@ -2,6 +2,23 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Vendor the apple-design skill (complete)
+
+- **Feature/branch:** `CHORE5-vendor-apple-design-skill`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** The user asked for the desk redesign to follow Emil Kowalski's `apple-design`
+  skill. It is vendored unchanged at `.claude/skills/apple-design/SKILL.md`, with the repository's
+  MIT `LICENSE` beside it, from `emilkowalski/skills@a81dbca`. This is the same arrangement as the
+  ponytail skill (CHORE3).
+- **Decision:** The user rejected the "Field Survey" mock-up (warm beige, editorial serifs) as
+  the new generic AI look. The redesign (F59) instead follows the skill:
+  - system font with size-specific tracking;
+  - neutral system surfaces in light and dark;
+  - translucent chrome;
+  - instant press feedback;
+  - support for reduced motion, reduced transparency and higher contrast.
+- **Next step:** `F59`, the Apple-style redesign of the desk.
+
 ## 2026-10-29 — Raise the relevance threshold to 0.6 (complete)
 
 - **Feature/branch:** `CHORE4-raise-relevance-threshold`, off `main` after F58.
