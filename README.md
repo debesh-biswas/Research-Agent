@@ -41,7 +41,7 @@ Commands read `config/settings.yaml` and `config/topics.yaml` from the current f
 To use the command outside a checkout, install it with `uv tool install .` and run it from a
 folder that holds your `config/`; the desk's page ships inside the package.
 
-The desk's Settings page (footer link) changes the common settings: models, how papers are
+The desk's Settings page (in the sidebar, under Desk) changes the common settings: models, how papers are
 chosen, and speed and retries. Its changes are saved in the library and sit between `.env` and
 `config/settings.yaml`, which is never rewritten; every command uses them. A field set by an
 environment variable is shown locked, with the variable's name.
@@ -104,7 +104,7 @@ carry over). There are no keywords to type: each run the model chooses the searc
 name and description at that breadth, and screening accepts papers as widely as it says. The Week
 page lists what the run searched for. Keywords given on the command line or in `topics.yaml`
 still work, as extra terms. Setup check (in the
-footer, and the first page of a new library) runs the same checks as `research-agent doctor`.
+sidebar under Desk, and the first page of a new library) runs the same checks as `research-agent doctor`.
 
 ## Quality checks
 

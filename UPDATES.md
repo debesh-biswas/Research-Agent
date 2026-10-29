@@ -2,6 +2,16 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — README: sidebar links (complete)
+
+- **Feature/branch:** `DOC4-readme-sidebar-links`.
+- **Status:** Complete; merged into `main`.
+- **Summary:** The README now places Settings and Setup check in the sidebar, under Desk. It
+  used to say "footer", but the footer went away with F59/F60.
+- **Files affected:** `README.md`.
+- **Verification:** this is a docs-only change, so no tests were run.
+- **Next step:** back to the roadmap.
+
 ## 2026-10-29 — Taste pass: framed-sheet desk (complete)
 
 - **Feature/branch:** `F60-taste-framed-sheet`.
