@@ -2,6 +2,45 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Retry brief local-model failures (complete)
+
+- **Feature/branch:** `FIX23-retry-local-model`, off `main` at `c4dbb4b`.
+- **Status:** Complete; merged into `main`. Asked for by the user after the 29 Oct cloud run.
+- **Problem:** On that run, 8 of 147 papers went unscreened and one analysis failed. Each hit a
+  brief OpenRouter error (HTTP 502, or a dropped connection), and the local model was built with
+  0 retries. Search sources retry 3 times, PDFs 2 and NIM 2, but the local model had none.
+- **Summary:**
+  - `retries.local_model` (default 2, also in `config/settings.yaml` and on the Settings page)
+    now reaches `LocalModelProvider`, which serves both a local server and OpenRouter-style cloud
+    endpoints. It retries HTTP 5xx/429 and dropped connections, with the existing 1 s / 2 s
+    backoff and `Retry-After` handling.
+  - Timeouts are not retried. A model call may take its whole timeout (600 s in the configs), so
+    repeating one would turn a stuck call into half an hour.
+  - NIM keeps its 2 router-level retries before falling back to the local model, which now gets
+    its own retries too.
+  - Fixed along the way: the error message said "failed after 3 attempts" even when it stopped
+    after one. It now counts the attempts really made.
+- **Files affected:**
+  - `src/research_agent/config.py`
+  - `src/research_agent/discovery/http.py`: `retry_timeouts`, and the attempt count.
+  - `src/research_agent/models/chat.py`
+  - `src/research_agent/models/router.py`
+  - `src/research_agent/desk/settings_page.py`
+  - `config/settings.yaml`
+  - `tests/unit/test_models_chat.py`
+- **Verification:**
+  - A 502, then a dropped connection, then a success gives one result after 3 calls.
+  - A timeout makes 1 call and reports "after 1 attempts".
+  - `build_router` gives the local model 2 retries.
+  - `ruff format --check`, `ruff check` and `mypy` are clean. `uv run pytest -q`: 646 passed,
+    3 deselected, coverage 92.98%.
+- **Known issues:** An empty reply ("a choice without text content", which is what failed the
+  synthesis) is not an HTTP failure, so it is not retried here. That is the synthesis question
+  below.
+- **Next step:** Synthesis is cut at `synthesis.max_input_chars` (24,000), so a 45-paper week
+  reaches the model only partly. On the 29 Oct run it cited 10 of 45 papers. Proposed fix, for the
+  user to decide: synthesize in batches that each fit, with thinking kept on, then merge.
+
 ## 2026-10-28 — Topic breadth instead of keywords (complete)
 
 - **Feature/branch:** `F57-topic-breadth`, off `main` at `15e9787`.

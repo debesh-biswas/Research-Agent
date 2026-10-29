@@ -63,6 +63,7 @@ async def request_text(
     backoff_seconds: float = 1.0,
     error_category: ErrorCategory = "DISCOVERY_ERROR",
     transient_category: ErrorCategory = "NETWORK_ERROR",
+    retry_timeouts: bool = True,
 ) -> str:
     """Call a provider URL, retrying only transient failures and honoring ``Retry-After``.
 
@@ -71,7 +72,9 @@ async def request_text(
     """
     last_error = "no attempt was made"
     category: ErrorCategory = error_category
+    attempts = 0
     for attempt in range(retries + 1):
+        attempts = attempt + 1
         if limiter is not None:
             await limiter.acquire()
         try:
@@ -80,6 +83,8 @@ async def request_text(
             )
         except httpx.TimeoutException as error:
             last_error, category = f"timeout: {error}", transient_category
+            if not retry_timeouts:
+                break
         except httpx.TransportError as error:
             last_error, category = f"transport error: {error}", transient_category
         else:
@@ -99,7 +104,7 @@ async def request_text(
                 continue
         if attempt < retries:
             await asyncio.sleep(backoff_seconds * 2**attempt)
-    raise SourceRequestError(f"{url} failed after {retries + 1} attempts: {last_error}", category)
+    raise SourceRequestError(f"{url} failed after {attempts} attempts: {last_error}", category)
 
 
 def _decoded(response: httpx.Response) -> str:
