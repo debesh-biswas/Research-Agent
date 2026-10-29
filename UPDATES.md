@@ -2,6 +2,70 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Taste pass: framed-sheet desk (complete)
+
+- **Feature/branch:** `F60-taste-framed-sheet`.
+- **Status:** Complete; merged into `main`. It builds on F59. The user found F59 "decent but plain
+  and boring" and asked for `Leonxlnx/taste-skill` (MIT, commit `12af471`) to be applied.
+- **Summary:** The desk now follows taste-skill's app style "framed-sheet" (seed 893340841).
+  - **Frame:** a teal-tinted L-frame (`#f2f6f6`): a 228px sidebar plus a 48px top bar, with no
+    rule between them. The top bar holds the topic and run pickers and Run now. Inside it sits
+    one white sheet, inset 8px with a 1px edge and radius 16. The sheet scrolls; the frame stays.
+  - **Signature:** the sieve. Each paper found is one mark, coloured by how far it got: read in
+    full, kept as a summary, screened out, or not screened.
+    - On a wide sheet the marks fill the width column by column (`--rows` = found / 75), so each
+      stage reads as a band.
+    - On a phone they wrap.
+    - The product mark and the favicon are drawn as the same sieve: three narrowing bars.
+  - **Week:**
+    - A noun title (the period) and a finding computed from the run ("46 of 147 papers kept, 15
+      read in full. Start with EBM-Nav.").
+    - A divided KPI strip, then one quiet line for duration, models, queries and model use.
+    - The summary shows 4 lines (the report holds the rest), and "What changed" is capped at 4,
+      so every block header is on the first 1440×900 screen.
+  - **Colour on data only:** the accent `#1b6c80` (dark `#5cbcd0`) marks the sieve, scores,
+    links and focus. Navigation is grey with a grey active pill. Pills are pale tints with dark
+    ink.
+  - **Controls:**
+    - The primary button is near-black, one per screen; the top bar's Run now steps down to a
+      plain button when the page has its own primary.
+    - Filters are underline tabs on a rule.
+    - Lists are rows on rules, with hover in the raised fill.
+  - **Flat at rest:** nothing has a shadow except the composer and the dialog. There is no glass,
+    gradient or blur.
+  - **Type:** IBM Plex Sans 400/500/600, self-hosted in `web/fonts/` (OFL); sizes are 12–28px.
+  - **Copy:** eyebrow labels were removed from every page, and the ★ emoji became a bookmark
+    icon. Report and Ask got noun titles ("Report", "Ask about this week").
+  - **Settings:** each group is a label column beside one panel, with fields split by rules.
+  - **Phone (≤860px):** the frame folds. A sticky 48px bar has a menu button that opens the
+    sidebar as a full-screen sheet; the KPIs go 2-up and the tabs scroll sideways.
+  - **Dark mode:** true neutral; only the accent keeps its hue.
+- **Files affected:**
+  - `web/css/desk.css` (rewritten).
+  - `web/js/desk.js`: shell (`sidebar-head`, `topbar`, `sheet`, menu toggle); `ICONS.brand`,
+    `ICONS.menu` and `ICONS.saved`; `SIEVE`/`funnel`; `weekFinding`; `viewWeek` blocks;
+    `renderPaperList` rows (kind pill and score); settings `group-panel`; eyebrows removed.
+  - `web/index.html`, `web/fonts/*`, `web/favicon.svg`, `README.md` (licences), `.gitignore`
+    (`/.taste-skill/`).
+  - `tests/unit/test_reading_desk.py`: the font test now checks the self-hosted face. It checks
+    that every `url()` in `fonts.css` is a local file and that the OFL licence ships.
+- **Decisions:**
+  - taste-skill is used as a tool (its lint and inspector) but not vendored. It is 2.5 MB of
+    libraries the desk never loads.
+  - The legitimate shadows (focus rings, floating overlays) and the code-only monospace carry
+    `taste-skill-ignore` comments.
+- **Verification:**
+  - taste `lint.mjs --app web/`: 0 FAIL, 0 WARN.
+  - taste `inspect.mjs --app #/week`: 0 FAIL, 0 WARN. Before the change: 0 FAIL, 2 WARN (heavy
+    borders; only 2 of 14 block headers on the first screen).
+  - axe-core (wcag2a/aa, wcag21aa, best-practice): 0 violations on 12 pages, in light and dark.
+  - Phone at 390px: no horizontal overflow, and the menu sheet works.
+  - `ruff format --check`, `ruff check`, `mypy`: clean.
+  - `pytest`: 653 passed, coverage 93.08%.
+- **Known issues:** none found. Browsers without `:has()` lose only the highlight on the checked
+  breadth row.
+- **Next step:** the user reviews the screenshots; then go back to the roadmap.
+
 ## 2026-10-29 — Apple-style desk redesign, base (complete)
 
 - **Feature/branch:** `F59-apple-redesign`.

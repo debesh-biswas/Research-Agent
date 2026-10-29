@@ -1,5 +1,6 @@
 """The reading desk is a static page, served live with no sample-data fallback."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -139,13 +140,17 @@ def test_destructive_actions_confirm_in_a_dialog_and_short_calls_time_out() -> N
     assert 'await request("/api/shelf")' in script
 
 
-def test_the_desk_uses_the_system_font_and_loads_nothing_from_elsewhere() -> None:
+def test_the_desk_serves_its_own_typeface_and_loads_nothing_from_elsewhere() -> None:
     html = (WEB / "index.html").read_text(encoding="utf-8")
     css = (WEB / "css" / "desk.css").read_text(encoding="utf-8")
+    fonts = (WEB / "fonts" / "fonts.css").read_text(encoding="utf-8")
     assert "googleapis" not in html and "gstatic" not in html, "no third-party request"
-    assert "@font-face" not in css and "-apple-system" in css, "the platform font, no web font"
+    assert 'href="fonts/fonts.css"' in html and '"IBM Plex Sans"' in css
+    for source in re.findall(r'url\("([^"]+)"\)', fonts):
+        assert "/" not in source and (WEB / "fonts" / source).is_file(), source
+    assert (WEB / "fonts" / "OFL-ibm-plex-sans.txt").is_file(), "the font's licence ships with it"
     assert 'href="favicon.svg"' in html and (WEB / "favicon.svg").is_file()
-    assert "prefers-color-scheme: dark" in css and "prefers-reduced-transparency" in css
+    assert "prefers-color-scheme: dark" in css and "prefers-reduced-motion" in css
 
 
 def test_the_sidebar_groups_every_page() -> None:
