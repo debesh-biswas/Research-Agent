@@ -123,7 +123,7 @@ class ScreeningSettings(StrictModel):
 class SelectionSettings(StrictModel):
     """Relevance gate plus transparent quality ranking; limits live in `ResourceLimits`."""
 
-    min_relevance_score: float = Field(default=0.3, ge=0, le=1)
+    min_relevance_score: float = Field(default=0.6, ge=0, le=1)
     require_action: bool = True
     """When true, a paper the classifier marked `ignore` is never selected whatever it scored."""
     quality_weight: float = Field(default=0.35, ge=0, le=1)

@@ -2,6 +2,23 @@
 
 This is the append-at-top handoff log for the Personal Weekly AI Research Intelligence Agent. Follow the required entry format and workflow in `AGENTS.md`. Never record secrets.
 
+## 2026-10-29 — Raise the relevance threshold to 0.6 (complete)
+
+- **Feature/branch:** `CHORE4-raise-relevance-threshold`, off `main` after F58.
+- **Status:** Complete; merged into `main`. Asked for by the user.
+- **Summary:** `selection.min_relevance_score` goes from 0.3 to 0.6, in both
+  `config/settings.yaml` (with a comment giving the reason) and the `SelectionSettings` default,
+  so the two agree.
+  - On the 29 Oct run, papers the screener rated only loosely related were kept beside clearly
+    on-topic ones (0.8 and up). Examples: EV battery-pack lid removal (0.5) and digital twins for
+    manufacturing (0.45).
+  - The Settings page can still change the threshold, and so can `RESEARCH_AGENT_SELECTION__MIN_RELEVANCE_SCORE`.
+  - It applies from the next run. Papers already kept on earlier runs stay where they are.
+- **Files affected:** `config/settings.yaml`, `src/research_agent/config.py`,
+  `tests/unit/test_config.py`.
+- **Verification:** `uv run pytest -q`: 652 passed, 3 deselected.
+- **Next step:** On the user's side, run the topic and compare the kept list.
+
 ## 2026-10-29 — Batch synthesis for large weeks (complete)
 
 - **Feature/branch:** `F58-batch-synthesis`, off `main` at `8ee0976`.
